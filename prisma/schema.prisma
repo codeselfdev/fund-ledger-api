@@ -1,0 +1,814 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TenantPlan {
+  free
+  standard
+  pro
+}
+
+enum Role {
+  owner
+  admin
+  member
+  cashier
+  accountant
+  approver
+  auditor
+}
+
+enum MemberStatus {
+  active
+  inactive
+}
+
+enum InvitationStatus {
+  pending
+  accepted
+  revoked
+}
+
+enum ScheduleStatus {
+  draft
+  active
+  closed
+}
+
+enum DueStatus {
+  upcoming
+  due
+  overdue
+  partial
+  paid
+  waived
+}
+
+enum DepositStatus {
+  submitted
+  pending_accountant
+  pending_approver
+  confirmed
+  rejected
+}
+
+enum ExpenseStatus {
+  draft
+  pending
+  approved
+  paid
+  rejected
+}
+
+enum ExpenseCategory {
+  materials
+  construction
+  professional
+  services
+  survey
+}
+
+enum PaymentMethod {
+  bkash
+  nagad
+  bank
+  cheque
+  cash
+}
+
+enum AccountType {
+  bank
+  cash
+}
+
+enum TransactionDirection {
+  money_in  @map("in")
+  money_out @map("out")
+  transfer
+  penalty
+}
+
+enum PenaltyType {
+  onetime
+  recurring
+}
+
+enum RecurringPeriod {
+  weekly
+  monthly
+}
+
+enum RecurringFrequency {
+  weekly
+  biweekly
+  monthly
+  bimonthly
+  quarterly
+  yearly
+}
+
+enum PurchaseStatus {
+  ordered
+  received
+  cancelled
+}
+
+enum SaleStatus {
+  completed
+  cancelled
+}
+
+enum StockMovementType {
+  purchase_received
+  sale
+  adjustment_increase
+  adjustment_decrease
+}
+
+model Tenant {
+  id            String     @id @default(cuid())
+  name          String
+  slug          String     @unique
+  currency      String     @default("BDT")
+  plan          TenantPlan @default(free)
+  branding      Json?
+  contact       Json?
+  penaltyPolicy Json?      @map("penalty_policy")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  users         User[]
+  projects      Project[]
+  members       Member[]
+  notifications Notification[]
+  activity      Activity[]
+
+  @@map("tenants")
+}
+
+model Project {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  name          String
+  totalShares   Int      @map("total_shares")
+  penaltyPolicy Json?    @map("penalty_policy")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships        ProjectMembership[]
+  members            Member[]
+  schedules          Schedule[]
+  recurringSchedules RecurringSchedule[]
+  dues               Due[]
+  deposits           Deposit[]
+  receipts           Receipt[]
+  expenses           Expense[]
+  accounts           Account[]
+  transfers          Transfer[]
+  uploads            Upload[]
+  notifications      Notification[]
+  activity           Activity[]
+  vendors            Vendor[]
+  expenseCategoryDefs ExpenseCategoryDef[]
+  inventoryCategories InventoryCategory[]
+  inventoryItems      InventoryItem[]
+  stockMovements      StockMovement[]
+  purchases           Purchase[]
+  sales               Sale[]
+
+  @@index([tenantId])
+  @@map("projects")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  name         String
+  mobile       String
+  email        String?
+  passwordHash String?  @map("password_hash")
+  deviceId     String?  @map("device_id")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships        ProjectMembership[]
+  sessions           Session[]
+  memberLinks        Member[]
+  notifications      Notification[]      @relation("NotificationRecipient")
+  actedNotifications Notification[]      @relation("NotificationActor")
+  activity           Activity[]
+
+  @@unique([tenantId, mobile])
+  @@index([tenantId])
+  @@map("users")
+}
+
+model ProjectMembership {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  projectId String   @map("project_id")
+  userId    String   @map("user_id")
+  memberId  String?  @map("member_id")
+  role      Role
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  member  Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, userId, role])
+  @@index([tenantId, projectId])
+  @@index([tenantId, userId])
+  @@map("project_memberships")
+}
+
+model Member {
+  id        String       @id @default(cuid())
+  tenantId  String       @map("tenant_id")
+  projectId String       @map("project_id")
+  userId    String?      @map("user_id")
+  name      String
+  mobile    String
+  email     String?
+  address   String?
+  shares    Int
+  status    MemberStatus @default(active)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user        User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  memberships ProjectMembership[]
+  dues        Due[]
+  deposits    Deposit[]
+  receipts    Receipt[]
+
+  @@unique([tenantId, projectId, mobile])
+  @@index([tenantId, projectId])
+  @@map("members")
+}
+
+model Invitation {
+  id          String           @id @default(cuid())
+  tenantId    String           @map("tenant_id")
+  projectId   String           @map("project_id")
+  mobile      String
+  role        Role
+  invitedById String           @map("invited_by_id")
+  status      InvitationStatus @default(pending)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  acceptedAt  DateTime?        @map("accepted_at")
+
+  @@index([tenantId, projectId])
+  @@map("invitations")
+}
+
+model OtpCode {
+  id         String    @id @default(cuid())
+  mobile     String
+  codeHash   String    @map("code_hash")
+  expiresAt  DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([mobile, expiresAt])
+  @@map("otp_codes")
+}
+
+model Session {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  userId          String    @map("user_id")
+  activeProjectId String?   @map("active_project_id")
+  tokenHash       String    @map("token_hash")
+  expiresAt       DateTime  @map("expires_at")
+  revokedAt       DateTime? @map("revoked_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@index([tokenHash])
+  @@map("sessions")
+}
+
+model Schedule {
+  id            String         @id @default(cuid())
+  tenantId      String         @map("tenant_id")
+  projectId     String         @map("project_id")
+  recurringScheduleId String?  @map("recurring_schedule_id")
+  name          String
+  unitAmount    Int?           @map("unit_amount")
+  totalAmount   Int            @map("total_amount")
+  dueDate       DateTime       @map("due_date")
+  status        ScheduleStatus @default(active)
+  penaltyPolicy Json?          @map("penalty_policy")
+  createdById   String         @map("created_by_id")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  project            Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  recurringSchedule  RecurringSchedule?  @relation(fields: [recurringScheduleId], references: [id], onDelete: SetNull)
+  dues               Due[]
+  deposits           Deposit[]
+  depositAllocations DepositAllocation[]
+
+  @@index([tenantId, projectId, status])
+  @@index([tenantId, projectId, recurringScheduleId])
+  @@unique([recurringScheduleId, dueDate])
+  @@map("schedules")
+}
+
+model RecurringSchedule {
+  id            String             @id @default(cuid())
+  tenantId      String             @map("tenant_id")
+  projectId     String             @map("project_id")
+  name          String
+  unitAmount    Int                @map("unit_amount")
+  frequency     RecurringFrequency
+  startsOn      DateTime           @map("starts_on")
+  nextRunAt     DateTime           @map("next_run_at")
+  isActive      Boolean            @default(true) @map("is_active")
+  penaltyPolicy Json?              @map("penalty_policy")
+  createdById   String             @map("created_by_id")
+  lastRunAt     DateTime?          @map("last_run_at")
+  lastRunStatus String?            @map("last_run_status")
+  lastRunMessage String?           @map("last_run_message")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  schedules Schedule[]
+
+  @@index([tenantId, projectId, isActive])
+  @@index([tenantId, projectId, nextRunAt])
+  @@map("recurring_schedules")
+}
+
+model Due {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  projectId   String    @map("project_id")
+  scheduleId  String    @map("schedule_id")
+  memberId    String    @map("member_id")
+  amount      Int
+  paidAmount  Int       @default(0) @map("paid_amount")
+  penaltyDue  Int       @default(0) @map("penalty_due")
+  penaltyPaid Int       @default(0) @map("penalty_paid")
+  status      DueStatus @default(due)
+  dueDate     DateTime  @map("due_date")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  schedule    Schedule            @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  member      Member              @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  penalties   DuePenaltyEntry[]
+  allocations DepositAllocation[]
+
+  @@unique([scheduleId, memberId])
+  @@index([tenantId, projectId, status])
+  @@map("dues")
+}
+
+model DuePenaltyEntry {
+  id         String      @id @default(cuid())
+  tenantId   String      @map("tenant_id")
+  projectId  String      @map("project_id")
+  dueId      String      @map("due_id")
+  type       PenaltyType
+  amount     Int
+  percent    Decimal?
+  reason     String?
+  appliedAt  DateTime    @default(now()) @map("applied_at")
+  waivedAt   DateTime?   @map("waived_at")
+  waivedById String?     @map("waived_by_id")
+
+  due Due @relation(fields: [dueId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, projectId, dueId])
+  @@map("due_penalty_entries")
+}
+
+model Deposit {
+  id             String        @id @default(cuid())
+  tenantId       String        @map("tenant_id")
+  projectId      String        @map("project_id")
+  scheduleId     String?       @map("schedule_id")
+  memberId       String        @map("member_id")
+  accountId      String?       @map("account_id")
+  amount         Int
+  method         PaymentMethod
+  proofFileId    String?       @map("proof_file_id")
+  reference      String?
+  allocate       String?
+  status         DepositStatus @default(pending_accountant)
+  submittedById  String        @map("submitted_by_id")
+  accountantById String?       @map("accountant_by_id")
+  approverById   String?       @map("approver_by_id")
+  rejectedById   String?       @map("rejected_by_id")
+  rejectReason   String?       @map("reject_reason")
+  confirmedAt    DateTime?     @map("confirmed_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  schedule    Schedule?           @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  member      Member              @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  account     Account?            @relation(fields: [accountId], references: [id])
+  receipt     Receipt?
+  allocations DepositAllocation[]
+
+  @@index([tenantId, projectId, status])
+  @@index([tenantId, projectId, memberId])
+  @@map("deposits")
+}
+
+model DepositAllocation {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  projectId  String   @map("project_id")
+  depositId  String   @map("deposit_id")
+  dueId      String   @map("due_id")
+  scheduleId String   @map("schedule_id")
+  amount     Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  deposit  Deposit  @relation(fields: [depositId], references: [id], onDelete: Cascade)
+  due      Due      @relation(fields: [dueId], references: [id], onDelete: Cascade)
+  schedule Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([depositId, dueId])
+  @@index([tenantId, projectId, dueId])
+  @@map("deposit_allocations")
+}
+
+model Receipt {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  projectId String   @map("project_id")
+  depositId String   @unique @map("deposit_id")
+  memberId  String   @map("member_id")
+  receiptNo String   @map("receipt_no")
+  amount    Int
+  issuedAt  DateTime @default(now()) @map("issued_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deposit Deposit @relation(fields: [depositId], references: [id], onDelete: Cascade)
+  member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, projectId, receiptNo])
+  @@index([tenantId, projectId, memberId])
+  @@map("receipts")
+}
+
+model Expense {
+  id            String          @id @default(cuid())
+  tenantId      String          @map("tenant_id")
+  projectId     String          @map("project_id")
+  title         String
+  amount        Int
+  category      ExpenseCategory
+  categoryDefId String?         @map("category_def_id")
+  vendor        String?
+  vendorId      String?         @map("vendor_id")
+  accountId     String?         @map("account_id")
+  docFileId     String?         @map("doc_file_id")
+  status        ExpenseStatus   @default(pending)
+  createdById   String          @map("created_by_id")
+  approvedById  String?         @map("approved_by_id")
+  rejectedById  String?         @map("rejected_by_id")
+  disbursedById String?         @map("disbursed_by_id")
+  paidAccountId String?         @map("paid_account_id")
+  rejectReason  String?         @map("reject_reason")
+  paidAt        DateTime?       @map("paid_at")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  vendorRef   Vendor?             @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  categoryDef ExpenseCategoryDef? @relation(fields: [categoryDefId], references: [id], onDelete: SetNull)
+  account     Account?            @relation("ExpenseTargetAccount", fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, projectId, status])
+  @@map("expenses")
+}
+
+model Vendor {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  projectId String   @map("project_id")
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  expenses  Expense[]
+  purchases Purchase[]
+
+  @@unique([projectId, name])
+  @@index([tenantId, projectId, isActive])
+  @@map("vendors")
+}
+
+model ExpenseCategoryDef {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  projectId String   @map("project_id")
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  expenses Expense[]
+
+  @@unique([projectId, name])
+  @@index([tenantId, projectId, isActive])
+  @@map("expense_category_defs")
+}
+
+model InventoryCategory {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  projectId String   @map("project_id")
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  items   InventoryItem[]
+
+  @@unique([projectId, name])
+  @@index([tenantId, projectId, isActive])
+  @@map("inventory_categories")
+}
+
+model InventoryItem {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  projectId    String   @map("project_id")
+  categoryId   String?  @map("category_id")
+  name         String
+  sku          String?
+  unit         String   @default("pcs")
+  photoFileId  String?  @map("photo_file_id")
+  costPrice    Int      @default(0) @map("cost_price")
+  sellPrice    Int      @default(0) @map("sell_price")
+  quantity     Int      @default(0)
+  reorderLevel Int      @default(0) @map("reorder_level")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  project       Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  category      InventoryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  purchaseLines PurchaseItem[]
+  saleLines     SaleItem[]
+  movements     StockMovement[]
+
+  @@unique([projectId, sku])
+  @@index([tenantId, projectId, isActive])
+  @@map("inventory_items")
+}
+
+model StockMovement {
+  id            String             @id @default(cuid())
+  tenantId      String             @map("tenant_id")
+  projectId     String             @map("project_id")
+  itemId        String             @map("item_id")
+  type          StockMovementType
+  quantity      Int
+  quantityAfter Int                @map("quantity_after")
+  referenceType String?            @map("reference_type")
+  referenceId   String?            @map("reference_id")
+  reason        String?
+  createdById   String?            @map("created_by_id")
+  createdAt     DateTime           @default(now()) @map("created_at")
+
+  project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  item    InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, projectId, itemId])
+  @@map("stock_movements")
+}
+
+model Purchase {
+  id            String         @id @default(cuid())
+  tenantId      String         @map("tenant_id")
+  projectId     String         @map("project_id")
+  vendorId      String?        @map("vendor_id")
+  status        PurchaseStatus @default(ordered)
+  totalAmount   Int            @map("total_amount")
+  accountId     String?        @map("account_id")
+  docFileId     String?        @map("doc_file_id")
+  createdById   String         @map("created_by_id")
+  receivedById  String?        @map("received_by_id")
+  cancelledById String?        @map("cancelled_by_id")
+  receivedAt    DateTime?      @map("received_at")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  project Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  vendor  Vendor?        @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  account Account?       @relation("PurchaseAccount", fields: [accountId], references: [id], onDelete: SetNull)
+  lines   PurchaseItem[]
+
+  @@index([tenantId, projectId, status])
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id         String @id @default(cuid())
+  tenantId   String @map("tenant_id")
+  projectId  String @map("project_id")
+  purchaseId String @map("purchase_id")
+  itemId     String @map("item_id")
+  quantity   Int
+  unitCost   Int    @map("unit_cost")
+  lineTotal  Int    @map("line_total")
+
+  purchase Purchase      @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  item     InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, projectId, purchaseId])
+  @@map("purchase_items")
+}
+
+model Sale {
+  id            String     @id @default(cuid())
+  tenantId      String     @map("tenant_id")
+  projectId     String     @map("project_id")
+  customerName  String?    @map("customer_name")
+  status        SaleStatus @default(completed)
+  totalAmount   Int        @map("total_amount")
+  accountId     String     @map("account_id")
+  soldById      String     @map("sold_by_id")
+  cancelledById String?    @map("cancelled_by_id")
+  cancelledAt   DateTime?  @map("cancelled_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+
+  project Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  account Account    @relation("SaleAccount", fields: [accountId], references: [id])
+  lines   SaleItem[]
+
+  @@index([tenantId, projectId, status])
+  @@map("sales")
+}
+
+model SaleItem {
+  id        String @id @default(cuid())
+  tenantId  String @map("tenant_id")
+  projectId String @map("project_id")
+  saleId    String @map("sale_id")
+  itemId    String @map("item_id")
+  quantity  Int
+  unitPrice Int    @map("unit_price")
+  lineTotal Int    @map("line_total")
+
+  sale Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  item InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, projectId, saleId])
+  @@map("sale_items")
+}
+
+model Account {
+  id        String      @id @default(cuid())
+  tenantId  String      @map("tenant_id")
+  projectId String      @map("project_id")
+  name      String
+  type      AccountType
+  balance   Int         @default(0)
+  isDefault Boolean     @default(false) @map("is_default")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  project          Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  txns             AccountTransaction[]
+  deposits         Deposit[]
+  targetedExpenses Expense[]            @relation("ExpenseTargetAccount")
+  purchases        Purchase[]           @relation("PurchaseAccount")
+  sales            Sale[]               @relation("SaleAccount")
+
+  @@unique([projectId, name])
+  @@index([tenantId, projectId])
+  @@map("accounts")
+}
+
+model Transfer {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  projectId     String   @map("project_id")
+  fromAccountId String   @map("from_account_id")
+  toAccountId   String   @map("to_account_id")
+  amount        Int
+  note          String?
+  createdById   String   @map("created_by_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, projectId])
+  @@map("transfers")
+}
+
+model AccountTransaction {
+  id            String               @id @default(cuid())
+  tenantId      String               @map("tenant_id")
+  projectId     String               @map("project_id")
+  accountId     String               @map("account_id")
+  direction     TransactionDirection
+  amount        Int
+  referenceType String?              @map("reference_type")
+  referenceId   String?              @map("reference_id")
+  description   String?
+  balanceAfter  Int                  @map("balance_after")
+  createdById   String?              @map("created_by_id")
+  createdAt     DateTime             @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, projectId, accountId])
+  @@index([tenantId, projectId, direction])
+  @@map("account_transactions")
+}
+
+model Upload {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  projectId  String   @map("project_id")
+  userId     String   @map("user_id")
+  fileName   String   @map("file_name")
+  mimeType   String   @map("mime_type")
+  size       Int
+  storageKey String   @map("storage_key")
+  purpose    String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, projectId])
+  @@map("uploads")
+}
+
+model Notification {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  projectId       String?   @map("project_id")
+  recipientUserId String    @map("recipient_user_id")
+  actorUserId     String?   @map("actor_user_id")
+  type            String
+  title           String
+  body            String
+  entityType      String?   @map("entity_type")
+  entityId        String?   @map("entity_id")
+  readAt          DateTime? @map("read_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  recipient User     @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  actor     User?    @relation("NotificationActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, projectId, recipientUserId, readAt])
+  @@map("notifications")
+}
+
+model Activity {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  projectId   String?  @map("project_id")
+  actorUserId String?  @map("actor_user_id")
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id")
+  before      Json?
+  after       Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actor   User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, projectId, createdAt])
+  @@map("activity")
+}

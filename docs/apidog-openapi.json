@@ -1,0 +1,1313 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "FundLedger API",
+    "version": "0.1.0",
+    "description": "Apidog-importable OpenAPI collection for the FundLedger multi-tenant SaaS API."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:4000",
+      "description": "Local development"
+    },
+    {
+      "url": "https://api.fundledger.app",
+      "description": "Production"
+    }
+  ],
+  "tags": [
+    { "name": "Health" },
+    { "name": "Tenants" },
+    { "name": "Auth" },
+    { "name": "Projects" },
+    { "name": "Members" },
+    { "name": "Schedules" },
+    { "name": "Dues" },
+    { "name": "Deposits" },
+    { "name": "Uploads" },
+    { "name": "Receipts" },
+    { "name": "Expenses" },
+    { "name": "Accounts" },
+    { "name": "Transfers" },
+    { "name": "Subscription" },
+    { "name": "Dashboard" },
+    { "name": "Activity" },
+    { "name": "Notifications" },
+    { "name": "Penalties" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Health check",
+        "security": [],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" }
+        }
+      }
+    },
+    "/v1/tenants": {
+      "post": {
+        "tags": ["Tenants"],
+        "summary": "Provision tenant after payment validation",
+        "description": "Creates a tenant, first owner user, default project, and default cash account. Intended for billing/backend calls after one-time or monthly payment validation.",
+        "security": [
+          { "ProvisioningApiKey": [] },
+          { "ProvisioningAuthorization": [] }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TenantProvisionRequest" },
+              "example": {
+                "name": "Green Valley Society",
+                "slug": "green-valley",
+                "currency": "BDT",
+                "admin_name": "Salahuddin Ahmed",
+                "admin_mobile": "+8801711553300",
+                "plan": "standard"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Tenant provisioned",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SuccessEnvelope" },
+                "example": {
+                  "ok": true,
+                  "data": {
+                    "tenant_id": "clt_123",
+                    "default_project_id": "prj_123",
+                    "token": "eyJ..."
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/tenants/current": {
+      "get": {
+        "tags": ["Tenants"],
+        "summary": "Get current tenant",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/Error" } }
+      },
+      "patch": {
+        "tags": ["Tenants"],
+        "summary": "Update current tenant",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TenantUpdateRequest" },
+              "example": {
+                "branding": { "primary_color": "#166534" },
+                "contact": { "phone": "+8801711553300" },
+                "currency": "BDT"
+              }
+            }
+          }
+        },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/auth/otp/request": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Request one-time login code",
+        "security": [],
+        "requestBody": { "$ref": "#/components/requestBodies/OtpRequest" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Login with mobile and OTP",
+        "security": [],
+        "requestBody": { "$ref": "#/components/requestBodies/LoginRequest" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/auth/switch-project": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Set active project for current session",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SwitchProjectRequest" },
+              "example": { "project_id": "prj_towerB" }
+            }
+          }
+        },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/auth/me": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Current user, tenant, active project and role",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Revoke current token",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/subscription": {
+      "get": {
+        "tags": ["Subscription"],
+        "summary": "Current tenant subscription status",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/subscription/renew": {
+      "post": {
+        "tags": ["Subscription"],
+        "summary": "Renew tenant subscription by 1 year",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/subscription/trial": {
+      "post": {
+        "tags": ["Subscription"],
+        "summary": "Start/reset subscription trial period",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["trial_days"],
+                "properties": {
+                  "trial_days": { "type": "integer", "minimum": 1, "maximum": 365 }
+                }
+              },
+              "example": { "trial_days": 14 }
+            }
+          }
+        },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/projects": {
+      "get": {
+        "tags": ["Projects"],
+        "summary": "List projects accessible to caller",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      },
+      "post": {
+        "tags": ["Projects"],
+        "summary": "Create project",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": { "$ref": "#/components/requestBodies/ProjectCreate" },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/invitations": {
+      "post": {
+        "tags": ["Projects"],
+        "summary": "Invite or grant project role by mobile",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": { "$ref": "#/components/requestBodies/InvitationCreate" },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/members": {
+      "get": {
+        "tags": ["Members"],
+        "summary": "List members",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectIdHeader" },
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/MemberStatus" } },
+          { "name": "search", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      },
+      "post": {
+        "tags": ["Members"],
+        "summary": "Add member and validate share cap",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": { "$ref": "#/components/requestBodies/MemberCreate" },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/member-document-titles": {
+      "get": {
+        "tags": ["Members"],
+        "summary": "List active member document title options",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      },
+      "post": {
+        "tags": ["Members"],
+        "summary": "Create fixed member document title",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title"],
+                "properties": {
+                  "title": { "type": "string", "minLength": 2, "maxLength": 120 }
+                }
+              },
+              "example": { "title": "NID" }
+            }
+          }
+        },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/member-document-titles/{id}": {
+      "patch": {
+        "tags": ["Members"],
+        "summary": "Update or disable member document title",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string", "minLength": 2, "maxLength": 120 },
+                  "is_active": { "type": "boolean" }
+                }
+              },
+              "example": { "is_active": false }
+            }
+          }
+        },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/members/{id}/documents": {
+      "get": {
+        "tags": ["Members"],
+        "summary": "List member documents",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
+      },
+      "post": {
+        "tags": ["Members"],
+        "summary": "Upload member document against fixed title",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file", "title_id"],
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "title_id": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/members/{id}/documents/{documentId}/view": {
+      "get": {
+        "tags": ["Members"],
+        "summary": "View/download member document",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectIdHeader" },
+          { "$ref": "#/components/parameters/IdPath" },
+          { "name": "documentId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Attachment binary content" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/members/import/csv-format": {
+      "get": {
+        "tags": ["Members"],
+        "summary": "Download member import CSV format",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "description": "CSV template content" } }
+      }
+    },
+    "/v1/members/import": {
+      "post": {
+        "tags": ["Members"],
+        "summary": "Bulk import members from CSV",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                  "file": { "type": "string", "format": "binary" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/members/{id}": {
+      "get": {
+        "tags": ["Members"],
+        "summary": "Member detail with contribution summary",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
+      },
+      "patch": {
+        "tags": ["Members"],
+        "summary": "Update member contact, shares or status",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/MemberUpdate" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/schedules": {
+      "get": {
+        "tags": ["Schedules"],
+        "summary": "List schedules",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      },
+      "post": {
+        "tags": ["Schedules"],
+        "summary": "Create schedule and generate fixed per-member dues",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": { "$ref": "#/components/requestBodies/ScheduleCreate" },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/recurring-schedules": {
+      "get": {
+        "tags": ["Schedules"],
+        "summary": "List recurring schedule rules",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      },
+      "post": {
+        "tags": ["Schedules"],
+        "summary": "Create recurring schedule rule",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RecurringScheduleCreate" },
+              "example": {
+                "name": "Service Charge",
+                "unit_amount": 3000,
+                "frequency": "monthly",
+                "starts_on": "2026-08-01"
+              }
+            }
+          }
+        },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/recurring-schedules/{id}": {
+      "patch": {
+        "tags": ["Schedules"],
+        "summary": "Update recurring schedule rule",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RecurringScheduleUpdate" },
+              "example": { "unit_amount": 3500, "frequency": "quarterly" }
+            }
+          }
+        },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
+      },
+      "delete": {
+        "tags": ["Schedules"],
+        "summary": "Deactivate recurring schedule rule",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/schedules/{id}": {
+      "patch": {
+        "tags": ["Schedules"],
+        "summary": "Edit or close schedule",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/ScheduleUpdate" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/me/dues": {
+      "get": {
+        "tags": ["Dues"],
+        "summary": "Signed-in member dues",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/me/summary": {
+      "get": {
+        "tags": ["Dues"],
+        "summary": "Signed-in member contribution summary",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/dues": {
+      "get": {
+        "tags": ["Dues"],
+        "summary": "Staff due list",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectIdHeader" },
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/DueStatus" } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/deposits": {
+      "post": {
+        "tags": ["Deposits"],
+        "summary": "Submit member payment",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": { "$ref": "#/components/requestBodies/DepositCreate" },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      },
+      "get": {
+        "tags": ["Deposits"],
+        "summary": "Deposit queue",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectIdHeader" },
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/DepositStatus" } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/deposits/advance": {
+      "post": {
+        "tags": ["Deposits"],
+        "summary": "Submit advance member payment",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": { "$ref": "#/components/requestBodies/DepositAdvanceCreate" },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/deposits/{id}/approve": {
+      "post": {
+        "tags": ["Deposits"],
+        "summary": "Accountant approval: pending_accountant to pending_approver",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/deposits/{id}/confirm": {
+      "post": {
+        "tags": ["Deposits"],
+        "summary": "Approver confirmation: issue receipt and post ledger",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/deposits/{id}/reject": {
+      "post": {
+        "tags": ["Deposits"],
+        "summary": "Reject pending deposit",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/Reason" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/uploads": {
+      "post": {
+        "tags": ["Uploads"],
+        "summary": "Upload proof or invoice file",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "purpose": { "type": "string", "example": "deposit_proof" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/uploads/{id}/view": {
+      "get": {
+        "tags": ["Uploads"],
+        "summary": "View uploaded attachment",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "description": "Attachment binary content" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/me/receipts": {
+      "get": {
+        "tags": ["Receipts"],
+        "summary": "Signed-in member payment history",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/receipts/{id}": {
+      "get": {
+        "tags": ["Receipts"],
+        "summary": "Receipt detail",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/receipts/{id}/pdf": {
+      "get": {
+        "tags": ["Receipts"],
+        "summary": "Receipt PDF placeholder",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/expenses": {
+      "post": {
+        "tags": ["Expenses"],
+        "summary": "Initiate expense",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": { "$ref": "#/components/requestBodies/ExpenseCreate" },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      },
+      "get": {
+        "tags": ["Expenses"],
+        "summary": "List expenses",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectIdHeader" },
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/ExpenseStatus" } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/expenses/{id}/approve": {
+      "post": {
+        "tags": ["Expenses"],
+        "summary": "Approve pending expense",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/expenses/{id}/reject": {
+      "post": {
+        "tags": ["Expenses"],
+        "summary": "Reject pending expense",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/Reason" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/expenses/{id}/disburse": {
+      "post": {
+        "tags": ["Expenses"],
+        "summary": "Disburse approved expense from an account",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/ExpenseDisburse" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/accounts": {
+      "get": {
+        "tags": ["Accounts"],
+        "summary": "Account balances and total",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/accounts/{id}/transactions": {
+      "get": {
+        "tags": ["Accounts"],
+        "summary": "Movement history for one account",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/accounts/{id}/in-out": {
+      "get": {
+        "tags": ["Accounts"],
+        "summary": "List account cashflow entries as in/out",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/accounts/{id}/entries": {
+      "get": {
+        "tags": ["Accounts"],
+        "summary": "Alias of in/out cashflow endpoint",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/transfers": {
+      "post": {
+        "tags": ["Transfers"],
+        "summary": "Move funds between accounts",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": { "$ref": "#/components/requestBodies/TransferCreate" },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/dashboard": {
+      "get": {
+        "tags": ["Dashboard"],
+        "summary": "Role-aware dashboard counts",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/ledger": {
+      "get": {
+        "tags": ["Dashboard"],
+        "summary": "Ledger entries",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectIdHeader" },
+          { "name": "account_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "direction", "in": "query", "schema": { "$ref": "#/components/schemas/TransactionDirection" } },
+          { "name": "date_from", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "date_to", "in": "query", "schema": { "type": "string", "format": "date-time" } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/activity": {
+      "get": {
+        "tags": ["Activity"],
+        "summary": "Scoped immutable audit feed",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/notifications": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "Bell feed for recipient",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/notifications/{id}/read": {
+      "patch": {
+        "tags": ["Notifications"],
+        "summary": "Mark notification read",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/penalty-policy": {
+      "get": {
+        "tags": ["Penalties"],
+        "summary": "Resolve effective penalty policy",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectIdHeader" },
+          { "name": "schedule_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "scope", "in": "query", "schema": { "type": "string", "enum": ["client", "project"] } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      },
+      "put": {
+        "tags": ["Penalties"],
+        "summary": "Set client or project penalty policy",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectIdHeader" },
+          { "name": "scope", "in": "query", "schema": { "type": "string", "enum": ["client", "project"], "default": "project" } }
+        ],
+        "requestBody": { "$ref": "#/components/requestBodies/PenaltyPolicy" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/dues/{id}/penalty": {
+      "get": {
+        "tags": ["Penalties"],
+        "summary": "Penalty breakdown for one due",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/dues/{id}/penalty/waive": {
+      "post": {
+        "tags": ["Penalties"],
+        "summary": "Waive accrued penalty",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": { "$ref": "#/components/requestBodies/Reason" },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "ProvisioningApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Billing/provisioning secret configured via PROVISIONING_API_KEYS."
+      },
+      "ProvisioningAuthorization": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "Alternative form: Authorization: ApiKey <key>."
+      }
+    },
+    "parameters": {
+      "ProjectIdHeader": {
+        "name": "X-Project-Id",
+        "in": "header",
+        "required": false,
+        "schema": { "type": "string" },
+        "description": "Active project scope. If omitted, the session active project is used."
+      },
+      "IdPath": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string" }
+      }
+    },
+    "responses": {
+      "Success": {
+        "description": "Success response envelope",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/SuccessEnvelope" }
+          }
+        }
+      },
+      "Error": {
+        "description": "Error response envelope",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+          }
+        }
+      }
+    },
+    "requestBodies": {
+      "OtpRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/OtpRequest" },
+            "example": { "mobile": "+8801711553300" }
+          }
+        }
+      },
+      "LoginRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/LoginRequest" },
+            "example": {
+              "mobile": "+8801711553300",
+              "otp": "123456",
+              "tenant_slug": "green-valley"
+            }
+          }
+        }
+      },
+      "ProjectCreate": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ProjectCreate" },
+            "example": { "name": "Tower B Construction", "total_shares": 52 }
+          }
+        }
+      },
+      "InvitationCreate": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/InvitationCreate" },
+            "example": { "mobile": "+8801811553300", "role": "accountant" }
+          }
+        }
+      },
+      "MemberCreate": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/MemberCreate" },
+            "example": { "name": "Imran Hossain", "mobile": "+8801911553300", "shares": 2, "address": "Flat B-4" }
+          }
+        }
+      },
+      "MemberUpdate": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/MemberUpdate" },
+            "example": { "shares": 3, "status": "active" }
+          }
+        }
+      },
+      "ScheduleCreate": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ScheduleCreate" },
+            "example": { "name": "Roofing Assessment", "unit_amount": 50000, "due_date": "2026-11-20" }
+          }
+        }
+      },
+      "ScheduleUpdate": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ScheduleUpdate" },
+            "example": { "status": "closed" }
+          }
+        }
+      },
+      "DepositCreate": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/DepositCreate" },
+            "example": {
+              "schedule_id": "sch_q3struct",
+              "member_id": "mem_imran",
+              "amount": 60000,
+              "method": "bkash",
+              "proof_file_id": "file_8hg4k21",
+              "reference": "TrxID 8HG4K21"
+            }
+          }
+        }
+      },
+      "DepositAdvanceCreate": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/DepositAdvanceCreate" },
+            "example": {
+              "member_id": "mem_imran",
+              "account_id": "acc_cash",
+              "amount": 25000,
+              "method": "cash",
+              "proof_file_id": "file_8hg4k21",
+              "reference": "Advance collection"
+            }
+          }
+        }
+      },
+      "ExpenseCreate": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ExpenseCreate" },
+            "example": {
+              "title": "Rod & cement procurement",
+              "amount": 950000,
+              "category": "materials",
+              "vendor": "BSRM Steel",
+              "doc_file_id": "file_bsrm_inv"
+            }
+          }
+        }
+      },
+      "ExpenseDisburse": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ExpenseDisburse" },
+            "example": { "account_id": "acc_citybank" }
+          }
+        }
+      },
+      "TransferCreate": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/TransferCreate" },
+            "example": { "from_account_id": "acc_citybank", "to_account_id": "acc_brac", "amount": 500000, "note": "Move funds" }
+          }
+        }
+      },
+      "PenaltyPolicy": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/PenaltyPolicy" },
+            "example": { "enabled": true, "grace_months": 1, "onetime_percent": 10 }
+          }
+        }
+      },
+      "Reason": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ReasonRequest" },
+            "example": { "reason": "Invalid proof document" }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "SuccessEnvelope": {
+        "type": "object",
+        "required": ["ok", "data"],
+        "properties": {
+          "ok": { "type": "boolean", "example": true },
+          "data": { "type": "object", "additionalProperties": true },
+          "meta": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "required": ["ok", "error"],
+        "properties": {
+          "ok": { "type": "boolean", "example": false },
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": { "type": "string", "example": "VALIDATION" },
+              "message": { "type": "string", "example": "Invalid request" },
+              "fields": { "type": "object", "additionalProperties": true }
+            }
+          }
+        }
+      },
+      "Role": {
+        "type": "string",
+        "enum": ["owner", "member", "cashier", "accountant", "approver", "auditor"]
+      },
+      "Plan": {
+        "type": "string",
+        "enum": ["free", "standard", "pro"]
+      },
+      "MemberStatus": {
+        "type": "string",
+        "enum": ["active", "inactive"]
+      },
+      "ScheduleStatus": {
+        "type": "string",
+        "enum": ["draft", "active", "closed"]
+      },
+      "DueStatus": {
+        "type": "string",
+        "enum": ["upcoming", "due", "overdue", "partial", "paid", "waived"]
+      },
+      "RecurringFrequency": {
+        "type": "string",
+        "enum": ["weekly", "biweekly", "monthly", "bimonthly", "quarterly", "yearly"]
+      },
+      "DepositStatus": {
+        "type": "string",
+        "enum": ["submitted", "pending_accountant", "pending_approver", "confirmed", "rejected"]
+      },
+      "ExpenseStatus": {
+        "type": "string",
+        "enum": ["draft", "pending", "approved", "paid", "rejected"]
+      },
+      "ExpenseCategory": {
+        "type": "string",
+        "enum": ["materials", "construction", "professional", "services", "survey"]
+      },
+      "PaymentMethod": {
+        "type": "string",
+        "enum": ["bkash", "nagad", "bank", "cheque", "cash"]
+      },
+      "TransactionDirection": {
+        "type": "string",
+        "enum": ["in", "out", "transfer", "penalty"]
+      },
+      "PenaltyPolicy": {
+        "type": "object",
+        "required": ["enabled", "grace_months"],
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "grace_months": { "type": "integer", "minimum": 0, "maximum": 2 },
+          "onetime_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+          "recurring_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+          "recurring_period": { "type": "string", "enum": ["weekly", "monthly"] },
+          "compounding": { "type": "boolean" },
+          "max_percent": { "type": "number", "minimum": 0, "maximum": 100 }
+        }
+      },
+      "TenantProvisionRequest": {
+        "type": "object",
+        "required": ["name", "slug", "currency", "admin_name", "admin_mobile"],
+        "properties": {
+          "name": { "type": "string", "minLength": 2 },
+          "slug": { "type": "string", "minLength": 3, "pattern": "^[a-z0-9-]+$" },
+          "currency": { "type": "string", "minLength": 3, "maxLength": 3, "default": "BDT" },
+          "admin_name": { "type": "string", "minLength": 2 },
+          "admin_mobile": { "type": "string", "minLength": 6 },
+          "plan": { "$ref": "#/components/schemas/Plan" },
+          "trial_days": { "type": "integer", "minimum": 0, "maximum": 365, "default": 14 },
+          "penalty_policy": { "$ref": "#/components/schemas/PenaltyPolicy" }
+        }
+      },
+      "TenantUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "branding": { "type": "object", "additionalProperties": true },
+          "contact": { "type": "object", "additionalProperties": true },
+          "currency": { "type": "string", "minLength": 3, "maxLength": 3 }
+        }
+      },
+      "OtpRequest": {
+        "type": "object",
+        "required": ["mobile"],
+        "properties": { "mobile": { "type": "string", "minLength": 6 } }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["mobile"],
+        "properties": {
+          "mobile": { "type": "string", "minLength": 6 },
+          "otp": { "type": "string" },
+          "tenant_slug": { "type": "string" },
+          "project_id": { "type": "string" }
+        }
+      },
+      "SwitchProjectRequest": {
+        "type": "object",
+        "required": ["project_id"],
+        "properties": { "project_id": { "type": "string" } }
+      },
+      "ProjectCreate": {
+        "type": "object",
+        "required": ["name", "total_shares"],
+        "properties": {
+          "name": { "type": "string", "minLength": 2 },
+          "total_shares": { "type": "integer", "minimum": 1 },
+          "penalty_policy": { "$ref": "#/components/schemas/PenaltyPolicy" }
+        }
+      },
+      "InvitationCreate": {
+        "type": "object",
+        "required": ["mobile", "role"],
+        "properties": {
+          "mobile": { "type": "string", "minLength": 6 },
+          "role": { "$ref": "#/components/schemas/Role" },
+          "project_id": { "type": "string" }
+        }
+      },
+      "MemberCreate": {
+        "type": "object",
+        "required": ["name", "mobile", "shares"],
+        "properties": {
+          "name": { "type": "string", "minLength": 2 },
+          "mobile": { "type": "string", "minLength": 6 },
+          "shares": { "type": "integer", "minimum": 1 },
+          "address": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "previous_due_amount": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "MemberUpdate": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "mobile": { "type": "string" },
+          "shares": { "type": "integer", "minimum": 1 },
+          "address": { "type": "string", "nullable": true },
+          "email": { "type": "string", "format": "email", "nullable": true },
+          "status": { "$ref": "#/components/schemas/MemberStatus" }
+        }
+      },
+      "ScheduleCreate": {
+        "type": "object",
+        "required": ["name", "unit_amount", "due_date"],
+        "properties": {
+          "name": { "type": "string" },
+          "unit_amount": { "type": "integer", "minimum": 1 },
+          "due_date": { "type": "string", "format": "date" },
+          "status": { "$ref": "#/components/schemas/ScheduleStatus" },
+          "penalty_policy": { "$ref": "#/components/schemas/PenaltyPolicy" }
+        }
+      },
+      "RecurringScheduleCreate": {
+        "type": "object",
+        "required": ["name", "unit_amount", "frequency", "starts_on"],
+        "properties": {
+          "name": { "type": "string", "minLength": 2 },
+          "unit_amount": { "type": "integer", "minimum": 1 },
+          "frequency": { "$ref": "#/components/schemas/RecurringFrequency" },
+          "starts_on": { "type": "string", "format": "date" },
+          "is_active": { "type": "boolean", "default": true },
+          "penalty_policy": { "$ref": "#/components/schemas/PenaltyPolicy" }
+        }
+      },
+      "RecurringScheduleUpdate": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 2 },
+          "unit_amount": { "type": "integer", "minimum": 1 },
+          "frequency": { "$ref": "#/components/schemas/RecurringFrequency" },
+          "starts_on": { "type": "string", "format": "date" },
+          "is_active": { "type": "boolean" },
+          "penalty_policy": { "$ref": "#/components/schemas/PenaltyPolicy" }
+        }
+      },
+      "ScheduleUpdate": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "due_date": { "type": "string", "format": "date" },
+          "status": { "$ref": "#/components/schemas/ScheduleStatus" },
+          "penalty_policy": { "$ref": "#/components/schemas/PenaltyPolicy" }
+        }
+      },
+      "DepositCreate": {
+        "type": "object",
+        "required": ["schedule_id", "member_id", "amount", "method"],
+        "properties": {
+          "schedule_id": { "type": "string" },
+          "member_id": { "type": "string" },
+          "amount": { "type": "integer", "minimum": 1 },
+          "method": { "$ref": "#/components/schemas/PaymentMethod" },
+          "proof_file_id": { "type": "string" },
+          "reference": { "type": "string" },
+          "allocate": { "type": "string", "enum": ["penalty_first", "principal_first"], "default": "penalty_first" }
+        }
+      },
+      "DepositAdvanceCreate": {
+        "type": "object",
+        "required": ["member_id", "account_id", "amount", "method"],
+        "properties": {
+          "member_id": { "type": "string" },
+          "account_id": { "type": "string" },
+          "amount": { "type": "integer", "minimum": 1 },
+          "method": { "$ref": "#/components/schemas/PaymentMethod" },
+          "proof_file_id": { "type": "string" },
+          "reference": { "type": "string" }
+        }
+      },
+      "ReasonRequest": {
+        "type": "object",
+        "required": ["reason"],
+        "properties": { "reason": { "type": "string", "minLength": 3 } }
+      },
+      "ExpenseCreate": {
+        "type": "object",
+        "required": ["title", "amount", "category"],
+        "properties": {
+          "title": { "type": "string" },
+          "amount": { "type": "integer", "minimum": 1 },
+          "category": { "$ref": "#/components/schemas/ExpenseCategory" },
+          "vendor": { "type": "string" },
+          "doc_file_id": { "type": "string" }
+        }
+      },
+      "ExpenseDisburse": {
+        "type": "object",
+        "required": ["account_id"],
+        "properties": { "account_id": { "type": "string" } }
+      },
+      "TransferCreate": {
+        "type": "object",
+        "required": ["from_account_id", "to_account_id", "amount"],
+        "properties": {
+          "from_account_id": { "type": "string" },
+          "to_account_id": { "type": "string" },
+          "amount": { "type": "integer", "minimum": 1 },
+          "note": { "type": "string" }
+        }
+      }
+    }
+  }
+}

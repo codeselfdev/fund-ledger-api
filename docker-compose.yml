@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ledger-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fundledger
+      POSTGRES_USER: fundledger
+      POSTGRES_PASSWORD: fundledger
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fundledger -d fundledger"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  ledger-api-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ledger-api-service
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://fundledger:fundledger@postgres:5432/fundledger?schema=public
+      JWT_SECRET: replace-with-a-long-random-secret
+      JWT_EXPIRES_IN: 7d
+      PROVISIONING_API_KEYS: replace-with-secret-key-from-billing-backend
+      CORS_ORIGIN: http://localhost:3000
+      UPLOAD_STORAGE: local
+      UPLOAD_LOCAL_DIR: storage/uploads
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: 465
+      SMTP_USER: your-gmail-address@gmail.com
+      SMTP_PASS: replace-with-a-gmail-app-password
+      MAIL_FROM: your-gmail-address@gmail.com
+    volumes:
+      - uploads-data:/app/storage/uploads
+
+volumes:
+  postgres-data:
+  uploads-data:
