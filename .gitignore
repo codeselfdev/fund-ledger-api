@@ -4,4 +4,5 @@ dist
 .DS_Store
 coverage
 *.log
-uploads
+# Local upload storage directory (not the source module)
+/storage/uploads

@@ -95,6 +95,20 @@ The API stores an FCM token against the authenticated tenant user via:
 - `POST /v1/notifications/device-token`
 - `DELETE /v1/notifications/device-token`
 
+## Object Storage (Local or Cloudflare R2)
+
+Set `UPLOAD_STORAGE=local` (default) or `UPLOAD_STORAGE=r2`.
+
+For R2, configure:
+
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET`
+- `R2_ENDPOINT` (optional; defaults to `https://<account_id>.r2.cloudflarestorage.com`)
+
+`/v1/uploads/*` and member document upload/view APIs use the same storage backend.
+
 ## Roles
 
 - `owner`: tenant admin, project creation, invitations, tenant and penalty policy settings

@@ -1,13 +1,10 @@
 import { Router } from "express";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import path from "node:path";
 import multer from "multer";
 import { nanoid } from "nanoid";
 import type { Prisma } from "@prisma/client";
 import { asyncHandler } from "../../core/http/async-handler.js";
-import { badRequest, forbidden, notFound } from "../../core/http/api-error.js";
+import { ApiError, badRequest, forbidden, notFound } from "../../core/http/api-error.js";
 import { created, ok } from "../../core/http/response.js";
-import { env } from "../../config/env.js";
 import { prisma } from "../../core/prisma/client.js";
 import { requireProject, requireRoles } from "../../core/security/auth.middleware.js";
 import { requireProjectContext } from "../../core/security/auth.context.js";
@@ -15,13 +12,13 @@ import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { z } from "zod";
+import { deleteObject, readObject, StorageObjectNotFoundError, storeObject } from "../../core/storage/object-storage.service.js";
 
 const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }
 });
-const localUploadRoot = path.resolve(process.cwd(), env.uploadLocalDir);
 
 const titleCreateSchema = z.object({
   title: z.string().min(2).max(120)
@@ -48,15 +45,6 @@ type MemberDocumentTitle = {
 
 function sanitizeFilename(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
-function resolveLocalUploadPath(storageKey: string) {
-  const absolutePath = path.resolve(localUploadRoot, storageKey);
-  const rootPrefix = localUploadRoot.endsWith(path.sep) ? localUploadRoot : `${localUploadRoot}${path.sep}`;
-  if (absolutePath !== localUploadRoot && !absolutePath.startsWith(rootPrefix)) {
-    throw badRequest("Invalid upload path");
-  }
-  return absolutePath;
 }
 
 function hasMemberDocumentAccess(auth: { memberId: string | null; roles: string[] }, targetMemberId: string) {
@@ -192,7 +180,6 @@ router.post("/members/:id/documents", requireProject, requireRoles("any"), valid
   const body = memberDocumentUploadSchema.parse(req.body);
   if (!hasMemberDocumentAccess(auth, memberId)) throw forbidden();
   if (!req.file) throw badRequest("file is required");
-  if (env.uploadStorage !== "local") throw badRequest("Only local upload storage is currently supported");
 
   const [member, tenant] = await Promise.all([
     prisma.member.findFirst({
@@ -211,9 +198,13 @@ router.post("/members/:id/documents", requireProject, requireRoles("any"), valid
   if (!title) throw badRequest("Invalid title_id");
 
   const storageKey = `${auth.tenantId}/${auth.projectId}/member/${memberId}/${nanoid()}-${sanitizeFilename(req.file.originalname)}`;
-  const filePath = resolveLocalUploadPath(storageKey);
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, req.file.buffer);
+  await storeObject({
+    storageKey,
+    buffer: req.file.buffer,
+    contentType: req.file.mimetype
+  }).catch(() => {
+    throw new ApiError(500, "STORAGE_WRITE_FAILED", "Failed to store member document");
+  });
 
   let record;
   try {
@@ -230,7 +221,7 @@ router.post("/members/:id/documents", requireProject, requireRoles("any"), valid
       }
     });
   } catch (error) {
-    await unlink(filePath).catch(() => undefined);
+    await deleteObject(storageKey);
     throw error;
   }
 
@@ -306,7 +297,6 @@ router.get("/members/:id/documents/:documentId/view", requireProject, requireRol
   const auth = requireProjectContext(req);
   const { id: memberId, documentId } = req.params as { id: string; documentId: string };
   if (!hasMemberDocumentAccess(auth, memberId)) throw forbidden();
-  if (env.uploadStorage !== "local") throw badRequest("Only local upload storage is currently supported");
 
   const record = await prisma.upload.findFirst({
     where: {
@@ -318,15 +308,20 @@ router.get("/members/:id/documents/:documentId/view", requireProject, requireRol
   });
   if (!record) throw notFound("Member document not found");
 
-  const filePath = resolveLocalUploadPath(record.storageKey);
   let fileBuffer: Buffer;
+  let contentType: string | undefined;
   try {
-    fileBuffer = await readFile(filePath);
-  } catch {
-    throw notFound("Member document content not found on storage");
+    const object = await readObject(record.storageKey);
+    fileBuffer = object.buffer;
+    contentType = object.contentType;
+  } catch (error) {
+    if (error instanceof StorageObjectNotFoundError) {
+      throw notFound("Member document content not found on storage");
+    }
+    throw new ApiError(500, "STORAGE_READ_FAILED", "Failed to read member document");
   }
 
-  res.setHeader("Content-Type", record.mimeType || "application/octet-stream");
+  res.setHeader("Content-Type", contentType || record.mimeType || "application/octet-stream");
   res.setHeader("Content-Length", String(fileBuffer.length));
   res.setHeader("Content-Disposition", `inline; filename="${sanitizeFilename(record.fileName)}"`);
   return res.status(200).send(fileBuffer);
