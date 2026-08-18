@@ -14,13 +14,30 @@ Errors use:
 
 ## Clients, Projects & Sessions
 
-`POST /v1/tenants` is API-key protected for paid provisioning flows. Send `X-API-Key: <key>` or `Authorization: ApiKey <key>`. Configure accepted keys with `PROVISIONING_API_KEYS`.
+### Self-serve onboarding (recommended)
+
+Short flow: **signup → optional project setup → optional invites**. Project and invites can be skipped. New orgs get **~6 months free** (`182` days), then yearly renewal.
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| POST | `/v1/onboarding/signup` | public | Create org + owner + first project + 6‑month trial; returns token |
+| GET | `/v1/onboarding/status` | any | Onboarding progress + subscription summary |
+| POST | `/v1/onboarding/project` | owner | Set project name / total shares (marks project step done) |
+| POST | `/v1/onboarding/invites` | owner | Invite teammates (marks invites step done) |
+| POST | `/v1/onboarding/skip` | owner | Skip `project` or `invites` |
+| POST | `/v1/onboarding/complete` | owner | Finish wizard (auto-skips remaining optional steps) |
+
+`GET /v1/auth/me` also returns `onboarding` and `subscription` so the app can resume or hide the wizard.
+
+### Provisioning & core APIs
+
+`POST /v1/tenants` remains API-key protected for billing/backend provisioning. Send `X-API-Key: <key>` or `Authorization: ApiKey <key>`. Configure accepted keys with `PROVISIONING_API_KEYS`.
 
 When a tenant subscription expires, operational APIs are blocked for all tenant users. Subscription APIs remain available so the mobile app can display status and trigger renewal.
 
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
-| POST | `/v1/tenants` | api_key | Provision tenant, first owner, default project, default cash account, and subscription trial (`trial_days`) |
+| POST | `/v1/tenants` | api_key | Provision tenant, first owner, default project, default cash account, and subscription trial (`trial_days`, default 182) |
 | GET | `/v1/tenants/current` | any | Current tenant details |
 | PATCH | `/v1/tenants/current` | owner | Update tenant branding, contact, locale, currency |
 | GET | `/v1/projects` | any | Projects accessible to caller |
@@ -29,7 +46,7 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | POST | `/v1/auth/otp/request` | public | Create one-time login code for registered mobile |
 | POST | `/v1/auth/login` | public | Login with mobile and OTP; returns bearer token and memberships |
 | POST | `/v1/auth/switch-project` | any | Set active project for current session |
-| GET | `/v1/auth/me` | any | Current user, tenant, active project, roles, linked member, and `can_pay_for_members` flag |
+| GET | `/v1/auth/me` | any | Current user, tenant, active project, roles, linked member, `can_pay_for_members`, onboarding, subscription |
 | POST | `/v1/auth/logout` | any | Revoke current token |
 | GET | `/v1/subscription` | any | Current tenant subscription status for mobile gating |
 | POST | `/v1/subscription/renew` | owner, admin | Renew subscription for 1 year |

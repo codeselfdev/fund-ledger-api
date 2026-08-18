@@ -13,6 +13,8 @@ type StoredSubscription = {
 };
 
 const DEFAULT_RENEWAL_TERM_YEARS = 1;
+/** ~6 months free use before yearly payment is required. */
+export const DEFAULT_TRIAL_DAYS = 182;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

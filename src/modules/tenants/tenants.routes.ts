@@ -11,9 +11,8 @@ import { requireActiveSubscription } from "../../core/security/subscription.midd
 import { requireAuthContext, requireProjectContext } from "../../core/security/auth.context.js";
 import { validateBody } from "../../core/validation/validate.js";
 import { optionalPenaltyPolicySchema } from "../../core/validation/common.schemas.js";
-import { createSessionToken } from "../auth/auth.service.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
-import { createTrialSubscription } from "../../core/subscription/subscription.service.js";
+import { provisionTenant } from "./tenants.service.js";
 
 const router = Router();
 
@@ -24,7 +23,7 @@ const provisionTenantSchema = z.object({
   admin_name: z.string().min(2),
   admin_mobile: z.string().min(6),
   plan: z.nativeEnum(TenantPlan).default("free"),
-  trial_days: z.number().int().min(0).max(365).default(14),
+  trial_days: z.number().int().min(0).max(365).default(182),
   penalty_policy: optionalPenaltyPolicySchema
 });
 
@@ -55,81 +54,21 @@ function mergeContact(currentContact: unknown, patchContact: Record<string, unkn
 
 router.post("/", requireProvisioningApiKey, validateBody(provisionTenantSchema), asyncHandler(async (req, res) => {
   const body = req.body as z.infer<typeof provisionTenantSchema>;
-  const result = await prisma.$transaction(async (tx) => {
-    const tenant = await tx.tenant.create({
-      data: {
-        name: body.name,
-        slug: body.slug,
-        currency: body.currency.toUpperCase(),
-        plan: body.plan,
-        contact: jsonValue({ subscription: createTrialSubscription(body.trial_days) }),
-        penaltyPolicy: body.penalty_policy
-      }
-    });
-
-    const project = await tx.project.create({
-      data: {
-        tenantId: tenant.id,
-        name: "Default Project",
-        totalShares: 1,
-        penaltyPolicy: body.penalty_policy
-      }
-    });
-
-    const user = await tx.user.create({
-      data: {
-        tenantId: tenant.id,
-        name: body.admin_name,
-        mobile: body.admin_mobile
-      }
-    });
-
-    await tx.projectMembership.create({
-      data: {
-        tenantId: tenant.id,
-        projectId: project.id,
-        userId: user.id,
-        role: "owner"
-      }
-    });
-
-    await tx.account.create({
-      data: {
-        tenantId: tenant.id,
-        projectId: project.id,
-        name: "Cash",
-        type: "cash",
-        isDefault: true
-      }
-    });
-
-    return { tenant, project, user };
-  });
-
-  const { token } = await createSessionToken({
-    tenantId: result.tenant.id,
-    userId: result.user.id,
-    activeProjectId: result.project.id
-  });
-
-  await writeAudit({
-    tenantId: result.tenant.id,
-    projectId: result.project.id,
-    actorUserId: result.user.id,
-    action: "tenant.provisioned",
-    entityType: "tenant",
-    entityId: result.tenant.id,
-    after: {
-      tenant_id: result.tenant.id,
-      default_project_id: result.project.id,
-      owner_user_id: result.user.id
-    }
+  const result = await provisionTenant({
+    name: body.name,
+    slug: body.slug,
+    currency: body.currency,
+    adminName: body.admin_name,
+    adminMobile: body.admin_mobile,
+    plan: body.plan,
+    trialDays: body.trial_days,
+    penaltyPolicy: jsonValue(body.penalty_policy)
   });
 
   return created(res, {
-    tenant_id: result.tenant.id,
-    default_project_id: result.project.id,
-    token
+    tenant_id: result.tenantId,
+    default_project_id: result.defaultProjectId,
+    token: result.token
   });
 }));
 

@@ -10,7 +10,9 @@
     "lint": "eslint .",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "create:super-admin": "tsx src/scripts/create-super-admin.ts",
+    "create:super-admin:prod": "node dist/scripts/create-super-admin.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",

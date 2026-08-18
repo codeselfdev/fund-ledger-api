@@ -10,6 +10,8 @@ import { hashToken } from "../../core/security/jwt.js";
 import { validateBody } from "../../core/validation/validate.js";
 import { createSessionToken, issueOtp, verifyOtp } from "./auth.service.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
+import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
+import { getOnboardingState, summarizeOnboarding } from "../../core/onboarding/onboarding.service.js";
 import { canUserPayOnBehalf } from "../../core/security/deposit-delegate.service.js";
 
 const router = Router();
@@ -151,6 +153,8 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
   const canPayForMembers = canPayForMembersByRole || (
     auth.projectId ? canUserPayOnBehalf(user.tenant.contact, auth.projectId, auth.userId) : false
   );
+  const onboarding = summarizeOnboarding(getOnboardingState(user.tenant.contact));
+  const subscription = evaluateSubscription(user.tenant.contact);
 
   return ok(res, {
     user: { id: user.id, name: user.name, mobile: user.mobile, email: user.email },
@@ -164,7 +168,15 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
       project_name: membership.project.name,
       role: membership.role,
       member_id: membership.memberId
-    }))
+    })),
+    onboarding,
+    subscription: {
+      status: subscription.status,
+      has_access: subscription.has_access,
+      trial_ends_at: subscription.trial_ends_at,
+      days_left: subscription.days_left,
+      renewal_term_years: subscription.renewal_term_years
+    }
   });
 }));
 

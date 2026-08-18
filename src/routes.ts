@@ -28,10 +28,12 @@ import { subscriptionRouter } from "./modules/subscription/subscription.routes.j
 import { tenantsRouter } from "./modules/tenants/tenants.routes.js";
 import { transfersRouter } from "./modules/transfers/transfers.routes.js";
 import { uploadsRouter } from "./modules/uploads/uploads.routes.js";
+import { onboardingRouter } from "./modules/onboarding/onboarding.routes.js";
 
 export function registerRoutes(app: Express) {
   app.use("/v1/tenants", tenantsRouter);
   app.use("/v1/auth", authRouter);
+  app.use("/v1/onboarding", onboardingRouter);
 
   app.use(authenticate);
   app.use("/v1/subscription", subscriptionRouter);

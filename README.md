@@ -47,6 +47,111 @@ Health check:
 curl http://localhost:4000/health
 ```
 
+## Onboarding (self-serve)
+
+Users sign up themselves. Flow is short and skippable:
+
+```text
+Signup  →  Project setup (skip OK)  →  Invite team (skip OK)  →  Done
+```
+
+Every new org gets **6 months free** (~182 days). After that, renew for **1 year** via `POST /v1/subscription/renew`.
+
+### 1. Signup
+
+```bash
+curl -sS -X POST "$API/v1/onboarding/signup" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "org_name": "Green Valley Society",
+    "slug": "green-valley",
+    "name": "Salahuddin Ahmed",
+    "mobile": "+8801711553300",
+    "email": "owner@example.com",
+    "project_name": "Tower A"
+  }'
+```
+
+Returns `token`, `project.id`, `onboarding`, and trial `subscription`.
+
+Use:
+
+```http
+Authorization: Bearer <token>
+X-Project-Id: <project.id>
+```
+
+### 2. Project setup (optional)
+
+```bash
+curl -sS -X POST "$API/v1/onboarding/project" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Project-Id: $PROJECT_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Tower A Construction","total_shares":52}'
+```
+
+Or skip:
+
+```bash
+curl -sS -X POST "$API/v1/onboarding/skip" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"step":"project"}'
+```
+
+### 3. Invite teammates (optional)
+
+```bash
+curl -sS -X POST "$API/v1/onboarding/invites" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Project-Id: $PROJECT_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "invites": [
+      { "name": "Project Admin", "mobile": "+8801811553300", "email": "admin@example.com", "role": "admin" },
+      { "name": "Member One", "mobile": "+8801911553300", "role": "member" }
+    ]
+  }'
+```
+
+Or skip `invites`, or finish everything:
+
+```bash
+curl -sS -X POST "$API/v1/onboarding/complete" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+`GET /v1/auth/me` and `GET /v1/onboarding/status` expose progress so the app can resume or hide the wizard.
+
+## Bootstrap via CLI (optional)
+
+For internal/ops setup without the mobile signup screen:
+
+```bash
+npm run create:super-admin -- \
+  --name "Green Valley Society" \
+  --slug green-valley \
+  --admin-name "Salahuddin Ahmed" \
+  --admin-mobile "+8801711553300" \
+  --admin-email "owner@example.com" \
+  --trial-days 182 \
+  --print-otp
+```
+
+Coolify / Docker:
+
+```bash
+npm run create:super-admin:prod -- \
+  --name "Green Valley Society" \
+  --slug green-valley \
+  --admin-name "Salahuddin Ahmed" \
+  --admin-mobile "+8801711553300" \
+  --admin-email "owner@example.com" \
+  --trial-days 182 \
+  --print-otp
+```
+
 ## Provisioning Key
 
 Tenant signup is not open-public. `POST /v1/tenants` is intended to be called by your billing/backend flow after a one-time or monthly payment check succeeds.
