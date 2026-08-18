@@ -3,7 +3,7 @@ import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { Role } from "@prisma/client";
 import { asyncHandler } from "../../core/http/async-handler.js";
-import { badRequest, conflict, forbidden } from "../../core/http/api-error.js";
+import { badRequest, conflict, forbidden, notFound } from "../../core/http/api-error.js";
 import { created, ok } from "../../core/http/response.js";
 import { prisma } from "../../core/prisma/client.js";
 import {
@@ -401,5 +401,8 @@ router.post("/complete", authenticate, requireProject, requireRoles("owner"), as
 
   return ok(res, { onboarding: next.summary });
 }));
+
+// Prevent unmatched /v1/onboarding/* from falling through to global auth middleware.
+router.use((_req, _res, next) => next(notFound("Onboarding endpoint not found")));
 
 export { router as onboardingRouter };
