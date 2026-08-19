@@ -97,7 +97,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
         mobile: user.mobile,
         email: user.email
       },
-      defaultShares: 0
+      defaultShares: 1
     });
 
     await tx.projectMembership.create({

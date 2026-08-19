@@ -30,6 +30,10 @@ const createMembershipSchema = z
     path: ["user_id"]
   });
 
+function defaultShareSeedForRole(role: Role) {
+  return role === "owner" || role === "admin" || role === "accountant" ? 1 : 0;
+}
+
 router.get("/", requireProject, requireRoles("owner", "admin"), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const memberships = await prisma.projectMembership.findMany({
@@ -71,7 +75,7 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
             mobile: user.mobile,
             email: user.email
           },
-          defaultShares: 0
+          defaultShares: defaultShareSeedForRole(existing.role)
         });
         return tx.projectMembership.update({
           where: { id: existing.id },
@@ -103,7 +107,7 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
         mobile: user.mobile,
         email: user.email
       },
-      defaultShares: 0
+      defaultShares: defaultShareSeedForRole(body.role)
     });
 
     if (body.role === "member") {
@@ -208,7 +212,7 @@ router.patch("/:id", requireProject, requireRoles("owner", "admin"), validatePar
         tenantId: auth.tenantId,
         projectId: auth.projectId,
         user: targetUser,
-        defaultShares: 0
+        defaultShares: defaultShareSeedForRole(nextRole)
       });
       memberId = ensured.memberId;
     }

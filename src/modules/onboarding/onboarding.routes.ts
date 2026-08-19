@@ -307,7 +307,7 @@ router.post("/accounting", authenticate, requireProject, requireRoles("owner"), 
   if (!progress) throw badRequest("Onboarding is not initialized for this tenant");
   assertOnboardingProject(auth.projectId, progress.projectId);
 
-  const { user, nextProgress, memberId } = await prisma.$transaction(async (tx) => {
+  const { user, nextProgress, memberId, memberShares } = await prisma.$transaction(async (tx) => {
     const user = await tx.user.upsert({
       where: {
         tenantId_mobile: {
@@ -353,7 +353,7 @@ router.post("/accounting", authenticate, requireProject, requireRoles("owner"), 
         mobile: user.mobile,
         email: user.email
       },
-      defaultShares: 0
+      defaultShares: 1
     });
 
     await tx.projectMembership.updateMany({
@@ -386,7 +386,7 @@ router.post("/accounting", authenticate, requireProject, requireRoles("owner"), 
       select: onboardingProgressSelect
     });
 
-    return { user, nextProgress, memberId: ensured.memberId };
+    return { user, nextProgress, memberId: ensured.memberId, memberShares: ensured.shares };
   });
 
   await writeAudit({
@@ -410,6 +410,7 @@ router.post("/accounting", authenticate, requireProject, requireRoles("owner"), 
       mobile: user.mobile,
       email: user.email,
       member_id: memberId,
+      shares: memberShares,
       roles: ["accountant", "member"]
     },
     onboarding: summarizeOnboarding(nextProgress)
@@ -547,6 +548,31 @@ router.post("/shareholders", authenticate, requireProject, requireRoles("owner")
   if (!progress) throw badRequest("Onboarding is not initialized for this tenant");
   assertOnboardingProject(auth.projectId, progress.projectId);
   assertStepCompleted(progress.accountsStepStatus, "Accounts setup");
+
+  await prisma.$transaction(async (tx) => {
+    const activeManagementMemberships = await tx.projectMembership.findMany({
+      where: {
+        tenantId: auth.tenantId,
+        projectId: progress.projectId,
+        isActive: true,
+        role: { in: ["owner", "admin", "accountant"] }
+      },
+      include: {
+        user: {
+          select: { id: true, name: true, mobile: true, email: true }
+        }
+      }
+    });
+
+    for (const membership of activeManagementMemberships) {
+      await ensureUserProjectMember(tx, {
+        tenantId: auth.tenantId,
+        projectId: progress.projectId,
+        user: membership.user,
+        defaultShares: 1
+      });
+    }
+  });
 
   const seenMobiles = new Set<string>();
   for (const member of normalizedMembers) {

@@ -94,7 +94,7 @@ projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validat
       tenantId: auth.tenantId,
       projectId: createdProject.id,
       user: actor,
-      defaultShares: 0
+      defaultShares: 1
     });
 
     await tx.account.create({
@@ -203,6 +203,7 @@ invitationsRouter.post("/", requireProject, requireRoles("owner", "approver", "a
   const project = await prisma.project.findFirstOrThrow({
     where: { id: projectId, tenantId: auth.tenantId }
   });
+  const shouldSeedShareholder = body.role === "owner" || body.role === "admin" || body.role === "accountant";
 
   const { invitation, user } = await prisma.$transaction(async (tx) => {
     const user = await tx.user.upsert({
@@ -230,7 +231,7 @@ invitationsRouter.post("/", requireProject, requireRoles("owner", "approver", "a
         mobile: user.mobile,
         email: user.email
       },
-      defaultShares: 0
+      defaultShares: shouldSeedShareholder ? 1 : 0
     });
 
     if (body.role !== "member") {
