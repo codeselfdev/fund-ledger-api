@@ -13,6 +13,7 @@ import {
 } from "../../core/onboarding/onboarding.service.js";
 import { authenticate, requireProject, requireRoles } from "../../core/security/auth.middleware.js";
 import { requireAuthContext, requireProjectContext } from "../../core/security/auth.context.js";
+import { ensureUserProjectMember } from "../../core/security/member-link.service.js";
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
 import { validateBody } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
@@ -158,6 +159,14 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
   }
 
   const bundle = await loadOnboardingBundle(result.tenantId);
+  const ownerMember = await prisma.member.findFirst({
+    where: {
+      tenantId: result.tenantId,
+      projectId: result.defaultProjectId,
+      userId: result.ownerUserId
+    },
+    select: { id: true, shares: true }
+  });
 
   return created(res, {
     token: result.token,
@@ -177,6 +186,11 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
       name: result.projectName
     },
     active_project_id: result.defaultProjectId,
+    default_shareholder: {
+      seeded: Boolean(ownerMember),
+      member_id: ownerMember?.id ?? null,
+      shares: ownerMember?.shares ?? 0
+    },
     onboarding: bundle.onboarding,
     subscription: {
       status: bundle.subscription.status,
@@ -195,6 +209,9 @@ router.get("/status", authenticate, requireRoles("any"), asyncHandler(async (req
   let checks: {
     project_id: string | null;
     accountant_set: boolean;
+    accountant_member_linked: boolean;
+    owner_member_id: string | null;
+    accountant_member_id: string | null;
     accounts_count: number;
     shareholders_count: number;
     shares_assigned: number;
@@ -202,6 +219,9 @@ router.get("/status", authenticate, requireRoles("any"), asyncHandler(async (req
   } = {
     project_id: bundle.progress?.projectId ?? null,
     accountant_set: false,
+    accountant_member_linked: false,
+    owner_member_id: null,
+    accountant_member_id: null,
     accounts_count: 0,
     shareholders_count: 0,
     shares_assigned: 0,
@@ -209,7 +229,17 @@ router.get("/status", authenticate, requireRoles("any"), asyncHandler(async (req
   };
 
   if (bundle.progress) {
-    const [accountantMembership, accountCount, membersAggregate, membersCount, project] = await Promise.all([
+    const [ownerMembership, accountantMembership, accountCount, membersAggregate, membersCount, project] = await Promise.all([
+      prisma.projectMembership.findFirst({
+        where: {
+          tenantId: auth.tenantId,
+          projectId: bundle.progress.projectId,
+          role: "owner",
+          isActive: true
+        },
+        orderBy: { createdAt: "asc" },
+        select: { memberId: true }
+      }),
       bundle.progress.accountantUserId
         ? prisma.projectMembership.findFirst({
           where: {
@@ -219,7 +249,7 @@ router.get("/status", authenticate, requireRoles("any"), asyncHandler(async (req
             role: "accountant",
             isActive: true
           },
-          select: { id: true }
+          select: { id: true, memberId: true }
         })
         : Promise.resolve(null),
       prisma.account.count({
@@ -241,6 +271,9 @@ router.get("/status", authenticate, requireRoles("any"), asyncHandler(async (req
     checks = {
       project_id: bundle.progress.projectId,
       accountant_set: Boolean(accountantMembership),
+      accountant_member_linked: Boolean(accountantMembership?.memberId),
+      owner_member_id: ownerMembership?.memberId ?? null,
+      accountant_member_id: accountantMembership?.memberId ?? null,
       accounts_count: accountCount,
       shareholders_count: membersCount,
       shares_assigned: membersAggregate._sum.shares ?? 0,
@@ -274,7 +307,7 @@ router.post("/accounting", authenticate, requireProject, requireRoles("owner"), 
   if (!progress) throw badRequest("Onboarding is not initialized for this tenant");
   assertOnboardingProject(auth.projectId, progress.projectId);
 
-  const { user, nextProgress } = await prisma.$transaction(async (tx) => {
+  const { user, nextProgress, memberId } = await prisma.$transaction(async (tx) => {
     const user = await tx.user.upsert({
       where: {
         tenantId_mobile: {
@@ -311,6 +344,28 @@ router.post("/accounting", authenticate, requireProject, requireRoles("owner"), 
       }
     });
 
+    const ensured = await ensureUserProjectMember(tx, {
+      tenantId: auth.tenantId,
+      projectId: progress.projectId,
+      user: {
+        id: user.id,
+        name: user.name,
+        mobile: user.mobile,
+        email: user.email
+      },
+      defaultShares: 0
+    });
+
+    await tx.projectMembership.updateMany({
+      where: {
+        tenantId: auth.tenantId,
+        projectId: progress.projectId,
+        userId: user.id,
+        role: "accountant"
+      },
+      data: { memberId: ensured.memberId }
+    });
+
     const nextState = recomputeOnboardingStatus({
       organizationStepStatus: progress.organizationStepStatus,
       accountantStepStatus: "done",
@@ -331,7 +386,7 @@ router.post("/accounting", authenticate, requireProject, requireRoles("owner"), 
       select: onboardingProgressSelect
     });
 
-    return { user, nextProgress };
+    return { user, nextProgress, memberId: ensured.memberId };
   });
 
   await writeAudit({
@@ -353,7 +408,9 @@ router.post("/accounting", authenticate, requireProject, requireRoles("owner"), 
       user_id: user.id,
       name: user.name,
       mobile: user.mobile,
-      email: user.email
+      email: user.email,
+      member_id: memberId,
+      roles: ["accountant", "member"]
     },
     onboarding: summarizeOnboarding(nextProgress)
   });
@@ -478,6 +535,10 @@ router.post("/shareholders", authenticate, requireProject, requireRoles("owner")
   const auth = requireProjectContext(req);
   assertOwnerOnboarding(auth.roles);
   const body = req.body as z.infer<typeof shareholdersSetupSchema>;
+  const normalizedMembers = body.members.map((member) => ({
+    ...member,
+    mobile: member.mobile.trim()
+  }));
 
   const progress = await prisma.onboardingProgress.findUnique({
     where: { tenantId: auth.tenantId },
@@ -488,11 +549,11 @@ router.post("/shareholders", authenticate, requireProject, requireRoles("owner")
   assertStepCompleted(progress.accountsStepStatus, "Accounts setup");
 
   const seenMobiles = new Set<string>();
-  for (const member of body.members) {
-    if (seenMobiles.has(member.mobile.trim())) {
+  for (const member of normalizedMembers) {
+    if (seenMobiles.has(member.mobile)) {
       throw badRequest("Duplicate member mobile numbers in payload", { mobile: member.mobile });
     }
-    seenMobiles.add(member.mobile.trim());
+    seenMobiles.add(member.mobile);
   }
 
   const [project, existingMembers, sharesAggregate] = await Promise.all([
@@ -504,9 +565,9 @@ router.post("/shareholders", authenticate, requireProject, requireRoles("owner")
       where: {
         tenantId: auth.tenantId,
         projectId: progress.projectId,
-        mobile: { in: body.members.map((member) => member.mobile) }
+        mobile: { in: normalizedMembers.map((member) => member.mobile) }
       },
-      select: { mobile: true }
+      select: { id: true, mobile: true, shares: true, status: true }
     }),
     prisma.member.aggregate({
       where: { tenantId: auth.tenantId, projectId: progress.projectId, status: "active" },
@@ -514,15 +575,12 @@ router.post("/shareholders", authenticate, requireProject, requireRoles("owner")
     })
   ]);
 
-  if (existingMembers.length > 0) {
-    throw badRequest("Some shareholder mobile numbers already exist in this project", {
-      mobiles: existingMembers.map((member) => member.mobile)
-    });
-  }
-
+  const existingByMobile = new Map(existingMembers.map((member) => [member.mobile.trim(), member]));
   const existingShares = sharesAggregate._sum.shares ?? 0;
-  const incomingShares = body.members.reduce((sum, member) => sum + member.shares, 0);
-  const nextShares = existingShares + incomingShares;
+  const incomingShares = normalizedMembers.reduce((sum, member) => sum + member.shares, 0);
+  const matchedActiveShares = existingMembers.reduce((sum, member) =>
+    sum + (member.status === "active" ? member.shares : 0), 0);
+  const nextShares = existingShares - matchedActiveShares + incomingShares;
   if (nextShares > project.totalShares) {
     throw badRequest("Total shares exceed project share cap", {
       total_shares: project.totalShares,
@@ -530,16 +588,22 @@ router.post("/shareholders", authenticate, requireProject, requireRoles("owner")
     });
   }
 
-  const { createdMembers, nextProgress } = await prisma.$transaction(async (tx) => {
-    const createdMembers: Array<{
+  const { upsertedMembers, createdCount, updatedCount, nextProgress } = await prisma.$transaction(async (tx) => {
+    const upsertedMembers: Array<{
       id: string;
       name: string;
       mobile: string;
       email: string | null;
       shares: number;
       status: string;
+      otpRequired: boolean;
     }> = [];
-    for (const member of body.members) {
+    let createdCount = 0;
+    let updatedCount = 0;
+
+    for (const member of normalizedMembers) {
+      const existingMember = existingByMobile.get(member.mobile) ?? null;
+
       const user = await tx.user.upsert({
         where: {
           tenantId_mobile: {
@@ -559,18 +623,34 @@ router.post("/shareholders", authenticate, requireProject, requireRoles("owner")
         }
       });
 
-      const createdMember = await tx.member.create({
-        data: {
-          tenantId: auth.tenantId,
-          projectId: progress.projectId,
-          userId: user.id,
-          name: member.name,
-          mobile: member.mobile,
-          email: member.email,
-          address: member.address,
-          shares: member.shares
-        }
-      });
+      const savedMember = existingMember
+        ? await tx.member.update({
+          where: { id: existingMember.id },
+          data: {
+            userId: user.id,
+            name: member.name,
+            mobile: member.mobile,
+            email: member.email,
+            address: member.address,
+            shares: member.shares,
+            status: "active"
+          }
+        })
+        : await tx.member.create({
+          data: {
+            tenantId: auth.tenantId,
+            projectId: progress.projectId,
+            userId: user.id,
+            name: member.name,
+            mobile: member.mobile,
+            email: member.email,
+            address: member.address,
+            shares: member.shares
+          }
+        });
+
+      if (existingMember) updatedCount += 1;
+      else createdCount += 1;
 
       await tx.projectMembership.upsert({
         where: {
@@ -580,23 +660,34 @@ router.post("/shareholders", authenticate, requireProject, requireRoles("owner")
             role: "member"
           }
         },
-        update: { memberId: createdMember.id, isActive: true },
+        update: { memberId: savedMember.id, isActive: true },
         create: {
           tenantId: auth.tenantId,
           projectId: progress.projectId,
           userId: user.id,
-          memberId: createdMember.id,
+          memberId: savedMember.id,
           role: "member"
         }
       });
 
-      createdMembers.push({
-        id: createdMember.id,
-        name: createdMember.name,
-        mobile: createdMember.mobile,
-        email: createdMember.email,
-        shares: createdMember.shares,
-        status: createdMember.status
+      await tx.projectMembership.updateMany({
+        where: {
+          tenantId: auth.tenantId,
+          projectId: progress.projectId,
+          userId: user.id,
+          memberId: null
+        },
+        data: { memberId: savedMember.id }
+      });
+
+      upsertedMembers.push({
+        id: savedMember.id,
+        name: savedMember.name,
+        mobile: savedMember.mobile,
+        email: savedMember.email,
+        shares: savedMember.shares,
+        status: savedMember.status,
+        otpRequired: !existingMember
       });
     }
 
@@ -624,14 +715,35 @@ router.post("/shareholders", authenticate, requireProject, requireRoles("owner")
       select: onboardingProgressSelect
     });
 
-    return { createdMembers, nextProgress };
+    return { upsertedMembers, createdCount, updatedCount, nextProgress };
   });
 
   const membersWithOtp = [];
-  for (const member of createdMembers) {
+  for (const member of upsertedMembers) {
+    if (!member.otpRequired) {
+      membersWithOtp.push({
+        id: member.id,
+        name: member.name,
+        mobile: member.mobile,
+        email: member.email,
+        shares: member.shares,
+        status: member.status,
+        otp: {
+          sent: false,
+          emailed: false
+        }
+      });
+      continue;
+    }
+
     const otp = await issueOtp(member.mobile, member.email);
     membersWithOtp.push({
-      ...member,
+      id: member.id,
+      name: member.name,
+      mobile: member.mobile,
+      email: member.email,
+      shares: member.shares,
+      status: member.status,
       otp: {
         sent: true,
         emailed: otp.emailed,
@@ -653,7 +765,9 @@ router.post("/shareholders", authenticate, requireProject, requireRoles("owner")
     entityType: "onboarding_progress",
     entityId: progress.tenantId,
     after: {
-      created_count: membersWithOtp.length,
+      created_count: createdCount,
+      updated_count: updatedCount,
+      upserted_count: membersWithOtp.length,
       shares_assigned: activeSharesAfter._sum.shares ?? 0,
       shares_target: project.totalShares
     }

@@ -3,6 +3,7 @@ import { prisma } from "../../core/prisma/client.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { createProvisionedOnboardingSeed } from "../../core/onboarding/onboarding.service.js";
 import { createTrialSubscription, DEFAULT_TRIAL_DAYS } from "../../core/subscription/subscription.service.js";
+import { ensureUserProjectMember } from "../../core/security/member-link.service.js";
 import { createSessionToken } from "../auth/auth.service.js";
 
 // Re-export so callers can keep one import path if needed
@@ -87,12 +88,25 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
       }
     });
 
+    const ensuredMember = await ensureUserProjectMember(tx, {
+      tenantId: tenant.id,
+      projectId: project.id,
+      user: {
+        id: user.id,
+        name: user.name,
+        mobile: user.mobile,
+        email: user.email
+      },
+      defaultShares: 0
+    });
+
     await tx.projectMembership.create({
       data: {
         tenantId: tenant.id,
         projectId: project.id,
         userId: user.id,
-        role: "owner"
+        role: "owner",
+        memberId: ensuredMember.memberId
       }
     });
 

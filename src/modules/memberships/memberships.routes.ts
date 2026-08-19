@@ -7,6 +7,7 @@ import { created, ok } from "../../core/http/response.js";
 import { prisma } from "../../core/prisma/client.js";
 import { requireProject, requireRoles } from "../../core/security/auth.middleware.js";
 import { requireProjectContext } from "../../core/security/auth.context.js";
+import { ensureUserProjectMember } from "../../core/security/member-link.service.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
@@ -60,9 +61,22 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
   });
   if (existing) {
     if (!existing.isActive) {
-      const reactivated = await prisma.projectMembership.update({
-        where: { id: existing.id },
-        data: { isActive: true }
+      const reactivated = await prisma.$transaction(async (tx) => {
+        const ensured = await ensureUserProjectMember(tx, {
+          tenantId: auth.tenantId,
+          projectId: auth.projectId,
+          user: {
+            id: user.id,
+            name: user.name,
+            mobile: user.mobile,
+            email: user.email
+          },
+          defaultShares: 0
+        });
+        return tx.projectMembership.update({
+          where: { id: existing.id },
+          data: { isActive: true, memberId: ensured.memberId }
+        });
       });
       await writeAudit({
         tenantId: auth.tenantId,
@@ -79,23 +93,39 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
     throw conflict("This user already has that role on the project");
   }
 
-  // If the role being granted is `member`, find (or don't create) a Member row for them.
-  let memberLink: string | null = null;
-  if (body.role === "member") {
-    const memberRow = await prisma.member.findFirst({
-      where: { tenantId: auth.tenantId, projectId: auth.projectId, mobile: user.mobile }
-    });
-    memberLink = memberRow?.id ?? null;
-  }
-
-  const membership = await prisma.projectMembership.create({
-    data: {
+  const membership = await prisma.$transaction(async (tx) => {
+    const ensured = await ensureUserProjectMember(tx, {
       tenantId: auth.tenantId,
       projectId: auth.projectId,
-      userId: user.id,
-      memberId: memberLink,
-      role: body.role
+      user: {
+        id: user.id,
+        name: user.name,
+        mobile: user.mobile,
+        email: user.email
+      },
+      defaultShares: 0
+    });
+
+    if (body.role === "member") {
+      return tx.projectMembership.findFirstOrThrow({
+        where: {
+          tenantId: auth.tenantId,
+          projectId: auth.projectId,
+          userId: user.id,
+          role: "member"
+        }
+      });
     }
+
+    return tx.projectMembership.create({
+      data: {
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        userId: user.id,
+        memberId: ensured.memberId,
+        role: body.role
+      }
+    });
   });
 
   await writeAudit({
@@ -148,12 +178,49 @@ router.patch("/:id", requireProject, requireRoles("owner", "admin"), validatePar
     if (clash) throw conflict("This user already has that role on the project");
   }
 
-  const membership = await prisma.projectMembership.update({
-    where: { id },
-    data: {
-      ...(body.role !== undefined ? { role: body.role } : {}),
-      ...(body.is_active !== undefined ? { isActive: body.is_active } : {})
+  const nextRole = body.role ?? before.role;
+  const nextIsActive = body.is_active ?? before.isActive;
+  const removingMemberRole = before.role === "member" && (nextRole !== "member" || !nextIsActive);
+  if (removingMemberRole) {
+    const otherActiveRoles = await prisma.projectMembership.count({
+      where: {
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        userId: before.userId,
+        isActive: true,
+        id: { not: id }
+      }
+    });
+    if (otherActiveRoles > 0) {
+      throw badRequest("A user with project access must keep an active member role");
     }
+  }
+
+  const membership = await prisma.$transaction(async (tx) => {
+    let memberId: string | undefined;
+
+    if (nextIsActive) {
+      const targetUser = await tx.user.findFirstOrThrow({
+        where: { id: before.userId, tenantId: auth.tenantId, isActive: true },
+        select: { id: true, name: true, mobile: true, email: true }
+      });
+      const ensured = await ensureUserProjectMember(tx, {
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        user: targetUser,
+        defaultShares: 0
+      });
+      memberId = ensured.memberId;
+    }
+
+    return tx.projectMembership.update({
+      where: { id },
+      data: {
+        ...(body.role !== undefined ? { role: body.role } : {}),
+        ...(body.is_active !== undefined ? { isActive: body.is_active } : {}),
+        ...(memberId ? { memberId } : {})
+      }
+    });
   });
 
   await writeAudit({

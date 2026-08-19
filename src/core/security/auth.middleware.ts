@@ -4,6 +4,7 @@ import { prisma } from "../prisma/client.js";
 import { forbidden, unauthorized } from "../http/api-error.js";
 import { hashToken, verifyAccessToken } from "./jwt.js";
 import { hasAnyRole, type RoleGate } from "./roles.js";
+import { ensureUserProjectMember } from "./member-link.service.js";
 
 function bearerToken(req: Request) {
   const header = req.header("authorization");
@@ -52,7 +53,29 @@ export const authenticate: RequestHandler = async (req, _res, next) => {
       }
 
       roles = memberships.map((membership) => membership.role);
-      memberId = memberships.find((membership) => membership.memberId)?.memberId ?? null;
+      const hasMemberRole = memberships.some((membership) => membership.role === "member");
+      const linkedMember = memberships.find((membership) => membership.memberId);
+      memberId = linkedMember?.memberId ?? null;
+
+      if (!memberId || !hasMemberRole) {
+        const ensured = await prisma.$transaction((tx) => ensureUserProjectMember(tx, {
+          tenantId: session.tenantId,
+          projectId: requestedProjectId,
+          user: {
+            id: session.userId,
+            name: session.user.name,
+            mobile: session.user.mobile,
+            email: session.user.email
+          },
+          defaultShares: 0
+        }));
+        memberId = ensured.memberId;
+        if (!roles.includes("member")) roles.push("member");
+      }
+
+      // Treat owner and admin as full-access management roles everywhere.
+      if (roles.includes("owner") && !roles.includes("admin")) roles.push("admin");
+      if (roles.includes("admin") && !roles.includes("owner")) roles.push("owner");
     }
 
     req.auth = {
@@ -83,6 +106,7 @@ export function requireProject(req: Request, _res: Response, next: NextFunction)
 export function requireRoles(...gates: RoleGate[]): RequestHandler {
   return (req, _res, next) => {
     if (!req.auth) return next(unauthorized());
+    if (req.auth.roles.includes("owner") || req.auth.roles.includes("admin")) return next();
     if (gates.includes("any")) return next();
     if (hasAnyRole(req.auth.roles, gates)) return next();
     return next(forbidden());

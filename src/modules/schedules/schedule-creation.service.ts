@@ -1,6 +1,7 @@
 import { Prisma, ScheduleStatus } from "@prisma/client";
 import { badRequest } from "../../core/http/api-error.js";
 import { prisma } from "../../core/prisma/client.js";
+import { ensureUserProjectMember } from "../../core/security/member-link.service.js";
 
 type CreateScheduleWithUnitAmountInput = {
   tenantId: string;
@@ -95,17 +96,45 @@ async function applyAdvanceToNewDues(tx: Prisma.TransactionClient, input: {
 }
 
 export async function createScheduleWithUnitAmount(input: CreateScheduleWithUnitAmountInput) {
-  const activeMembers = await prisma.member.findMany({
-    where: { tenantId: input.tenantId, projectId: input.projectId, status: "active" },
-    orderBy: { createdAt: "asc" },
-    select: { id: true }
-  });
-  if (activeMembers.length === 0) throw badRequest("At least one active member is required");
-
-  const totalAmount = input.unitAmount * activeMembers.length;
   const dueStatus = input.dueDate.getTime() > Date.now() ? "upcoming" : "due";
 
   const result = await prisma.$transaction(async (tx) => {
+    const activeUsers = await tx.projectMembership.findMany({
+      where: {
+        tenantId: input.tenantId,
+        projectId: input.projectId,
+        isActive: true
+      },
+      distinct: ["userId"],
+      select: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            mobile: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    for (const activeUser of activeUsers) {
+      await ensureUserProjectMember(tx, {
+        tenantId: input.tenantId,
+        projectId: input.projectId,
+        user: activeUser.user,
+        defaultShares: 0
+      });
+    }
+
+    const activeMembers = await tx.member.findMany({
+      where: { tenantId: input.tenantId, projectId: input.projectId, status: "active" },
+      orderBy: { createdAt: "asc" },
+      select: { id: true }
+    });
+    if (activeMembers.length === 0) throw badRequest("At least one active member is required");
+
+    const totalAmount = input.unitAmount * activeMembers.length;
     const schedule = await tx.schedule.create({
       data: {
         tenantId: input.tenantId,

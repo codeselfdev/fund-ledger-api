@@ -12,6 +12,7 @@ import { validateBody, validateParams } from "../../core/validation/validate.js"
 import { optionalPenaltyPolicySchema } from "../../core/validation/common.schemas.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { notifyProjectMembers } from "../../core/notifications/notification.service.js";
+import { ensureUserProjectMember } from "../../core/security/member-link.service.js";
 import { issueOtp } from "../auth/auth.service.js";
 
 const projectsRouter = Router();
@@ -65,6 +66,10 @@ projectsRouter.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
 projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validateBody(createProjectSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const body = req.body as z.infer<typeof createProjectSchema>;
+  const actor = await prisma.user.findUniqueOrThrow({
+    where: { id: auth.userId },
+    select: { id: true, name: true, mobile: true, email: true }
+  });
 
   const project = await prisma.$transaction(async (tx) => {
     const createdProject = await tx.project.create({
@@ -83,6 +88,13 @@ projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validat
         userId: auth.userId,
         role: "owner"
       }
+    });
+
+    await ensureUserProjectMember(tx, {
+      tenantId: auth.tenantId,
+      projectId: createdProject.id,
+      user: actor,
+      defaultShares: 0
     });
 
     await tx.account.create({
@@ -209,22 +221,40 @@ invitationsRouter.post("/", requireProject, requireRoles("owner", "approver", "a
       }
     });
 
-    await tx.projectMembership.upsert({
-      where: {
-        projectId_userId_role: {
+    const ensuredMember = await ensureUserProjectMember(tx, {
+      tenantId: auth.tenantId,
+      projectId: project.id,
+      user: {
+        id: user.id,
+        name: user.name,
+        mobile: user.mobile,
+        email: user.email
+      },
+      defaultShares: 0
+    });
+
+    if (body.role !== "member") {
+      await tx.projectMembership.upsert({
+        where: {
+          projectId_userId_role: {
+            projectId: project.id,
+            userId: user.id,
+            role: body.role
+          }
+        },
+        update: {
+          isActive: true,
+          memberId: ensuredMember.memberId
+        },
+        create: {
+          tenantId: auth.tenantId,
           projectId: project.id,
           userId: user.id,
-          role: body.role
+          role: body.role,
+          memberId: ensuredMember.memberId
         }
-      },
-      update: { isActive: true },
-      create: {
-        tenantId: auth.tenantId,
-        projectId: project.id,
-        userId: user.id,
-        role: body.role
-      }
-    });
+      });
+    }
 
     const invitation = await tx.invitation.create({
       data: {
