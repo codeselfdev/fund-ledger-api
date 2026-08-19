@@ -243,7 +243,7 @@ router.get("/", requireProject, requireRoles("staff"), validateQuery(memberQuery
   })));
 }));
 
-router.get("/import/csv-format", requireProject, requireRoles("accountant", "admin"), asyncHandler(async (_req, res) => {
+router.get("/import/csv-format", requireProject, requireRoles("owner", "accountant", "admin"), asyncHandler(async (_req, res) => {
   const csv = [
     "name,mobile,shares,address,email,previous_due_amount",
     "Rahim Uddin,+8801711000001,2,Road 12 House 3,rahim@example.com,15000"
@@ -254,7 +254,7 @@ router.get("/import/csv-format", requireProject, requireRoles("accountant", "adm
   return res.status(200).send(csv);
 }));
 
-router.post("/import", requireProject, requireRoles("accountant", "admin"), importUpload.single("file"), asyncHandler(async (req, res) => {
+router.post("/import", requireProject, requireRoles("owner", "accountant", "admin"), importUpload.single("file"), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   if (!req.file) throw badRequest("CSV file is required (form-data field name: file)");
 
