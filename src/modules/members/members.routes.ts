@@ -198,7 +198,7 @@ async function ensurePreviousInstallmentSchedule(tx: Prisma.TransactionClient, i
   });
 }
 
-router.get("/", requireProject, requireRoles("staff"), validateQuery(memberQuerySchema), asyncHandler(async (req, res) => {
+router.get("/", requireProject, requireRoles("owner", "staff"), validateQuery(memberQuerySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const query = req.query as z.infer<typeof memberQuerySchema>;
   const members = await prisma.member.findMany({
@@ -413,7 +413,7 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
 router.get("/:id", requireProject, requireRoles("any"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
-  if (!isSelfOrRole(auth, id, STAFF_ROLES)) throw forbidden();
+  if (!isSelfOrRole(auth, id, [...STAFF_ROLES, "owner"])) throw forbidden();
 
   const member = await prisma.member.findFirst({
     where: { id, tenantId: auth.tenantId, projectId: auth.projectId },
@@ -441,7 +441,7 @@ router.get("/:id", requireProject, requireRoles("any"), validateParams(idParamSc
   return ok(res, { ...member, contribution_summary: summary });
 }));
 
-router.post("/", requireProject, requireRoles("accountant", "admin"), validateBody(memberBodySchema), asyncHandler(async (req, res) => {
+router.post("/", requireProject, requireRoles("owner", "accountant", "admin"), validateBody(memberBodySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const body = req.body as z.infer<typeof memberBodySchema>;
   await assertShareCap({ tenantId: auth.tenantId, projectId: auth.projectId, shares: body.shares });
@@ -545,7 +545,7 @@ router.post("/", requireProject, requireRoles("accountant", "admin"), validateBo
   });
 }));
 
-router.patch("/:id", requireProject, requireRoles("accountant", "admin"), validateParams(idParamSchema), validateBody(memberUpdateSchema), asyncHandler(async (req, res) => {
+router.patch("/:id", requireProject, requireRoles("owner", "accountant", "admin"), validateParams(idParamSchema), validateBody(memberUpdateSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
   const body = req.body as z.infer<typeof memberUpdateSchema>;
