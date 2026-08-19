@@ -73,6 +73,10 @@ const shareholdersSetupSchema = z.object({
   members: z.array(shareholderSchema).min(1).max(300)
 });
 
+const skipSchema = z.object({
+  step: z.enum(["shareholders"]).optional()
+});
+
 const onboardingProgressSelect = {
   tenantId: true,
   projectId: true,
@@ -662,6 +666,77 @@ router.post("/shareholders", authenticate, requireProject, requireRoles("owner")
       target: project.totalShares,
       remaining: Math.max(0, project.totalShares - (activeSharesAfter._sum.shares ?? 0))
     },
+    onboarding: summarizeOnboarding(nextProgress)
+  });
+}));
+
+router.post("/skip", authenticate, requireProject, requireRoles("owner"), validateBody(skipSchema), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  assertOwnerOnboarding(auth.roles);
+
+  const progress = await prisma.onboardingProgress.findUnique({
+    where: { tenantId: auth.tenantId },
+    select: onboardingProgressSelect
+  });
+  if (!progress) throw badRequest("Onboarding is not initialized for this tenant");
+  assertOnboardingProject(auth.projectId, progress.projectId);
+
+  // This onboarding version supports skipping only the final shareholders step.
+  const step = "shareholders";
+  if (progress.shareholdersStepStatus === "done" || progress.shareholdersStepStatus === "skipped") {
+    return ok(res, {
+      skipped: step,
+      onboarding: summarizeOnboarding(progress)
+    });
+  }
+
+  assertStepCompleted(progress.accountsStepStatus, "Accounts setup");
+
+  const sharesAggregate = await prisma.member.aggregate({
+    where: { tenantId: auth.tenantId, projectId: progress.projectId, status: "active" },
+    _sum: { shares: true }
+  });
+  const sharesAssigned = sharesAggregate._sum.shares ?? 0;
+  if (sharesAssigned < 1) {
+    throw badRequest("You can skip shareholder completion only after adding at least 1 share", {
+      minimum_required_shares: 1,
+      shares_assigned: sharesAssigned
+    });
+  }
+
+  const nextState = recomputeOnboardingStatus({
+    organizationStepStatus: progress.organizationStepStatus,
+    accountantStepStatus: progress.accountantStepStatus,
+    accountsStepStatus: progress.accountsStepStatus,
+    shareholdersStepStatus: "skipped"
+  });
+
+  const nextProgress = await prisma.onboardingProgress.update({
+    where: { tenantId: auth.tenantId },
+    data: {
+      shareholdersStepStatus: "skipped",
+      status: nextState.status,
+      completedAt: nextState.completedAt
+    },
+    select: onboardingProgressSelect
+  });
+
+  await writeAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    action: "onboarding.step_skipped",
+    entityType: "onboarding_progress",
+    entityId: progress.tenantId,
+    after: {
+      step,
+      shares_assigned: sharesAssigned
+    }
+  });
+
+  return ok(res, {
+    skipped: step,
+    shares_assigned: sharesAssigned,
     onboarding: summarizeOnboarding(nextProgress)
   });
 }));

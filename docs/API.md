@@ -32,6 +32,7 @@ Every new org gets **~6 months free** (`182` days), then yearly renewal.
 | POST | `/v1/onboarding/accounting` | owner | Step 2: assign accountant and set approval flow (`accountant_only` / `accountant_and_approver`) for income & expense |
 | POST | `/v1/onboarding/accounts` | owner | Step 3: create required bank/cash accounts |
 | POST | `/v1/onboarding/shareholders` | owner | Step 4: create shareholder members and allocate shares toward project cap |
+| POST | `/v1/onboarding/skip` | owner | Skip only final shareholders step when at least 1 active share is already assigned |
 | POST | `/v1/onboarding/complete` | owner | Mark onboarding completed (only when all required steps are done) |
 
 `GET /v1/auth/me` also returns `onboarding` and `subscription` so clients can resume onboarding and read completion state from DB.

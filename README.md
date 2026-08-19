@@ -140,6 +140,16 @@ curl -sS -X POST "$API/v1/onboarding/shareholders" \
 
 If share allocation is not complete yet, call this endpoint again with remaining members until assigned shares reaches `total_shares`.
 
+If you want to skip final full share allocation, you may skip Step 4 only after at least 1 share is added:
+
+```bash
+curl -sS -X POST "$API/v1/onboarding/skip" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Project-Id: $PROJECT_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"step":"shareholders"}'
+```
+
 ### 5. Finish onboarding
 
 ```bash
