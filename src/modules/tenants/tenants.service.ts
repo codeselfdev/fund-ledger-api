@@ -1,7 +1,7 @@
 import { Prisma, TenantPlan } from "@prisma/client";
 import { prisma } from "../../core/prisma/client.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
-import { createInitialOnboardingState, withOnboardingState } from "../../core/onboarding/onboarding.service.js";
+import { createProvisionedOnboardingSeed } from "../../core/onboarding/onboarding.service.js";
 import { createTrialSubscription, DEFAULT_TRIAL_DAYS } from "../../core/subscription/subscription.service.js";
 import { createSessionToken } from "../auth/auth.service.js";
 
@@ -16,6 +16,7 @@ export type ProvisionTenantInput = {
   adminMobile: string;
   adminEmail?: string;
   projectName?: string;
+  projectTotalShares?: number;
   plan?: TenantPlan;
   trialDays?: number;
   penaltyPolicy?: Prisma.InputJsonValue;
@@ -45,6 +46,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
   const plan = input.plan ?? TenantPlan.free;
   const trialDays = input.trialDays ?? DEFAULT_TRIAL_DAYS;
   const projectName = input.projectName?.trim() || "My Project";
+  const projectTotalShares = input.projectTotalShares ?? 1;
   const source = input.source ?? "provisioning";
 
   const existingSlug = await prisma.tenant.findUnique({ where: { slug: input.slug } });
@@ -53,11 +55,8 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    const onboarding = createInitialOnboardingState();
-    const contact = withOnboardingState(
-      { subscription: createTrialSubscription(trialDays) },
-      onboarding
-    );
+    const contact = jsonValue({ subscription: createTrialSubscription(trialDays) });
+    const onboarding = createProvisionedOnboardingSeed({ source });
 
     const tenant = await tx.tenant.create({
       data: {
@@ -74,7 +73,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
       data: {
         tenantId: tenant.id,
         name: projectName,
-        totalShares: 1,
+        totalShares: projectTotalShares,
         penaltyPolicy: input.penaltyPolicy
       }
     });
@@ -97,13 +96,30 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
       }
     });
 
-    await tx.account.create({
+    if (source !== "self_signup") {
+      await tx.account.create({
+        data: {
+          tenantId: tenant.id,
+          projectId: project.id,
+          name: "Cash",
+          type: "cash",
+          isDefault: true
+        }
+      });
+    }
+
+    await tx.onboardingProgress.create({
       data: {
         tenantId: tenant.id,
         projectId: project.id,
-        name: "Cash",
-        type: "cash",
-        isDefault: true
+        status: onboarding.status,
+        organizationStepStatus: onboarding.organizationStepStatus,
+        accountantStepStatus: onboarding.accountantStepStatus,
+        accountsStepStatus: onboarding.accountsStepStatus,
+        shareholdersStepStatus: onboarding.shareholdersStepStatus,
+        incomeApprovalFlow: onboarding.incomeApprovalFlow,
+        expenseApprovalFlow: onboarding.expenseApprovalFlow,
+        completedAt: onboarding.completedAt
       }
     });
 

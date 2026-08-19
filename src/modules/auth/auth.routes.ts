@@ -11,7 +11,7 @@ import { validateBody } from "../../core/validation/validate.js";
 import { createSessionToken, issueOtp, verifyOtp } from "./auth.service.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
-import { getOnboardingState, summarizeOnboarding } from "../../core/onboarding/onboarding.service.js";
+import { summarizeOnboarding } from "../../core/onboarding/onboarding.service.js";
 import { canUserPayOnBehalf } from "../../core/security/deposit-delegate.service.js";
 
 const router = Router();
@@ -139,21 +139,37 @@ router.post("/switch-project", authenticate, requireRoles("any"), validateBody(s
 
 router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
-  const user = await prisma.user.findUniqueOrThrow({
-    where: { id: auth.userId },
-    include: {
-      tenant: true,
-      memberships: {
-        where: { isActive: true },
-        include: { project: true, member: true }
+  const [user, onboardingProgress] = await Promise.all([
+    prisma.user.findUniqueOrThrow({
+      where: { id: auth.userId },
+      include: {
+        tenant: true,
+        memberships: {
+          where: { isActive: true },
+          include: { project: true, member: true }
+        }
       }
-    }
-  });
+    }),
+    prisma.onboardingProgress.findUnique({
+      where: { tenantId: auth.tenantId },
+      select: {
+        status: true,
+        organizationStepStatus: true,
+        accountantStepStatus: true,
+        accountsStepStatus: true,
+        shareholdersStepStatus: true,
+        incomeApprovalFlow: true,
+        expenseApprovalFlow: true,
+        accountantUserId: true,
+        completedAt: true
+      }
+    })
+  ]);
   const canPayForMembersByRole = auth.roles.includes("admin") || auth.roles.includes("accountant") || auth.roles.includes("cashier");
   const canPayForMembers = canPayForMembersByRole || (
     auth.projectId ? canUserPayOnBehalf(user.tenant.contact, auth.projectId, auth.userId) : false
   );
-  const onboarding = summarizeOnboarding(getOnboardingState(user.tenant.contact));
+  const onboarding = summarizeOnboarding(onboardingProgress);
   const subscription = evaluateSubscription(user.tenant.contact);
 
   return ok(res, {

@@ -49,10 +49,13 @@ curl http://localhost:4000/health
 
 ## Onboarding (self-serve)
 
-Users sign up themselves. Flow is short and skippable:
+Users sign up themselves. Onboarding state is persisted in the database (`onboarding_progress`) with 4 required steps:
 
 ```text
-Signup  →  Project setup (skip OK)  →  Invite team (skip OK)  →  Done
+1) Organization + project
+2) Accountant + approval flow
+3) Accounts (bank/cash)
+4) Shareholders (share allocation)
 ```
 
 Every new org gets **6 months free** (~182 days). After that, renew for **1 year** via `POST /v1/subscription/renew`.
@@ -65,10 +68,12 @@ curl -sS -X POST "$API/v1/onboarding/signup" \
   -d '{
     "org_name": "Green Valley Society",
     "slug": "green-valley",
-    "name": "Salahuddin Ahmed",
-    "mobile": "+8801711553300",
-    "email": "owner@example.com",
-    "project_name": "Tower A"
+    "currency": "BDT",
+    "project_name": "Tower A",
+    "total_shares": 52,
+    "owner_name": "Salahuddin Ahmed",
+    "owner_mobile": "+8801711553300",
+    "owner_email": "owner@example.com"
   }'
 ```
 
@@ -81,45 +86,66 @@ Authorization: Bearer <token>
 X-Project-Id: <project.id>
 ```
 
-### 2. Project setup (optional)
+### 2. Accountant + approval flow (required)
 
 ```bash
-curl -sS -X POST "$API/v1/onboarding/project" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-Project-Id: $PROJECT_ID" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Tower A Construction","total_shares":52}'
-```
-
-Or skip:
-
-```bash
-curl -sS -X POST "$API/v1/onboarding/skip" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"step":"project"}'
-```
-
-### 3. Invite teammates (optional)
-
-```bash
-curl -sS -X POST "$API/v1/onboarding/invites" \
+curl -sS -X POST "$API/v1/onboarding/accounting" \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Project-Id: $PROJECT_ID" \
   -H "Content-Type: application/json" \
   -d '{
-    "invites": [
-      { "name": "Project Admin", "mobile": "+8801811553300", "email": "admin@example.com", "role": "admin" },
-      { "name": "Member One", "mobile": "+8801911553300", "role": "member" }
+    "accountant": {
+      "name": "Rashid Khan",
+      "mobile": "+8801811553300",
+      "email": "accountant@example.com"
+    },
+    "approval_flow": {
+      "income": "accountant_only",
+      "expense": "accountant_and_approver"
+    }
+  }'
+```
+
+Set `accountant_only` to skip second verification and use accountant-only verification for that module.
+
+### 3. Accounts setup (required)
+
+```bash
+curl -sS -X POST "$API/v1/onboarding/accounts" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Project-Id: $PROJECT_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "accounts": [
+      { "name": "Main Cash", "type": "cash", "is_default": true, "opening_balance": 10000 },
+      { "name": "City Bank", "type": "bank" }
     ]
   }'
 ```
 
-Or skip `invites`, or finish everything:
+### 4. Shareholder setup (required)
+
+```bash
+curl -sS -X POST "$API/v1/onboarding/shareholders" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Project-Id: $PROJECT_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "members": [
+      { "name": "Shareholder One", "mobile": "+8801911553300", "shares": 20, "email": "m1@example.com" },
+      { "name": "Shareholder Two", "mobile": "+8801911553311", "shares": 32 }
+    ]
+  }'
+```
+
+If share allocation is not complete yet, call this endpoint again with remaining members until assigned shares reaches `total_shares`.
+
+### 5. Finish onboarding
 
 ```bash
 curl -sS -X POST "$API/v1/onboarding/complete" \
-  -H "Authorization: Bearer $TOKEN"
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Project-Id: $PROJECT_ID"
 ```
 
 `GET /v1/auth/me` and `GET /v1/onboarding/status` expose progress so the app can resume or hide the wizard.

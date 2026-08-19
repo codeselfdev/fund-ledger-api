@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { ExpenseCategory, ExpenseStatus } from "@prisma/client";
 import { asyncHandler } from "../../core/http/async-handler.js";
-import { badRequest, notFound } from "../../core/http/api-error.js";
+import { badRequest, forbidden, notFound } from "../../core/http/api-error.js";
 import { created, ok } from "../../core/http/response.js";
 import { prisma } from "../../core/prisma/client.js";
 import { requireProject, requireRoles } from "../../core/security/auth.middleware.js";
@@ -67,9 +67,18 @@ const disburseSchema = z.object({
   account_id: z.string().min(1).optional()
 });
 
+async function getExpenseApprovalFlow(tenantId: string) {
+  const progress = await prisma.onboardingProgress.findUnique({
+    where: { tenantId },
+    select: { expenseApprovalFlow: true }
+  });
+  return progress?.expenseApprovalFlow ?? "accountant_and_approver";
+}
+
 router.post("/", requireProject, requireRoles("accountant"), validateBody(expenseBodySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const body = req.body as z.infer<typeof expenseBodySchema>;
+  const approvalFlow = await getExpenseApprovalFlow(auth.tenantId);
 
   let vendorName = body.vendor ?? null;
   if (body.vendor_id) {
@@ -125,10 +134,12 @@ router.post("/", requireProject, requireRoles("accountant"), validateBody(expens
     tenantId: auth.tenantId,
     projectId: auth.projectId,
     actorUserId: auth.userId,
-    roles: ["approver"],
+    roles: approvalFlow === "accountant_only" ? ["accountant", "admin"] : ["approver"],
     type: "expense.submitted",
-    title: "Expense awaiting approval",
-    body: `${expense.title} is pending approval.`,
+    title: approvalFlow === "accountant_only" ? "Expense awaiting accountant verification" : "Expense awaiting approval",
+    body: approvalFlow === "accountant_only"
+      ? `${expense.title} is pending accountant verification.`
+      : `${expense.title} is pending approval.`,
     entityType: "expense",
     entityId: expense.id
   });
@@ -150,13 +161,21 @@ router.get("/", requireProject, requireRoles("staff"), validateQuery(expenseQuer
   return ok(res, expenses);
 }));
 
-router.post("/:id/approve", requireProject, requireRoles("approver"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
+router.post("/:id/approve", requireProject, requireRoles("accountant", "approver", "admin"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
+  const approvalFlow = await getExpenseApprovalFlow(auth.tenantId);
   const before = await prisma.expense.findFirst({
     where: { id, tenantId: auth.tenantId, projectId: auth.projectId }
   });
   if (!before) throw notFound("Expense not found");
+  if (approvalFlow === "accountant_only") {
+    if (!auth.roles.includes("accountant") && !auth.roles.includes("admin")) {
+      throw forbidden("Only an accountant can verify this expense in the current approval flow");
+    }
+  } else if (!auth.roles.includes("approver") && !auth.roles.includes("admin")) {
+    throw forbidden("Only an approver can verify this expense in the current approval flow");
+  }
   if (before.status !== "pending") throw badRequest("Expense is not pending");
   if (!before.accountId) throw badRequest("account_id is required before this expense can be approved");
   const account = await prisma.account.findFirst({
@@ -234,14 +253,22 @@ router.post("/:id/approve", requireProject, requireRoles("approver"), validatePa
   return ok(res, expense);
 }));
 
-router.post("/:id/reject", requireProject, requireRoles("approver"), validateParams(idParamSchema), validateBody(rejectSchema), asyncHandler(async (req, res) => {
+router.post("/:id/reject", requireProject, requireRoles("accountant", "approver", "admin"), validateParams(idParamSchema), validateBody(rejectSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
   const body = req.body as z.infer<typeof rejectSchema>;
+  const approvalFlow = await getExpenseApprovalFlow(auth.tenantId);
   const before = await prisma.expense.findFirst({
     where: { id, tenantId: auth.tenantId, projectId: auth.projectId }
   });
   if (!before) throw notFound("Expense not found");
+  if (approvalFlow === "accountant_only") {
+    if (!auth.roles.includes("accountant") && !auth.roles.includes("admin")) {
+      throw forbidden("Only an accountant can reject this expense in the current approval flow");
+    }
+  } else if (!auth.roles.includes("approver") && !auth.roles.includes("admin")) {
+    throw forbidden("Only an approver can reject this expense in the current approval flow");
+  }
   if (before.status !== "pending") throw badRequest("Only pending expenses can be rejected");
 
   const expense = await prisma.expense.update({

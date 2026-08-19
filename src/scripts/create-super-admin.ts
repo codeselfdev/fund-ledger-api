@@ -13,10 +13,9 @@
  * Production (inside container after build):
  *   npm run create:super-admin:prod -- --name "..." --slug "..." ...
  */
-import { Prisma } from "@prisma/client";
 import { prisma } from "../core/prisma/client.js";
-import { createTrialSubscription } from "../core/subscription/subscription.service.js";
-import { createSessionToken, issueOtp } from "../modules/auth/auth.service.js";
+import { issueOtp } from "../modules/auth/auth.service.js";
+import { provisionTenant } from "../modules/tenants/tenants.service.js";
 
 type Args = {
   name: string;
@@ -27,6 +26,7 @@ type Args = {
   currency: string;
   trialDays: number;
   projectName: string;
+  projectTotalShares: number;
   printOtp: boolean;
 };
 
@@ -42,8 +42,9 @@ Required:
 Optional:
   --admin-email <email>           recommended (OTP login emails)
   --currency <ISO>                default: BDT
-  --trial-days <n>                default: 365
+  --trial-days <n>                default: 182
   --project-name <name>           default: Default Project
+  --total-shares <n>              default: 1
   --print-otp                     issue + print a one-time login code
 `);
   process.exit(exitCode);
@@ -85,6 +86,11 @@ function parseArgs(argv: string[]): Args {
   if (!Number.isInteger(trialDays) || trialDays < 0 || trialDays > 3650) {
     throw new Error("--trial-days must be an integer between 0 and 3650");
   }
+  const totalSharesRaw = readArg(argv, "--total-shares") ?? "1";
+  const projectTotalShares = Number(totalSharesRaw);
+  if (!Number.isInteger(projectTotalShares) || projectTotalShares <= 0) {
+    throw new Error("--total-shares must be a positive integer");
+  }
 
   return {
     name,
@@ -95,12 +101,9 @@ function parseArgs(argv: string[]): Args {
     currency: (readArg(argv, "--currency") ?? "BDT").toUpperCase(),
     trialDays,
     projectName: readArg(argv, "--project-name") ?? "Default Project",
+    projectTotalShares,
     printOtp: hasFlag(argv, "--print-otp")
   };
-}
-
-function jsonValue(value: unknown): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
 async function main() {
@@ -118,80 +121,37 @@ async function main() {
     throw new Error(`Active user with mobile "${args.adminMobile}" already exists`);
   }
 
-  const result = await prisma.$transaction(async (tx) => {
-    const tenant = await tx.tenant.create({
-      data: {
-        name: args.name,
-        slug: args.slug,
-        currency: args.currency,
-        plan: "free",
-        contact: jsonValue({ subscription: createTrialSubscription(args.trialDays) })
-      }
-    });
-
-    const project = await tx.project.create({
-      data: {
-        tenantId: tenant.id,
-        name: args.projectName,
-        totalShares: 1
-      }
-    });
-
-    const user = await tx.user.create({
-      data: {
-        tenantId: tenant.id,
-        name: args.adminName,
-        mobile: args.adminMobile,
-        email: args.adminEmail
-      }
-    });
-
-    await tx.projectMembership.create({
-      data: {
-        tenantId: tenant.id,
-        projectId: project.id,
-        userId: user.id,
-        role: "owner"
-      }
-    });
-
-    await tx.account.create({
-      data: {
-        tenantId: tenant.id,
-        projectId: project.id,
-        name: "Cash",
-        type: "cash",
-        isDefault: true
-      }
-    });
-
-    return { tenant, project, user };
-  });
-
-  const { token } = await createSessionToken({
-    tenantId: result.tenant.id,
-    userId: result.user.id,
-    activeProjectId: result.project.id
+  const result = await provisionTenant({
+    name: args.name,
+    slug: args.slug,
+    currency: args.currency,
+    projectName: args.projectName,
+    projectTotalShares: args.projectTotalShares,
+    adminName: args.adminName,
+    adminMobile: args.adminMobile,
+    adminEmail: args.adminEmail,
+    trialDays: args.trialDays,
+    source: "cli"
   });
 
   console.log("\nSuper admin created successfully.\n");
   console.log(JSON.stringify({
-    tenant_id: result.tenant.id,
-    tenant_slug: result.tenant.slug,
-    project_id: result.project.id,
-    project_name: result.project.name,
-    user_id: result.user.id,
-    admin_name: result.user.name,
-    admin_mobile: result.user.mobile,
-    admin_email: result.user.email,
+    tenant_id: result.tenantId,
+    tenant_slug: result.tenantSlug,
+    project_id: result.defaultProjectId,
+    project_name: result.projectName,
+    user_id: result.ownerUserId,
+    admin_name: result.ownerName,
+    admin_mobile: result.ownerMobile,
+    admin_email: result.ownerEmail,
     role: "owner",
-    token
+    token: result.token
   }, null, 2));
 
   if (args.printOtp) {
-    const otp = await issueOtp(result.user.mobile, result.user.email);
+    const otp = await issueOtp(result.ownerMobile, result.ownerEmail);
     console.log("\nFirst login OTP (valid ~5 minutes):");
-    console.log(`  mobile: ${result.user.mobile}`);
+    console.log(`  mobile: ${result.ownerMobile}`);
     console.log(`  otp:    ${otp.code}`);
     console.log(`  emailed: ${otp.emailed}`);
   }
@@ -199,11 +159,11 @@ async function main() {
   console.log(`
 Use immediately:
   Authorization: Bearer <token>
-  X-Project-Id: ${result.project.id}
+  X-Project-Id: ${result.defaultProjectId}
 
 Or login later:
-  POST /v1/auth/otp/request  { "mobile": "${result.user.mobile}" }
-  POST /v1/auth/login        { "mobile": "${result.user.mobile}", "otp": "<code>", "tenant_slug": "${result.tenant.slug}" }
+  POST /v1/auth/otp/request  { "mobile": "${result.ownerMobile}" }
+  POST /v1/auth/login        { "mobile": "${result.ownerMobile}", "otp": "<code>", "tenant_slug": "${result.tenantSlug}" }
 
 Create a project:
   POST /v1/projects

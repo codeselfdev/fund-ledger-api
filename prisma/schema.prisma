@@ -23,6 +23,22 @@ enum Role {
   auditor
 }
 
+enum OnboardingProgressStatus {
+  in_progress
+  completed
+}
+
+enum OnboardingStepStatus {
+  pending
+  done
+  skipped
+}
+
+enum ApprovalFlowMode {
+  accountant_only
+  accountant_and_approver
+}
+
 enum MemberStatus {
   active
   inactive
@@ -145,6 +161,7 @@ model Tenant {
   users         User[]
   projects      Project[]
   members       Member[]
+  onboardingProgress OnboardingProgress?
   notifications Notification[]
   activity      Activity[]
 
@@ -164,6 +181,7 @@ model Project {
   tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   memberships        ProjectMembership[]
   members            Member[]
+  onboardingProgressRecords OnboardingProgress[]
   schedules          Schedule[]
   recurringSchedules RecurringSchedule[]
   dues               Due[]
@@ -185,6 +203,29 @@ model Project {
 
   @@index([tenantId])
   @@map("projects")
+}
+
+model OnboardingProgress {
+  id                     String                   @id @default(cuid())
+  tenantId               String                   @unique @map("tenant_id")
+  projectId              String                   @map("project_id")
+  status                 OnboardingProgressStatus @default(in_progress)
+  organizationStepStatus OnboardingStepStatus     @default(done) @map("organization_step_status")
+  accountantStepStatus   OnboardingStepStatus     @default(pending) @map("accountant_step_status")
+  accountsStepStatus     OnboardingStepStatus     @default(pending) @map("accounts_step_status")
+  shareholdersStepStatus OnboardingStepStatus     @default(pending) @map("shareholders_step_status")
+  incomeApprovalFlow     ApprovalFlowMode         @default(accountant_and_approver) @map("income_approval_flow")
+  expenseApprovalFlow    ApprovalFlowMode         @default(accountant_and_approver) @map("expense_approval_flow")
+  accountantUserId       String?                  @map("accountant_user_id")
+  completedAt            DateTime?                @map("completed_at")
+  createdAt              DateTime                 @default(now()) @map("created_at")
+  updatedAt              DateTime                 @updatedAt @map("updated_at")
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, projectId])
+  @@map("onboarding_progress")
 }
 
 model User {

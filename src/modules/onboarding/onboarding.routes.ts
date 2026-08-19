@@ -7,12 +7,9 @@ import { badRequest, conflict, forbidden, notFound } from "../../core/http/api-e
 import { created, ok } from "../../core/http/response.js";
 import { prisma } from "../../core/prisma/client.js";
 import {
-  completeOnboarding,
-  getOnboardingState,
-  markOnboardingStep,
+  recomputeOnboardingStatus,
   slugifyOrgName,
-  summarizeOnboarding,
-  type OnboardingStepId
+  summarizeOnboarding
 } from "../../core/onboarding/onboarding.service.js";
 import { authenticate, requireProject, requireRoles } from "../../core/security/auth.middleware.js";
 import { requireAuthContext, requireProjectContext } from "../../core/security/auth.context.js";
@@ -35,48 +32,101 @@ const signupRateLimit = rateLimit({
 const signupSchema = z.object({
   org_name: z.string().min(2).max(120),
   slug: z.string().min(3).max(48).regex(/^[a-z0-9-]+$/).optional(),
-  name: z.string().min(2).max(120),
-  mobile: z.string().min(6).max(32),
-  email: z.string().email().optional(),
   currency: z.string().length(3).default("BDT"),
-  project_name: z.string().min(2).max(120).optional()
+  project_name: z.string().min(2).max(120),
+  total_shares: z.number().int().positive().max(100_000),
+  owner_name: z.string().min(2).max(120),
+  owner_mobile: z.string().min(6).max(32),
+  owner_email: z.string().email().optional()
 });
 
-const projectSetupSchema = z.object({
-  name: z.string().min(2).max(120).optional(),
-  total_shares: z.number().int().positive().max(100_000).optional()
-}).refine((value) => value.name !== undefined || value.total_shares !== undefined, {
-  message: "Provide name and/or total_shares"
+const accountingSchema = z.object({
+  accountant: z.object({
+    name: z.string().min(2).max(120),
+    mobile: z.string().min(6).max(32),
+    email: z.string().email().optional()
+  }),
+  approval_flow: z.object({
+    income: z.enum(["accountant_only", "accountant_and_approver"]),
+    expense: z.enum(["accountant_only", "accountant_and_approver"])
+  })
 });
 
-const inviteItemSchema = z.object({
-  name: z.string().min(1).max(120),
-  mobile: z.string().min(6).max(32),
-  email: z.string().email().optional(),
-  role: z.nativeEnum(Role).default("member")
+const accountsSetupSchema = z.object({
+  accounts: z.array(z.object({
+    name: z.string().min(2).max(64),
+    type: z.enum(["bank", "cash"]),
+    is_default: z.boolean().optional(),
+    opening_balance: z.number().int().min(0).optional()
+  })).min(1).max(25)
 });
 
-const invitesSchema = z.object({
-  invites: z.array(inviteItemSchema).min(1).max(25)
+const shareholderSchema = z.object({
+  name: z.string().min(2),
+  mobile: z.string().min(6),
+  shares: z.number().int().positive(),
+  address: z.string().optional(),
+  email: z.string().email().optional()
 });
 
-const skipSchema = z.object({
-  step: z.enum(["project", "invites"]).optional()
+const shareholdersSetupSchema = z.object({
+  members: z.array(shareholderSchema).min(1).max(300)
 });
 
-async function loadOnboardingBundle(tenantId: string) {
-  const tenant = await prisma.tenant.findUniqueOrThrow({
-    where: { id: tenantId },
-    select: { id: true, name: true, slug: true, contact: true }
+const onboardingProgressSelect = {
+  tenantId: true,
+  projectId: true,
+  status: true,
+  organizationStepStatus: true,
+  accountantStepStatus: true,
+  accountsStepStatus: true,
+  shareholdersStepStatus: true,
+  incomeApprovalFlow: true,
+  expenseApprovalFlow: true,
+  accountantUserId: true,
+  completedAt: true
+} as const;
+
+async function getOnboardingProgress(tenantId: string) {
+  return prisma.onboardingProgress.findUnique({
+    where: { tenantId },
+    select: onboardingProgressSelect
   });
-  const state = getOnboardingState(tenant.contact);
-  const summary = summarizeOnboarding(state);
-  const subscription = evaluateSubscription(tenant.contact);
-  return { tenant, state, summary, subscription };
 }
 
-function assertOwnerOnboarding(roles: string[]) {
+async function loadOnboardingBundle(tenantId: string) {
+  const [tenant, progress] = await Promise.all([
+    prisma.tenant.findUniqueOrThrow({
+      where: { id: tenantId },
+      select: { id: true, name: true, slug: true, contact: true }
+    }),
+    getOnboardingProgress(tenantId)
+  ]);
+
+  return {
+    tenant,
+    progress,
+    onboarding: summarizeOnboarding(progress),
+    subscription: evaluateSubscription(tenant.contact)
+  };
+}
+
+function assertOwnerOnboarding(roles: Role[]) {
   if (!roles.includes("owner")) throw forbidden("Only the owner can manage onboarding");
+}
+
+function assertOnboardingProject(activeProjectId: string, onboardingProjectId: string) {
+  if (activeProjectId !== onboardingProjectId) {
+    throw badRequest("Use the onboarding project in X-Project-Id before completing setup", {
+      required_project_id: onboardingProjectId
+    });
+  }
+}
+
+function assertStepCompleted(stepStatus: "pending" | "done" | "skipped", stepName: string) {
+  if (stepStatus === "pending") {
+    throw badRequest(`${stepName} step is required before this action`);
+  }
 }
 
 router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler(async (req, res) => {
@@ -89,10 +139,11 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
       name: body.org_name,
       slug,
       currency: body.currency,
-      adminName: body.name,
-      adminMobile: body.mobile,
-      adminEmail: body.email,
-      projectName: body.project_name ?? "My Project",
+      projectName: body.project_name,
+      projectTotalShares: body.total_shares,
+      adminName: body.owner_name,
+      adminMobile: body.owner_mobile,
+      adminEmail: body.owner_email,
       source: "self_signup"
     });
   } catch (error) {
@@ -122,6 +173,80 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
       name: result.projectName
     },
     active_project_id: result.defaultProjectId,
+    onboarding: bundle.onboarding,
+    subscription: {
+      status: bundle.subscription.status,
+      has_access: bundle.subscription.has_access,
+      trial_ends_at: bundle.subscription.trial_ends_at,
+      days_left: bundle.subscription.days_left,
+      renewal_term_years: bundle.subscription.renewal_term_years
+    }
+  });
+}));
+
+router.get("/status", authenticate, requireRoles("any"), asyncHandler(async (req, res) => {
+  const auth = requireAuthContext(req);
+  const bundle = await loadOnboardingBundle(auth.tenantId);
+
+  let checks: {
+    project_id: string | null;
+    accountant_set: boolean;
+    accounts_count: number;
+    shareholders_count: number;
+    shares_assigned: number;
+    shares_target: number | null;
+  } = {
+    project_id: bundle.progress?.projectId ?? null,
+    accountant_set: false,
+    accounts_count: 0,
+    shareholders_count: 0,
+    shares_assigned: 0,
+    shares_target: null
+  };
+
+  if (bundle.progress) {
+    const [accountantMembership, accountCount, membersAggregate, membersCount, project] = await Promise.all([
+      bundle.progress.accountantUserId
+        ? prisma.projectMembership.findFirst({
+          where: {
+            tenantId: auth.tenantId,
+            projectId: bundle.progress.projectId,
+            userId: bundle.progress.accountantUserId,
+            role: "accountant",
+            isActive: true
+          },
+          select: { id: true }
+        })
+        : Promise.resolve(null),
+      prisma.account.count({
+        where: { tenantId: auth.tenantId, projectId: bundle.progress.projectId }
+      }),
+      prisma.member.aggregate({
+        where: { tenantId: auth.tenantId, projectId: bundle.progress.projectId, status: "active" },
+        _sum: { shares: true }
+      }),
+      prisma.member.count({
+        where: { tenantId: auth.tenantId, projectId: bundle.progress.projectId, status: "active" }
+      }),
+      prisma.project.findFirst({
+        where: { tenantId: auth.tenantId, id: bundle.progress.projectId },
+        select: { totalShares: true }
+      })
+    ]);
+
+    checks = {
+      project_id: bundle.progress.projectId,
+      accountant_set: Boolean(accountantMembership),
+      accounts_count: accountCount,
+      shareholders_count: membersCount,
+      shares_assigned: membersAggregate._sum.shares ?? 0,
+      shares_target: project?.totalShares ?? null
+    };
+  }
+
+  return ok(res, {
+    tenant_id: bundle.tenant.id,
+    onboarding: bundle.onboarding,
     subscription: {
       status: bundle.subscription.status,
       has_access: bundle.subscription.has_access,
@@ -129,264 +254,448 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
       days_left: bundle.subscription.days_left,
       renewal_term_years: bundle.subscription.renewal_term_years
     },
-    onboarding: bundle.summary
+    checks
   });
 }));
 
-router.get("/status", authenticate, requireRoles("any"), asyncHandler(async (req, res) => {
-  const auth = requireAuthContext(req);
-  const bundle = await loadOnboardingBundle(auth.tenantId);
-  return ok(res, {
-    tenant_id: bundle.tenant.id,
-    onboarding: bundle.summary,
-    subscription: {
-      status: bundle.subscription.status,
-      has_access: bundle.subscription.has_access,
-      trial_ends_at: bundle.subscription.trial_ends_at,
-      days_left: bundle.subscription.days_left,
-      renewal_term_years: bundle.subscription.renewal_term_years
-    }
+router.post("/accounting", authenticate, requireProject, requireRoles("owner"), validateBody(accountingSchema), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  assertOwnerOnboarding(auth.roles);
+  const body = req.body as z.infer<typeof accountingSchema>;
+
+  const progress = await prisma.onboardingProgress.findUnique({
+    where: { tenantId: auth.tenantId },
+    select: onboardingProgressSelect
   });
-}));
+  if (!progress) throw badRequest("Onboarding is not initialized for this tenant");
+  assertOnboardingProject(auth.projectId, progress.projectId);
 
-router.post(
-  "/project",
-  authenticate,
-  requireProject,
-  requireRoles("owner"),
-  validateBody(projectSetupSchema),
-  asyncHandler(async (req, res) => {
-    const auth = requireProjectContext(req);
-    assertOwnerOnboarding(auth.roles);
-    const body = req.body as z.infer<typeof projectSetupSchema>;
-
-    const project = await prisma.project.findFirst({
-      where: { id: auth.projectId, tenantId: auth.tenantId }
-    });
-    if (!project) throw badRequest("Active project not found");
-
-    if (body.total_shares !== undefined) {
-      const activeShares = await prisma.member.aggregate({
-        where: {
+  const { user, nextProgress } = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.upsert({
+      where: {
+        tenantId_mobile: {
           tenantId: auth.tenantId,
-          projectId: project.id,
-          status: "active"
-        },
-        _sum: { shares: true }
-      });
-      const assigned = activeShares._sum.shares ?? 0;
-      if (body.total_shares < assigned) {
-        throw badRequest("Total shares cannot be less than active member shares", {
-          assigned_shares: assigned
-        });
+          mobile: body.accountant.mobile
+        }
+      },
+      update: {
+        name: body.accountant.name,
+        ...(body.accountant.email ? { email: body.accountant.email } : {})
+      },
+      create: {
+        tenantId: auth.tenantId,
+        name: body.accountant.name,
+        mobile: body.accountant.mobile,
+        email: body.accountant.email
       }
+    });
+
+    await tx.projectMembership.upsert({
+      where: {
+        projectId_userId_role: {
+          projectId: progress.projectId,
+          userId: user.id,
+          role: "accountant"
+        }
+      },
+      update: { isActive: true },
+      create: {
+        tenantId: auth.tenantId,
+        projectId: progress.projectId,
+        userId: user.id,
+        role: "accountant"
+      }
+    });
+
+    const nextState = recomputeOnboardingStatus({
+      organizationStepStatus: progress.organizationStepStatus,
+      accountantStepStatus: "done",
+      accountsStepStatus: progress.accountsStepStatus,
+      shareholdersStepStatus: progress.shareholdersStepStatus
+    });
+
+    const nextProgress = await tx.onboardingProgress.update({
+      where: { tenantId: auth.tenantId },
+      data: {
+        accountantUserId: user.id,
+        incomeApprovalFlow: body.approval_flow.income,
+        expenseApprovalFlow: body.approval_flow.expense,
+        accountantStepStatus: "done",
+        status: nextState.status,
+        completedAt: nextState.completedAt
+      },
+      select: onboardingProgressSelect
+    });
+
+    return { user, nextProgress };
+  });
+
+  await writeAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    action: "onboarding.accounting_configured",
+    entityType: "onboarding_progress",
+    entityId: progress.tenantId,
+    after: {
+      accountant_user_id: user.id,
+      income_approval_flow: body.approval_flow.income,
+      expense_approval_flow: body.approval_flow.expense
+    }
+  });
+
+  return ok(res, {
+    accountant: {
+      user_id: user.id,
+      name: user.name,
+      mobile: user.mobile,
+      email: user.email
+    },
+    onboarding: summarizeOnboarding(nextProgress)
+  });
+}));
+
+router.post("/accounts", authenticate, requireProject, requireRoles("owner"), validateBody(accountsSetupSchema), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  assertOwnerOnboarding(auth.roles);
+  const body = req.body as z.infer<typeof accountsSetupSchema>;
+
+  const progress = await prisma.onboardingProgress.findUnique({
+    where: { tenantId: auth.tenantId },
+    select: onboardingProgressSelect
+  });
+  if (!progress) throw badRequest("Onboarding is not initialized for this tenant");
+  assertOnboardingProject(auth.projectId, progress.projectId);
+  assertStepCompleted(progress.accountantStepStatus, "Accountant and approval setup");
+
+  const duplicateNames = new Set<string>();
+  for (const account of body.accounts) {
+    const key = account.name.trim().toLowerCase();
+    if (duplicateNames.has(key)) {
+      throw badRequest("Duplicate account names in request payload", { name: account.name });
+    }
+    duplicateNames.add(key);
+  }
+
+  const existing = await prisma.account.findMany({
+    where: { tenantId: auth.tenantId, projectId: progress.projectId },
+    select: { name: true }
+  });
+  const existingNames = new Set(existing.map((item) => item.name.trim().toLowerCase()));
+  const clashing = body.accounts.find((item) => existingNames.has(item.name.trim().toLowerCase()));
+  if (clashing) {
+    throw conflict("An account with this name already exists", { name: clashing.name });
+  }
+
+  const defaultCount = body.accounts.filter((item) => item.is_default === true).length;
+  if (defaultCount > 1) {
+    throw badRequest("Only one account can be marked as default");
+  }
+
+  const { createdAccounts, nextProgress } = await prisma.$transaction(async (tx) => {
+    if (defaultCount === 1) {
+      await tx.account.updateMany({
+        where: { tenantId: auth.tenantId, projectId: progress.projectId, isDefault: true },
+        data: { isDefault: false }
+      });
     }
 
-    const updatedProject = await prisma.project.update({
-      where: { id: project.id },
-      data: {
-        ...(body.name !== undefined ? { name: body.name } : {}),
-        ...(body.total_shares !== undefined ? { totalShares: body.total_shares } : {})
-      }
-    });
-
-    const tenant = await prisma.tenant.findUniqueOrThrow({
-      where: { id: auth.tenantId },
-      select: { contact: true }
-    });
-    const next = markOnboardingStep(tenant.contact, "project", "done");
-    await prisma.tenant.update({
-      where: { id: auth.tenantId },
-      data: { contact: next.contact }
-    });
-
-    await writeAudit({
-      tenantId: auth.tenantId,
-      projectId: auth.projectId,
-      actorUserId: auth.userId,
-      action: "onboarding.project_setup",
-      entityType: "project",
-      entityId: updatedProject.id,
-      after: { name: updatedProject.name, total_shares: updatedProject.totalShares }
-    });
-
-    return ok(res, {
-      project: {
-        id: updatedProject.id,
-        name: updatedProject.name,
-        total_shares: updatedProject.totalShares
-      },
-      onboarding: next.summary
-    });
-  })
-);
-
-router.post(
-  "/invites",
-  authenticate,
-  requireProject,
-  requireRoles("owner"),
-  validateBody(invitesSchema),
-  asyncHandler(async (req, res) => {
-    const auth = requireProjectContext(req);
-    assertOwnerOnboarding(auth.roles);
-    const body = req.body as z.infer<typeof invitesSchema>;
-
-    const project = await prisma.project.findFirstOrThrow({
-      where: { id: auth.projectId!, tenantId: auth.tenantId }
-    });
-
-    const invited = [];
-    for (const item of body.invites) {
-      const { invitation, user } = await prisma.$transaction(async (tx) => {
-        const user = await tx.user.upsert({
-          where: {
-            tenantId_mobile: {
-              tenantId: auth.tenantId,
-              mobile: item.mobile
-            }
-          },
-          update: {
-            ...(item.email ? { email: item.email } : {}),
-            name: item.name
-          },
-          create: {
-            tenantId: auth.tenantId,
-            name: item.name,
-            mobile: item.mobile,
-            email: item.email
-          }
-        });
-
-        await tx.projectMembership.upsert({
-          where: {
-            projectId_userId_role: {
-              projectId: project.id,
-              userId: user.id,
-              role: item.role
-            }
-          },
-          update: { isActive: true },
-          create: {
-            tenantId: auth.tenantId,
-            projectId: project.id,
-            userId: user.id,
-            role: item.role
-          }
-        });
-
-        const invitation = await tx.invitation.create({
-          data: {
-            tenantId: auth.tenantId,
-            projectId: project.id,
-            mobile: item.mobile,
-            role: item.role,
-            invitedById: auth.userId,
-            status: "accepted",
-            acceptedAt: new Date()
-          }
-        });
-
-        return { invitation, user };
-      });
-
-      const otp = await issueOtp(user.mobile, user.email);
-      invited.push({
-        invitation_id: invitation.id,
-        user_id: user.id,
-        name: user.name,
-        mobile: user.mobile,
-        role: item.role,
-        otp: {
-          sent: true,
-          emailed: otp.emailed,
-          ...(process.env.NODE_ENV === "production" ? {} : { dev_code: otp.code })
+    const createdAccounts = [];
+    for (const account of body.accounts) {
+      const openingBalance = account.opening_balance ?? 0;
+      const created = await tx.account.create({
+        data: {
+          tenantId: auth.tenantId,
+          projectId: progress.projectId,
+          name: account.name,
+          type: account.type,
+          balance: openingBalance,
+          isDefault: account.is_default ?? false
         }
       });
+
+      if (openingBalance > 0) {
+        await tx.accountTransaction.create({
+          data: {
+            tenantId: auth.tenantId,
+            projectId: progress.projectId,
+            accountId: created.id,
+            direction: "money_in",
+            amount: openingBalance,
+            referenceType: "income",
+            referenceId: created.id,
+            description: "Opening balance income",
+            balanceAfter: created.balance,
+            createdById: auth.userId
+          }
+        });
+      }
+
+      createdAccounts.push(created);
     }
 
-    const tenant = await prisma.tenant.findUniqueOrThrow({
-      where: { id: auth.tenantId },
-      select: { contact: true }
-    });
-    const next = markOnboardingStep(tenant.contact, "invites", "done");
-    await prisma.tenant.update({
-      where: { id: auth.tenantId },
-      data: { contact: next.contact }
+    const nextState = recomputeOnboardingStatus({
+      organizationStepStatus: progress.organizationStepStatus,
+      accountantStepStatus: progress.accountantStepStatus,
+      accountsStepStatus: "done",
+      shareholdersStepStatus: progress.shareholdersStepStatus
     });
 
-    await writeAudit({
-      tenantId: auth.tenantId,
-      projectId: auth.projectId,
-      actorUserId: auth.userId,
-      action: "onboarding.invites_sent",
-      entityType: "invitation",
-      after: { count: invited.length }
+    const nextProgress = await tx.onboardingProgress.update({
+      where: { tenantId: auth.tenantId },
+      data: {
+        accountsStepStatus: "done",
+        status: nextState.status,
+        completedAt: nextState.completedAt
+      },
+      select: onboardingProgressSelect
     });
 
-    return created(res, {
-      invited,
-      onboarding: next.summary
-    });
-  })
-);
+    return { createdAccounts, nextProgress };
+  });
 
-router.post(
-  "/skip",
-  authenticate,
-  requireProject,
-  requireRoles("owner"),
-  validateBody(skipSchema),
-  asyncHandler(async (req, res) => {
-    const auth = requireProjectContext(req);
-    assertOwnerOnboarding(auth.roles);
-    const body = req.body as z.infer<typeof skipSchema>;
+  await writeAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    action: "onboarding.accounts_created",
+    entityType: "onboarding_progress",
+    entityId: progress.tenantId,
+    after: { created_count: createdAccounts.length }
+  });
 
-    const tenant = await prisma.tenant.findUniqueOrThrow({
-      where: { id: auth.tenantId },
-      select: { contact: true }
-    });
-    const summary = summarizeOnboarding(getOnboardingState(tenant.contact));
-    const step = (body.step ?? summary.current_step) as OnboardingStepId | null;
-    if (!step || step === "signup") {
-      throw badRequest("No skippable onboarding step available");
+  return created(res, {
+    accounts: createdAccounts,
+    onboarding: summarizeOnboarding(nextProgress)
+  });
+}));
+
+router.post("/shareholders", authenticate, requireProject, requireRoles("owner"), validateBody(shareholdersSetupSchema), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  assertOwnerOnboarding(auth.roles);
+  const body = req.body as z.infer<typeof shareholdersSetupSchema>;
+
+  const progress = await prisma.onboardingProgress.findUnique({
+    where: { tenantId: auth.tenantId },
+    select: onboardingProgressSelect
+  });
+  if (!progress) throw badRequest("Onboarding is not initialized for this tenant");
+  assertOnboardingProject(auth.projectId, progress.projectId);
+  assertStepCompleted(progress.accountsStepStatus, "Accounts setup");
+
+  const seenMobiles = new Set<string>();
+  for (const member of body.members) {
+    if (seenMobiles.has(member.mobile.trim())) {
+      throw badRequest("Duplicate member mobile numbers in payload", { mobile: member.mobile });
     }
-    if (step !== "project" && step !== "invites") {
-      throw badRequest("Only project and invites steps can be skipped");
+    seenMobiles.add(member.mobile.trim());
+  }
+
+  const [project, existingMembers, sharesAggregate] = await Promise.all([
+    prisma.project.findFirstOrThrow({
+      where: { id: progress.projectId, tenantId: auth.tenantId },
+      select: { id: true, totalShares: true }
+    }),
+    prisma.member.findMany({
+      where: {
+        tenantId: auth.tenantId,
+        projectId: progress.projectId,
+        mobile: { in: body.members.map((member) => member.mobile) }
+      },
+      select: { mobile: true }
+    }),
+    prisma.member.aggregate({
+      where: { tenantId: auth.tenantId, projectId: progress.projectId, status: "active" },
+      _sum: { shares: true }
+    })
+  ]);
+
+  if (existingMembers.length > 0) {
+    throw badRequest("Some shareholder mobile numbers already exist in this project", {
+      mobiles: existingMembers.map((member) => member.mobile)
+    });
+  }
+
+  const existingShares = sharesAggregate._sum.shares ?? 0;
+  const incomingShares = body.members.reduce((sum, member) => sum + member.shares, 0);
+  const nextShares = existingShares + incomingShares;
+  if (nextShares > project.totalShares) {
+    throw badRequest("Total shares exceed project share cap", {
+      total_shares: project.totalShares,
+      requested_total: nextShares
+    });
+  }
+
+  const { createdMembers, nextProgress } = await prisma.$transaction(async (tx) => {
+    const createdMembers: Array<{
+      id: string;
+      name: string;
+      mobile: string;
+      email: string | null;
+      shares: number;
+      status: string;
+    }> = [];
+    for (const member of body.members) {
+      const user = await tx.user.upsert({
+        where: {
+          tenantId_mobile: {
+            tenantId: auth.tenantId,
+            mobile: member.mobile
+          }
+        },
+        update: {
+          name: member.name,
+          ...(member.email ? { email: member.email } : {})
+        },
+        create: {
+          tenantId: auth.tenantId,
+          name: member.name,
+          mobile: member.mobile,
+          email: member.email
+        }
+      });
+
+      const createdMember = await tx.member.create({
+        data: {
+          tenantId: auth.tenantId,
+          projectId: progress.projectId,
+          userId: user.id,
+          name: member.name,
+          mobile: member.mobile,
+          email: member.email,
+          address: member.address,
+          shares: member.shares
+        }
+      });
+
+      await tx.projectMembership.upsert({
+        where: {
+          projectId_userId_role: {
+            projectId: progress.projectId,
+            userId: user.id,
+            role: "member"
+          }
+        },
+        update: { memberId: createdMember.id, isActive: true },
+        create: {
+          tenantId: auth.tenantId,
+          projectId: progress.projectId,
+          userId: user.id,
+          memberId: createdMember.id,
+          role: "member"
+        }
+      });
+
+      createdMembers.push({
+        id: createdMember.id,
+        name: createdMember.name,
+        mobile: createdMember.mobile,
+        email: createdMember.email,
+        shares: createdMember.shares,
+        status: createdMember.status
+      });
     }
 
-    const next = markOnboardingStep(tenant.contact, step, "skipped");
-    await prisma.tenant.update({
-      where: { id: auth.tenantId },
-      data: { contact: next.contact }
+    const aggregateAfter = await tx.member.aggregate({
+      where: { tenantId: auth.tenantId, projectId: progress.projectId, status: "active" },
+      _sum: { shares: true }
     });
 
-    await writeAudit({
-      tenantId: auth.tenantId,
-      projectId: auth.projectId,
-      actorUserId: auth.userId,
-      action: "onboarding.step_skipped",
-      entityType: "tenant",
-      entityId: auth.tenantId,
-      after: { step }
+    const sharesAssigned = aggregateAfter._sum.shares ?? 0;
+    const sharesComplete = sharesAssigned === project.totalShares;
+    const nextState = recomputeOnboardingStatus({
+      organizationStepStatus: progress.organizationStepStatus,
+      accountantStepStatus: progress.accountantStepStatus,
+      accountsStepStatus: progress.accountsStepStatus,
+      shareholdersStepStatus: sharesComplete ? "done" : "pending"
     });
 
-    return ok(res, { skipped: step, onboarding: next.summary });
-  })
-);
+    const nextProgress = await tx.onboardingProgress.update({
+      where: { tenantId: auth.tenantId },
+      data: {
+        shareholdersStepStatus: sharesComplete ? "done" : "pending",
+        status: nextState.status,
+        completedAt: nextState.completedAt
+      },
+      select: onboardingProgressSelect
+    });
+
+    return { createdMembers, nextProgress };
+  });
+
+  const membersWithOtp = [];
+  for (const member of createdMembers) {
+    const otp = await issueOtp(member.mobile, member.email);
+    membersWithOtp.push({
+      ...member,
+      otp: {
+        sent: true,
+        emailed: otp.emailed,
+        ...(process.env.NODE_ENV === "production" ? {} : { dev_code: otp.code })
+      }
+    });
+  }
+
+  const activeSharesAfter = await prisma.member.aggregate({
+    where: { tenantId: auth.tenantId, projectId: progress.projectId, status: "active" },
+    _sum: { shares: true }
+  });
+
+  await writeAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    action: "onboarding.shareholders_created",
+    entityType: "onboarding_progress",
+    entityId: progress.tenantId,
+    after: {
+      created_count: membersWithOtp.length,
+      shares_assigned: activeSharesAfter._sum.shares ?? 0,
+      shares_target: project.totalShares
+    }
+  });
+
+  return created(res, {
+    members: membersWithOtp,
+    shares: {
+      assigned: activeSharesAfter._sum.shares ?? 0,
+      target: project.totalShares,
+      remaining: Math.max(0, project.totalShares - (activeSharesAfter._sum.shares ?? 0))
+    },
+    onboarding: summarizeOnboarding(nextProgress)
+  });
+}));
 
 router.post("/complete", authenticate, requireProject, requireRoles("owner"), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   assertOwnerOnboarding(auth.roles);
 
-  const tenant = await prisma.tenant.findUniqueOrThrow({
-    where: { id: auth.tenantId },
-    select: { contact: true }
+  const progress = await prisma.onboardingProgress.findUnique({
+    where: { tenantId: auth.tenantId },
+    select: onboardingProgressSelect
   });
-  const next = completeOnboarding(tenant.contact);
-  await prisma.tenant.update({
-    where: { id: auth.tenantId },
-    data: { contact: next.contact }
+  if (!progress) throw badRequest("Onboarding is not initialized for this tenant");
+  assertOnboardingProject(auth.projectId, progress.projectId);
+
+  const nextState = recomputeOnboardingStatus({
+    organizationStepStatus: progress.organizationStepStatus,
+    accountantStepStatus: progress.accountantStepStatus,
+    accountsStepStatus: progress.accountsStepStatus,
+    shareholdersStepStatus: progress.shareholdersStepStatus
+  });
+  if (nextState.status !== "completed") {
+    throw badRequest("All onboarding steps are required before completion", {
+      onboarding: summarizeOnboarding(progress)
+    });
+  }
+
+  const completed = await prisma.onboardingProgress.update({
+    where: { tenantId: auth.tenantId },
+    data: {
+      status: "completed",
+      completedAt: nextState.completedAt ?? new Date()
+    },
+    select: onboardingProgressSelect
   });
 
   await writeAudit({
@@ -394,15 +703,14 @@ router.post("/complete", authenticate, requireProject, requireRoles("owner"), as
     projectId: auth.projectId,
     actorUserId: auth.userId,
     action: "onboarding.completed",
-    entityType: "tenant",
-    entityId: auth.tenantId,
-    after: next.onboarding
+    entityType: "onboarding_progress",
+    entityId: progress.tenantId,
+    after: completed
   });
 
-  return ok(res, { onboarding: next.summary });
+  return ok(res, { onboarding: summarizeOnboarding(completed) });
 }));
 
-// Prevent unmatched /v1/onboarding/* from falling through to global auth middleware.
 router.use((_req, _res, next) => next(notFound("Onboarding endpoint not found")));
 
 export { router as onboardingRouter };

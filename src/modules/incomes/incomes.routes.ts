@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../../core/http/async-handler.js";
-import { notFound } from "../../core/http/api-error.js";
+import { forbidden, notFound } from "../../core/http/api-error.js";
 import { created } from "../../core/http/response.js";
 import { prisma } from "../../core/prisma/client.js";
 import { requireProject, requireRoles } from "../../core/security/auth.middleware.js";
@@ -18,9 +18,26 @@ const incomeSchema = z.object({
   note: z.string().max(500).optional()
 });
 
-router.post("/", requireProject, requireRoles("accountant", "admin"), validateBody(incomeSchema), asyncHandler(async (req, res) => {
+async function getIncomeApprovalFlow(tenantId: string) {
+  const progress = await prisma.onboardingProgress.findUnique({
+    where: { tenantId },
+    select: { incomeApprovalFlow: true }
+  });
+  return progress?.incomeApprovalFlow ?? "accountant_only";
+}
+
+router.post("/", requireProject, requireRoles("accountant", "approver", "admin"), validateBody(incomeSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const body = req.body as z.infer<typeof incomeSchema>;
+  const approvalFlow = await getIncomeApprovalFlow(auth.tenantId);
+
+  if (approvalFlow === "accountant_only") {
+    if (!auth.roles.includes("accountant") && !auth.roles.includes("admin")) {
+      throw forbidden("Only accountant verification is enabled for income; ask an accountant to record this.");
+    }
+  } else if (!auth.roles.includes("approver") && !auth.roles.includes("admin")) {
+    throw forbidden("Income requires approver verification in the current approval flow.");
+  }
 
   const account = await prisma.account.findFirst({
     where: { id: body.account_id, tenantId: auth.tenantId, projectId: auth.projectId }
@@ -59,7 +76,10 @@ router.post("/", requireProject, requireRoles("accountant", "admin"), validateBo
     entityType: "account_transaction",
     entityId: result.transaction.id,
     before: { account_id: account.id, balance: account.balance },
-    after: result.transaction
+    after: {
+      ...result.transaction,
+      approval_flow: approvalFlow
+    }
   });
 
   return created(res, {

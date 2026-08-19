@@ -16,18 +16,25 @@ Errors use:
 
 ### Self-serve onboarding (recommended)
 
-Short flow: **signup → optional project setup → optional invites**. Project and invites can be skipped. New orgs get **~6 months free** (`182` days), then yearly renewal.
+Onboarding is tracked in a dedicated DB table (`onboarding_progress`) and has **4 required steps**:
+
+1. Organization + project creation
+2. Accountant assignment + income/expense approval flow
+3. Bank/cash account setup
+4. Shareholder member setup (share allocation)
+
+Every new org gets **~6 months free** (`182` days), then yearly renewal.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/v1/onboarding/signup` | public | Create org + owner + first project + 6‑month trial; returns token |
-| GET | `/v1/onboarding/status` | any | Onboarding progress + subscription summary |
-| POST | `/v1/onboarding/project` | owner | Set project name / total shares (marks project step done) |
-| POST | `/v1/onboarding/invites` | owner | Invite teammates (marks invites step done) |
-| POST | `/v1/onboarding/skip` | owner | Skip `project` or `invites` |
-| POST | `/v1/onboarding/complete` | owner | Finish wizard (auto-skips remaining optional steps) |
+| POST | `/v1/onboarding/signup` | public | Step 1: create org + owner + initial project + 6‑month trial; returns token |
+| GET | `/v1/onboarding/status` | any | Current onboarding step states, approval flow, and completion status |
+| POST | `/v1/onboarding/accounting` | owner | Step 2: assign accountant and set approval flow (`accountant_only` / `accountant_and_approver`) for income & expense |
+| POST | `/v1/onboarding/accounts` | owner | Step 3: create required bank/cash accounts |
+| POST | `/v1/onboarding/shareholders` | owner | Step 4: create shareholder members and allocate shares toward project cap |
+| POST | `/v1/onboarding/complete` | owner | Mark onboarding completed (only when all required steps are done) |
 
-`GET /v1/auth/me` also returns `onboarding` and `subscription` so the app can resume or hide the wizard.
+`GET /v1/auth/me` also returns `onboarding` and `subscription` so clients can resume onboarding and read completion state from DB.
 
 ### Provisioning & core APIs
 
@@ -129,8 +136,8 @@ When a new schedule is created, any confirmed advance deposits for a member are 
 | --- | --- | --- | --- |
 | POST | `/v1/expenses` | accountant | Initiate expense in `pending` state |
 | GET | `/v1/expenses` | staff | List/filter expenses |
-| POST | `/v1/expenses/:id/approve` | approver | Approve and immediately disburse expense from assigned account |
-| POST | `/v1/expenses/:id/reject` | approver | Reject pending expense with reason |
+| POST | `/v1/expenses/:id/approve` | accountant/approver/admin | Approve and immediately disburse. Permission follows onboarding expense approval flow |
+| POST | `/v1/expenses/:id/reject` | accountant/approver/admin | Reject pending expense with reason. Permission follows onboarding expense approval flow |
 | POST | `/v1/expenses/:id/disburse` | accountant | Legacy/manual disburse for expenses already in `approved` state |
 
 Required expense fields: `title`, `amount`, `category`. Optional: `vendor`, `doc_file_id`.
@@ -142,7 +149,7 @@ Notifications are created after submission, approval, rejection, and disbursemen
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
 | POST | `/v1/accounts` | accountant, admin | Create account with optional `opening_balance` (posts initial `money_in` income entry labeled opening balance) |
-| POST | `/v1/incomes` | accountant, admin | Record manual income and credit selected account with ledger row |
+| POST | `/v1/incomes` | accountant/approver/admin | Record manual income. Role is enforced by onboarding income approval flow |
 | GET | `/v1/accounts` | accountant, auditor | Account balances and total |
 | GET | `/v1/accounts/:id/transactions` | accountant, auditor | Movement history for one account |
 | GET | `/v1/accounts/:id/in-out` | staff | List account cashflow entries as `in`/`out` with amount and title |

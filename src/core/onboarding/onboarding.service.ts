@@ -1,170 +1,161 @@
-import type { Prisma } from "@prisma/client";
+import type {
+  ApprovalFlowMode,
+  OnboardingProgress,
+  OnboardingProgressStatus,
+  OnboardingStepStatus
+} from "@prisma/client";
 
-export type OnboardingStepId = "signup" | "project" | "invites";
-export type OnboardingStepStatus = "pending" | "done" | "skipped";
-export type OnboardingStatus = "in_progress" | "completed";
+export type OnboardingStepId =
+  | "organization"
+  | "accountant_and_approval"
+  | "accounts"
+  | "shareholders";
 
-export type OnboardingStepState = {
-  status: OnboardingStepStatus;
-  completed_at: string | null;
-};
+type OnboardingProgressLike = Pick<
+OnboardingProgress,
+| "status"
+| "organizationStepStatus"
+| "accountantStepStatus"
+| "accountsStepStatus"
+| "shareholdersStepStatus"
+| "incomeApprovalFlow"
+| "expenseApprovalFlow"
+| "accountantUserId"
+| "completedAt"
+>;
 
-export type OnboardingState = {
-  status: OnboardingStatus;
-  steps: Record<OnboardingStepId, OnboardingStepState>;
-  updated_at: string;
-};
+const STEP_ORDER: OnboardingStepId[] = [
+  "organization",
+  "accountant_and_approval",
+  "accounts",
+  "shareholders"
+];
 
-const STEP_ORDER: OnboardingStepId[] = ["signup", "project", "invites"];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function isSettled(status: OnboardingStepStatus) {
+  return status === "done" || status === "skipped";
 }
 
-function toJson(value: unknown): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+function currentStepFromProgress(progress: Pick<
+OnboardingProgressLike,
+| "organizationStepStatus"
+| "accountantStepStatus"
+| "accountsStepStatus"
+| "shareholdersStepStatus"
+>) {
+  if (progress.organizationStepStatus === "pending") return "organization";
+  if (progress.accountantStepStatus === "pending") return "accountant_and_approval";
+  if (progress.accountsStepStatus === "pending") return "accounts";
+  if (progress.shareholdersStepStatus === "pending") return "shareholders";
+  return null;
 }
 
-function stepState(status: OnboardingStepStatus, at = new Date()): OnboardingStepState {
+export function recomputeOnboardingStatus(progress: {
+  organizationStepStatus: OnboardingStepStatus;
+  accountantStepStatus: OnboardingStepStatus;
+  accountsStepStatus: OnboardingStepStatus;
+  shareholdersStepStatus: OnboardingStepStatus;
+}, now = new Date()) {
+  const allSettled = isSettled(progress.organizationStepStatus)
+    && isSettled(progress.accountantStepStatus)
+    && isSettled(progress.accountsStepStatus)
+    && isSettled(progress.shareholdersStepStatus);
+
   return {
-    status,
-    completed_at: status === "pending" ? null : at.toISOString()
+    status: (allSettled ? "completed" : "in_progress") as OnboardingProgressStatus,
+    completedAt: allSettled ? now : null
   };
 }
 
-export function createInitialOnboardingState(now = new Date()): OnboardingState {
-  return {
-    status: "in_progress",
-    steps: {
-      signup: stepState("done", now),
-      project: stepState("pending"),
-      invites: stepState("pending")
-    },
-    updated_at: now.toISOString()
-  };
-}
-
-export function getOnboardingState(contact: unknown): OnboardingState | null {
-  if (!isRecord(contact) || !isRecord(contact.onboarding)) return null;
-  const raw = contact.onboarding;
-  const stepsRaw = isRecord(raw.steps) ? raw.steps : {};
-
-  const readStep = (id: OnboardingStepId): OnboardingStepState => {
-    const step = isRecord(stepsRaw[id]) ? stepsRaw[id] : null;
-    const status = step?.status === "done" || step?.status === "skipped" || step?.status === "pending"
-      ? step.status
-      : "pending";
+export function createProvisionedOnboardingSeed(input: {
+  source: "provisioning" | "self_signup" | "cli";
+  now?: Date;
+}) {
+  const now = input.now ?? new Date();
+  if (input.source === "self_signup") {
     return {
-      status,
-      completed_at: typeof step?.completed_at === "string" ? step.completed_at : null
+      status: "in_progress" as OnboardingProgressStatus,
+      organizationStepStatus: "done" as OnboardingStepStatus,
+      accountantStepStatus: "pending" as OnboardingStepStatus,
+      accountsStepStatus: "pending" as OnboardingStepStatus,
+      shareholdersStepStatus: "pending" as OnboardingStepStatus,
+      incomeApprovalFlow: "accountant_and_approver" as ApprovalFlowMode,
+      expenseApprovalFlow: "accountant_and_approver" as ApprovalFlowMode,
+      completedAt: null as Date | null
     };
-  };
+  }
 
   return {
-    status: raw.status === "completed" ? "completed" : "in_progress",
-    steps: {
-      signup: readStep("signup"),
-      project: readStep("project"),
-      invites: readStep("invites")
-    },
-    updated_at: typeof raw.updated_at === "string" ? raw.updated_at : new Date().toISOString()
+    status: "completed" as OnboardingProgressStatus,
+    organizationStepStatus: "done" as OnboardingStepStatus,
+    accountantStepStatus: "done" as OnboardingStepStatus,
+    accountsStepStatus: "done" as OnboardingStepStatus,
+    shareholdersStepStatus: "done" as OnboardingStepStatus,
+    incomeApprovalFlow: "accountant_and_approver" as ApprovalFlowMode,
+    expenseApprovalFlow: "accountant_and_approver" as ApprovalFlowMode,
+    completedAt: now
   };
 }
 
-export function withOnboardingState(contact: unknown, onboarding: OnboardingState): Prisma.InputJsonValue {
-  const base = isRecord(contact) ? { ...contact } : {};
-  return toJson({
-    ...base,
-    onboarding
-  });
-}
-
-export function summarizeOnboarding(state: OnboardingState | null) {
-  if (!state) {
+export function summarizeOnboarding(progress: OnboardingProgressLike | null) {
+  if (!progress) {
     return {
+      tracked_in_database: false,
       required: false,
-      status: "completed" as OnboardingStatus,
+      completed_in_database: true,
+      status: "completed" as OnboardingProgressStatus,
       current_step: null as OnboardingStepId | null,
-      can_skip_current: false,
+      total_steps: 4,
+      completed_steps: 4,
       steps: [] as Array<{
         id: OnboardingStepId;
         status: OnboardingStepStatus;
         required: boolean;
-        completed_at: string | null;
-      }>
+      }>,
+      approval_flow: {
+        income: "accountant_and_approver" as ApprovalFlowMode,
+        expense: "accountant_and_approver" as ApprovalFlowMode,
+        second_verification_skipped: {
+          income: false,
+          expense: false
+        }
+      },
+      accountant_user_id: null as string | null,
+      completed_at: null as string | null
     };
   }
 
-  const steps = STEP_ORDER.map((id) => ({
-    id,
-    status: state.steps[id].status,
-    required: id === "signup",
-    completed_at: state.steps[id].completed_at
+  const steps = [
+    { id: "organization" as const, status: progress.organizationStepStatus },
+    { id: "accountant_and_approval" as const, status: progress.accountantStepStatus },
+    { id: "accounts" as const, status: progress.accountsStepStatus },
+    { id: "shareholders" as const, status: progress.shareholdersStepStatus }
+  ].map((step) => ({
+    ...step,
+    required: true
   }));
 
-  const current = STEP_ORDER.find((id) => state.steps[id].status === "pending") ?? null;
+  const current = currentStepFromProgress(progress);
+  const completedSteps = steps.filter((step) => step.status !== "pending").length;
 
   return {
-    required: state.status !== "completed",
-    status: state.status,
-    current_step: state.status === "completed" ? null : current,
-    can_skip_current: current === "project" || current === "invites",
-    steps
-  };
-}
-
-export function markOnboardingStep(
-  contact: unknown,
-  stepId: OnboardingStepId,
-  status: "done" | "skipped",
-  now = new Date()
-) {
-  const current = getOnboardingState(contact) ?? createInitialOnboardingState(now);
-  if (current.status === "completed") {
-    return { contact: withOnboardingState(contact, current), onboarding: current, summary: summarizeOnboarding(current) };
-  }
-
-  if (stepId === "signup" && status === "skipped") {
-    throw new Error("Signup step cannot be skipped");
-  }
-
-  const next: OnboardingState = {
-    ...current,
-    steps: {
-      ...current.steps,
-      [stepId]: stepState(status, now)
+    tracked_in_database: true,
+    required: progress.status !== "completed",
+    completed_in_database: progress.status === "completed",
+    status: progress.status,
+    current_step: progress.status === "completed" ? null : current,
+    total_steps: STEP_ORDER.length,
+    completed_steps: completedSteps,
+    steps,
+    approval_flow: {
+      income: progress.incomeApprovalFlow,
+      expense: progress.expenseApprovalFlow,
+      second_verification_skipped: {
+        income: progress.incomeApprovalFlow === "accountant_only",
+        expense: progress.expenseApprovalFlow === "accountant_only"
+      }
     },
-    updated_at: now.toISOString()
-  };
-
-  const allSettled = STEP_ORDER.every((id) => next.steps[id].status === "done" || next.steps[id].status === "skipped");
-  if (allSettled) {
-    next.status = "completed";
-  }
-
-  return {
-    contact: withOnboardingState(contact, next),
-    onboarding: next,
-    summary: summarizeOnboarding(next)
-  };
-}
-
-export function completeOnboarding(contact: unknown, now = new Date()) {
-  const current = getOnboardingState(contact) ?? createInitialOnboardingState(now);
-  const next: OnboardingState = {
-    status: "completed",
-    steps: {
-      signup: current.steps.signup.status === "pending" ? stepState("done", now) : current.steps.signup,
-      project: current.steps.project.status === "pending" ? stepState("skipped", now) : current.steps.project,
-      invites: current.steps.invites.status === "pending" ? stepState("skipped", now) : current.steps.invites
-    },
-    updated_at: now.toISOString()
-  };
-
-  return {
-    contact: withOnboardingState(contact, next),
-    onboarding: next,
-    summary: summarizeOnboarding(next)
+    accountant_user_id: progress.accountantUserId,
+    completed_at: progress.completedAt?.toISOString() ?? null
   };
 }
 
