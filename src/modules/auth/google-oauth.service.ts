@@ -19,22 +19,32 @@ import {
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
-const TICKET_TTL_MS = 2 * 60 * 1000;
+const SESSION_TICKET_TTL_MS = 2 * 60 * 1000;
+const IDENTITY_TICKET_TTL_MS = 30 * 60 * 1000;
 
 type GoogleOAuthState = {
   intent: "login" | "signup";
   redirectUri: string;
   callbackUri: string;
   tenantSlug?: string;
-  orgName?: string;
-  ownerName?: string;
-  ownerMobile?: string;
-  projectName?: string;
-  totalShares?: number;
   codeVerifier: string;
 };
 
-const tickets = new Map<string, { payload: LoginSessionPayload; expiresAt: number }>();
+export type GoogleIdentity = {
+  uid: string;
+  email: string;
+  name: string;
+};
+
+export type GoogleCompleteResult =
+  | ({ kind: "session" } & LoginSessionPayload)
+  | { kind: "identity"; email: string; name: string; ticket: string };
+
+type TicketRecord =
+  | { kind: "session"; payload: LoginSessionPayload; expiresAt: number }
+  | { kind: "identity"; identity: GoogleIdentity; expiresAt: number };
+
+const tickets = new Map<string, TicketRecord>();
 
 export function isGoogleOAuthConfigured(): boolean {
   return Boolean(env.googleOAuth.clientId && env.googleOAuth.clientSecret);
@@ -150,19 +160,32 @@ function pruneTickets() {
   }
 }
 
-export function createGoogleAuthTicket(payload: LoginSessionPayload): string {
+type GoogleResolveResult =
+  | { kind: "session"; payload: LoginSessionPayload }
+  | { kind: "identity"; identity: GoogleIdentity };
+
+function storeTicket(record: GoogleResolveResult): string {
   pruneTickets();
   const ticket = nanoid(24);
-  tickets.set(ticket, { payload, expiresAt: Date.now() + TICKET_TTL_MS });
+  const expiresAt = Date.now() + (record.kind === "identity" ? IDENTITY_TICKET_TTL_MS : SESSION_TICKET_TTL_MS);
+  tickets.set(ticket, { ...record, expiresAt });
   return ticket;
 }
 
-export function consumeGoogleAuthTicket(ticket: string): LoginSessionPayload {
+export function resolveGoogleAuthTicket(ticket: string): GoogleCompleteResult {
   pruneTickets();
   const row = tickets.get(ticket);
   if (!row) throw unauthorized("Google sign-in expired. Try again.");
-  tickets.delete(ticket);
-  return row.payload;
+  if (row.kind === "session") {
+    tickets.delete(ticket);
+    return { kind: "session", ...row.payload };
+  }
+  return {
+    kind: "identity",
+    email: row.identity.email,
+    name: row.identity.name,
+    ticket
+  };
 }
 
 export function buildGoogleAuthorizationUrl(req: Request): string {
@@ -177,15 +200,6 @@ export function buildGoogleAuthorizationUrl(req: Request): string {
   if (!redirectUri) throw badRequest("redirect_uri is required");
   if (!isAllowedAppRedirect(redirectUri)) throw badRequest("This app redirect is not allowed");
 
-  const orgName = queryString(req, "org_name");
-  if (intent === "signup" && !orgName) throw badRequest("Enter organization name.");
-
-  const totalSharesRaw = queryString(req, "total_shares");
-  const totalShares = totalSharesRaw ? Number(totalSharesRaw) : undefined;
-  if (totalSharesRaw && (!Number.isInteger(totalShares) || totalShares! < 1 || totalShares! > 100_000)) {
-    throw badRequest("total_shares must be a positive integer");
-  }
-
   const callbackUri = backendGoogleRedirectUri(req);
   const codeVerifier = pkceVerifier();
   const state = signState({
@@ -193,11 +207,6 @@ export function buildGoogleAuthorizationUrl(req: Request): string {
     redirectUri,
     callbackUri,
     tenantSlug: queryString(req, "tenant_slug"),
-    orgName,
-    ownerName: queryString(req, "owner_name"),
-    ownerMobile: queryString(req, "owner_mobile"),
-    projectName: queryString(req, "project_name"),
-    totalShares,
     codeVerifier
   });
 
@@ -240,10 +249,17 @@ async function exchangeGoogleCode(code: string, state: GoogleOAuthState): Promis
   return payload.id_token;
 }
 
-async function loginWithGoogleEmail(email: string, tenantSlug?: string): Promise<LoginSessionPayload> {
-  const users = await findActiveUsersByEmail(email, tenantSlug);
+function toGoogleIdentity(identity: { uid: string; email?: string; name?: string }): GoogleIdentity {
+  const email = identity.email?.trim().toLowerCase();
+  if (!email) throw badRequest("Google account has no email address");
+  const name = identity.name?.trim() || email.split("@")[0] || "Owner";
+  return { uid: identity.uid, email, name };
+}
+
+async function resolveGoogleIdentity(identity: GoogleIdentity, tenantSlug?: string): Promise<GoogleResolveResult> {
+  const users = await findActiveUsersByEmail(identity.email, tenantSlug);
   if (users.length === 0) {
-    throw unauthorized("No FundLedger account for this Google email. Create an organization or ask an admin to add this email.");
+    return { kind: "identity", identity };
   }
   if (users.length > 1 && !tenantSlug) {
     throw badRequest("tenant_slug is required when this login belongs to multiple tenants");
@@ -259,37 +275,54 @@ async function loginWithGoogleEmail(email: string, tenantSlug?: string): Promise
     entityType: "session",
     after: { user_id: user.id, provider: "google" }
   });
-  return payload;
+  return { kind: "session", payload };
 }
 
-async function signupWithGoogleIdentity(
-  identity: { uid: string; email?: string; name?: string },
-  state: GoogleOAuthState
-): Promise<LoginSessionPayload> {
-  const email = identity.email?.trim().toLowerCase();
-  if (!email) throw badRequest("Google account has no email address");
-  if (!state.orgName) throw badRequest("Enter organization name.");
+export async function completeGoogleAuthorization(code: string, stateToken: string): Promise<GoogleResolveResult> {
+  const state = readState(stateToken);
+  const idToken = await exchangeGoogleCode(code, state);
+  const verified = await verifyGoogleOAuthIdToken(idToken);
+  return resolveGoogleIdentity(toGoogleIdentity(verified), state.tenantSlug);
+}
 
-  const existing = await findActiveUsersByEmail(email);
+export async function signupWithGoogleTicket(input: {
+  ticket: string;
+  orgName: string;
+  ownerName?: string;
+  ownerMobile?: string;
+  projectName?: string;
+  totalShares?: number;
+}): Promise<LoginSessionPayload> {
+  pruneTickets();
+  const row = tickets.get(input.ticket);
+  if (!row) throw unauthorized("Google sign-in expired. Connect Google again.");
+  if (row.kind !== "identity") {
+    throw conflict("This Google account already has a FundLedger login. Sign in instead.");
+  }
+  tickets.delete(input.ticket);
+
+  const existing = await findActiveUsersByEmail(row.identity.email);
   if (existing.length > 0) {
+    tickets.set(input.ticket, { ...row, expiresAt: Date.now() + IDENTITY_TICKET_TTL_MS });
     throw conflict("This Google account already has a FundLedger login. Sign in instead.");
   }
 
-  const ownerName = identity.name?.trim() || state.ownerName?.trim() || email.split("@")[0] || "Owner";
-  const ownerMobile = state.ownerMobile || googlePlaceholderMobile(identity.uid);
+  const ownerName = input.ownerName?.trim() || row.identity.name;
+  const ownerMobile = input.ownerMobile || googlePlaceholderMobile(row.identity.uid);
   let result;
   try {
     result = await provisionTenant({
-      name: state.orgName,
-      slug: slugifyOrgName(state.orgName),
-      projectName: state.projectName,
-      projectTotalShares: state.totalShares,
+      name: input.orgName,
+      slug: slugifyOrgName(input.orgName),
+      projectName: input.projectName,
+      projectTotalShares: input.totalShares,
       adminName: ownerName,
       adminMobile: ownerMobile,
-      adminEmail: email,
+      adminEmail: row.identity.email,
       source: "self_signup"
     });
   } catch (error) {
+    tickets.set(input.ticket, { ...row, expiresAt: Date.now() + IDENTITY_TICKET_TTL_MS });
     if ((error as { code?: string }).code === "SLUG_TAKEN") {
       throw conflict("This organization slug is already taken. Choose another organization name.");
     }
@@ -298,16 +331,6 @@ async function signupWithGoogleIdentity(
 
   const user = await getActiveUserForLogin(result.ownerUserId);
   return toLoginSessionPayload(user, result.token, result.defaultProjectId);
-}
-
-export async function completeGoogleAuthorization(code: string, stateToken: string): Promise<LoginSessionPayload> {
-  const state = readState(stateToken);
-  const idToken = await exchangeGoogleCode(code, state);
-  const identity = await verifyGoogleOAuthIdToken(idToken);
-  if (state.intent === "signup") {
-    return signupWithGoogleIdentity(identity, state);
-  }
-  return loginWithGoogleEmail(identity.email!, state.tenantSlug);
 }
 
 export async function handleGoogleOAuthCallback(req: Request, res: Response) {
@@ -324,8 +347,15 @@ export async function handleGoogleOAuthCallback(req: Request, res: Response) {
     if (!code || !stateToken) {
       return sendOAuthResult(res, redirectUri, { error: "Google sign-in did not complete." });
     }
-    const payload = await completeGoogleAuthorization(code, stateToken);
-    return sendOAuthResult(res, redirectUri, { ticket: createGoogleAuthTicket(payload) });
+    const result = await completeGoogleAuthorization(code, stateToken);
+    const ticket =
+      result.kind === "session"
+        ? storeTicket({ kind: "session", payload: result.payload })
+        : storeTicket({ kind: "identity", identity: result.identity });
+    return sendOAuthResult(res, redirectUri, {
+      ticket,
+      status: result.kind === "identity" ? "signup" : "session"
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Google sign-in failed.";
     return sendOAuthResult(res, redirectUri, { error: message });

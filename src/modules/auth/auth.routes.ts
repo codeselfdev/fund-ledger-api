@@ -10,7 +10,7 @@ import { hashToken } from "../../core/security/jwt.js";
 import { validateBody } from "../../core/validation/validate.js";
 import { findActiveUsersByEmail, findActiveUsersByMobile, issueLoginSession, issueOtp, resolveFirebaseIdentity, verifyOtp } from "./auth.service.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
-import { buildGoogleAuthorizationUrl, consumeGoogleAuthTicket, handleGoogleOAuthCallback, sendOAuthResult } from "./google-oauth.service.js";
+import { buildGoogleAuthorizationUrl, handleGoogleOAuthCallback, resolveGoogleAuthTicket, sendOAuthResult, signupWithGoogleTicket } from "./google-oauth.service.js";
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
 import { summarizeOnboarding } from "../../core/onboarding/onboarding.service.js";
 import { canUserPayOnBehalf } from "../../core/security/deposit-delegate.service.js";
@@ -41,6 +41,15 @@ const googleCompleteSchema = z.object({
   ticket: z.string().min(8)
 });
 
+const googleSignupSchema = z.object({
+  ticket: z.string().min(8),
+  org_name: z.string().min(2).max(120),
+  owner_name: z.string().min(2).max(120).optional(),
+  owner_mobile: z.string().min(6).max(32).optional(),
+  project_name: z.string().min(2).max(120).optional(),
+  total_shares: z.number().int().positive().max(100_000).optional()
+});
+
 router.get("/google", asyncHandler(async (req, res) => {
   const redirectUri = typeof req.query.redirect_uri === "string" ? req.query.redirect_uri : "";
   try {
@@ -57,7 +66,20 @@ router.get("/google/callback", asyncHandler(async (req, res) => {
 
 router.post("/google/complete", validateBody(googleCompleteSchema), asyncHandler(async (req, res) => {
   const body = req.body as z.infer<typeof googleCompleteSchema>;
-  return ok(res, consumeGoogleAuthTicket(body.ticket));
+  return ok(res, resolveGoogleAuthTicket(body.ticket));
+}));
+
+router.post("/google/signup", validateBody(googleSignupSchema), asyncHandler(async (req, res) => {
+  const body = req.body as z.infer<typeof googleSignupSchema>;
+  const payload = await signupWithGoogleTicket({
+    ticket: body.ticket,
+    orgName: body.org_name,
+    ownerName: body.owner_name,
+    ownerMobile: body.owner_mobile,
+    projectName: body.project_name,
+    totalShares: body.total_shares
+  });
+  return ok(res, payload);
 }));
 
 router.post("/otp/request", validateBody(otpRequestSchema), asyncHandler(async (req, res) => {

@@ -51,9 +51,10 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | GET | `/v1/projects` | any | Projects accessible to caller |
 | POST | `/v1/projects` | owner | Create project with share cap and optional penalty policy |
 | POST | `/v1/invitations` | owner, approver | Invite or grant project role by mobile |
-| GET | `/v1/auth/google` | public | Start Google OAuth. Query: `intent` (`login` or `signup`), `redirect_uri` (app deep link), optional `tenant_slug`, signup fields `org_name`, `owner_name`, `owner_mobile`, `project_name`, `total_shares`. Redirects to Google. |
-| GET | `/v1/auth/google/callback` | public | Google redirect target. Exchanges the auth code, issues a short-lived ticket, then redirects to `redirect_uri?ticket=...` (or `?error=...`). |
-| POST | `/v1/auth/google/complete` | public | Exchange `{ ticket }` for a login session (`token`, user, tenant, memberships). |
+| GET | `/v1/auth/google` | public | Start Google OAuth. Query: `intent` (`login` or `signup`), `redirect_uri`, optional `tenant_slug`. Google returns to `/v1/auth/google/callback`. New Google accounts get a signup ticket; existing accounts get a session ticket. |
+| GET | `/v1/auth/google/callback` | public | Google redirect target. Issues a short-lived `ticket` and redirects to the app (`status=session` or `status=signup`). |
+| POST | `/v1/auth/google/complete` | public | Exchange `{ ticket }`. Returns either a login session (`kind=session`) or `{ kind: identity, email, name, ticket }` so the client can collect org details. |
+| POST | `/v1/auth/google/signup` | public | Finish Google signup with `{ ticket, org_name, owner_name?, owner_mobile?, project_name?, total_shares? }`. |
 | POST | `/v1/auth/otp/request` | public | Create one-time login code for registered mobile (legacy fallback) |
 | POST | `/v1/auth/login` | public | Login with Firebase phone `id_token` or `{ mobile, otp }`. Google sign-in uses `/v1/auth/google`. |
 | POST | `/v1/auth/switch-project` | any | Set active project for current session |
