@@ -8,8 +8,9 @@ import { authenticate, requireRoles } from "../../core/security/auth.middleware.
 import { requireAuthContext } from "../../core/security/auth.context.js";
 import { hashToken } from "../../core/security/jwt.js";
 import { validateBody } from "../../core/validation/validate.js";
-import { createSessionToken, issueOtp, verifyOtp } from "./auth.service.js";
+import { findActiveUsersByEmail, findActiveUsersByMobile, issueLoginSession, issueOtp, resolveFirebaseIdentity, verifyOtp } from "./auth.service.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
+import { buildGoogleAuthorizationUrl, consumeGoogleAuthTicket, handleGoogleOAuthCallback, sendOAuthResult } from "./google-oauth.service.js";
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
 import { summarizeOnboarding } from "../../core/onboarding/onboarding.service.js";
 import { canUserPayOnBehalf } from "../../core/security/deposit-delegate.service.js";
@@ -20,21 +21,50 @@ const otpRequestSchema = z.object({
   mobile: z.string().min(6)
 });
 
-const loginSchema = z.object({
-  mobile: z.string().min(6),
-  otp: z.string().min(4).optional(),
-  tenant_slug: z.string().min(3).optional(),
-  project_id: z.string().optional()
-});
+const loginSchema = z
+  .object({
+    mobile: z.string().min(6).optional(),
+    otp: z.string().min(4).optional(),
+    id_token: z.string().min(20).optional(),
+    tenant_slug: z.string().min(3).optional(),
+    project_id: z.string().optional()
+  })
+  .refine((value) => Boolean(value.id_token || value.mobile), {
+    message: "id_token or mobile is required"
+  });
 
 const switchProjectSchema = z.object({
   project_id: z.string().min(1)
 });
 
+const googleCompleteSchema = z.object({
+  ticket: z.string().min(8)
+});
+
+router.get("/google", asyncHandler(async (req, res) => {
+  const redirectUri = typeof req.query.redirect_uri === "string" ? req.query.redirect_uri : "";
+  try {
+    return res.redirect(buildGoogleAuthorizationUrl(req));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Google sign-in failed.";
+    return sendOAuthResult(res, redirectUri, { error: message });
+  }
+}));
+
+router.get("/google/callback", asyncHandler(async (req, res) => {
+  return handleGoogleOAuthCallback(req, res);
+}));
+
+router.post("/google/complete", validateBody(googleCompleteSchema), asyncHandler(async (req, res) => {
+  const body = req.body as z.infer<typeof googleCompleteSchema>;
+  return ok(res, consumeGoogleAuthTicket(body.ticket));
+}));
+
 router.post("/otp/request", validateBody(otpRequestSchema), asyncHandler(async (req, res) => {
   const body = req.body as z.infer<typeof otpRequestSchema>;
-  const user = await prisma.user.findFirst({ where: { mobile: body.mobile, isActive: true } });
-  if (!user) throw badRequest("No active user found for this mobile number");
+  const users = await findActiveUsersByMobile(body.mobile);
+  if (users.length === 0) throw badRequest("No active user found for this mobile number");
+  const user = users[0];
 
   const { code: devCode, emailed } = await issueOtp(body.mobile, user.email);
 
@@ -47,63 +77,50 @@ router.post("/otp/request", validateBody(otpRequestSchema), asyncHandler(async (
 
 router.post("/login", validateBody(loginSchema), asyncHandler(async (req, res) => {
   const body = req.body as z.infer<typeof loginSchema>;
-  const validOtp = await verifyOtp(body.mobile, body.otp);
-  if (!validOtp) throw unauthorized("Invalid or expired OTP");
 
-  const users = await prisma.user.findMany({
-    where: {
-      mobile: body.mobile,
-      isActive: true,
-      ...(body.tenant_slug ? { tenant: { slug: body.tenant_slug } } : {})
-    },
-    include: {
-      memberships: {
-        where: { isActive: true },
-        include: { project: true, member: true }
-      },
-      tenant: true
+  let users;
+  if (body.id_token) {
+    let identity;
+    try {
+      identity = await resolveFirebaseIdentity(body.id_token);
+    } catch (error) {
+      throw unauthorized(error instanceof Error ? error.message : "Invalid Firebase ID token");
     }
-  });
+
+    if (identity.provider === "google") {
+      users = await findActiveUsersByEmail(identity.email!, body.tenant_slug);
+      if (users.length === 0) {
+        throw unauthorized("No FundLedger account for this Google email. Create an organization or ask an admin to add this email.");
+      }
+    } else {
+      users = await findActiveUsersByMobile(identity.phoneNumber!, body.tenant_slug);
+    }
+  } else {
+    const mobile = body.mobile?.trim() ?? "";
+    const validOtp = await verifyOtp(mobile, body.otp);
+    if (!validOtp) throw unauthorized("Invalid or expired OTP");
+    users = await findActiveUsersByMobile(mobile, body.tenant_slug);
+  }
 
   if (users.length === 0) throw unauthorized("Invalid login");
   if (users.length > 1 && !body.tenant_slug) {
-    throw badRequest("tenant_slug is required when a mobile belongs to multiple tenants");
+    throw badRequest("tenant_slug is required when this login belongs to multiple tenants");
   }
 
   const user = users[0];
-  const activeMembership = body.project_id
-    ? user.memberships.find((membership) => membership.projectId === body.project_id)
-    : user.memberships[0];
-
-  if (!activeMembership) throw forbidden("No active membership for requested project");
-
-  const { token } = await createSessionToken({
-    tenantId: user.tenantId,
-    userId: user.id,
-    activeProjectId: activeMembership.projectId
-  });
+  if (!user) throw unauthorized("Invalid login");
+  const payload = await issueLoginSession(user, body.project_id);
 
   await writeAudit({
     tenantId: user.tenantId,
-    projectId: activeMembership.projectId,
+    projectId: payload.active_project_id,
     actorUserId: user.id,
     action: "auth.login",
     entityType: "session",
     after: { user_id: user.id }
   });
 
-  return ok(res, {
-    token,
-    user: { id: user.id, name: user.name, mobile: user.mobile },
-    tenant: { id: user.tenant.id, name: user.tenant.name, slug: user.tenant.slug },
-    active_project_id: activeMembership.projectId,
-    memberships: user.memberships.map((membership) => ({
-      project_id: membership.projectId,
-      project_name: membership.project.name,
-      role: membership.role,
-      member_id: membership.memberId
-    }))
-  });
+  return ok(res, payload);
 }));
 
 router.post("/switch-project", authenticate, requireRoles("any"), validateBody(switchProjectSchema), asyncHandler(async (req, res) => {

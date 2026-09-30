@@ -27,7 +27,7 @@ Every new org gets **~6 months free** (`182` days), then yearly renewal.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/v1/onboarding/signup` | public | Step 1: create org + owner + initial project + 6‑month trial; returns token |
+| POST | `/v1/onboarding/signup` | public | Step 1: create org + owner + initial project + 6‑month trial; returns token. Accepts Firebase phone `id_token`. Google signup uses `GET /v1/auth/google?intent=signup` instead. |
 | GET | `/v1/onboarding/status` | any | Current onboarding step states, approval flow, and completion status |
 | POST | `/v1/onboarding/accounting` | owner | Step 2: assign accountant and set approval flow (`accountant_only` / `accountant_and_approver`) for income & expense |
 | POST | `/v1/onboarding/accounts` | owner | Step 3: create required bank/cash accounts |
@@ -51,8 +51,11 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | GET | `/v1/projects` | any | Projects accessible to caller |
 | POST | `/v1/projects` | owner | Create project with share cap and optional penalty policy |
 | POST | `/v1/invitations` | owner, approver | Invite or grant project role by mobile |
-| POST | `/v1/auth/otp/request` | public | Create one-time login code for registered mobile |
-| POST | `/v1/auth/login` | public | Login with mobile and OTP; returns bearer token and memberships |
+| GET | `/v1/auth/google` | public | Start Google OAuth. Query: `intent` (`login` or `signup`), `redirect_uri` (app deep link), optional `tenant_slug`, signup fields `org_name`, `owner_name`, `owner_mobile`, `project_name`, `total_shares`. Redirects to Google. |
+| GET | `/v1/auth/google/callback` | public | Google redirect target. Exchanges the auth code, issues a short-lived ticket, then redirects to `redirect_uri?ticket=...` (or `?error=...`). |
+| POST | `/v1/auth/google/complete` | public | Exchange `{ ticket }` for a login session (`token`, user, tenant, memberships). |
+| POST | `/v1/auth/otp/request` | public | Create one-time login code for registered mobile (legacy fallback) |
+| POST | `/v1/auth/login` | public | Login with Firebase phone `id_token` or `{ mobile, otp }`. Google sign-in uses `/v1/auth/google`. |
 | POST | `/v1/auth/switch-project` | any | Set active project for current session |
 | GET | `/v1/auth/me` | any | Current user, tenant, active project, roles, linked member, `can_pay_for_members`, onboarding, subscription |
 | POST | `/v1/auth/logout` | any | Revoke current token |

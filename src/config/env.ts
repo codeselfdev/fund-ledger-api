@@ -57,6 +57,18 @@ export const env = {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
     from: process.env.MAIL_FROM ?? process.env.SMTP_USER
+  },
+  googleOAuth: {
+    clientId:
+      optional("GOOGLE_OAUTH_CLIENT_ID") ??
+      "953182652005-5q814sgq7bhvki19pj8lkhen1ek7dk57.apps.googleusercontent.com",
+    clientSecret: optional("GOOGLE_OAUTH_CLIENT_SECRET"),
+    redirectUri: optional("GOOGLE_OAUTH_REDIRECT_URI"),
+    publicApiUrl: optional("PUBLIC_API_URL"),
+    appRedirectAllowlist: (process.env.GOOGLE_APP_REDIRECT_ALLOWLIST ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)
   }
 };
 

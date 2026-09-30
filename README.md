@@ -221,6 +221,25 @@ X-Project-Id: <project_id>
 
 The bearer token identifies the tenant and user. `X-Project-Id` selects the active project and the middleware loads the user's project role(s). Every project table query is scoped by both `tenant_id` and `project_id`.
 
+## Google OAuth
+
+The mobile app opens the API; Google OAuth runs on this service.
+
+1. `GET /v1/auth/google?intent=login|signup&redirect_uri=fundledger://auth`
+2. Google returns to `GET /v1/auth/google/callback`
+3. The API redirects to the app with a one-time `ticket`
+4. The app calls `POST /v1/auth/google/complete` `{ ticket }`
+
+Create a **Web application** OAuth client in Google Cloud (an Android/iOS installed client will not work) and set:
+
+```bash
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
+GOOGLE_OAUTH_REDIRECT_URI=http://localhost:4000/v1/auth/google/callback
+```
+
+The authorized redirect URI in Google Cloud must match `GOOGLE_OAUTH_REDIRECT_URI` exactly.
+
 ## Push Notifications (FCM)
 
 FCM delivery is optional and enabled when `FCM_SERVICE_ACCOUNT_JSON` is set.

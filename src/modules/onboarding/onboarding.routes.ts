@@ -17,7 +17,7 @@ import { ensureUserProjectMember } from "../../core/security/member-link.service
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
 import { validateBody } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
-import { issueOtp } from "../auth/auth.service.js";
+import { findActiveUsersByEmail, googlePlaceholderMobile, issueOtp, mobilesEquivalent, resolveFirebaseIdentity } from "../auth/auth.service.js";
 import { provisionTenant } from "../tenants/tenants.service.js";
 
 const router = Router();
@@ -34,11 +34,12 @@ const signupSchema = z.object({
   org_name: z.string().min(2).max(120),
   slug: z.string().min(3).max(48).regex(/^[a-z0-9-]+$/).optional(),
   currency: z.string().length(3).default("BDT"),
-  project_name: z.string().min(2).max(120),
-  total_shares: z.number().int().positive().max(100_000),
-  owner_name: z.string().min(2).max(120),
-  owner_mobile: z.string().min(6).max(32),
-  owner_email: z.string().email().optional()
+  project_name: z.string().min(2).max(120).optional(),
+  total_shares: z.number().int().positive().max(100_000).optional(),
+  owner_name: z.string().min(2).max(120).optional(),
+  owner_mobile: z.string().min(6).max(32).optional(),
+  owner_email: z.string().email().optional(),
+  id_token: z.string().min(20).optional()
 });
 
 const accountingSchema = z.object({
@@ -136,6 +137,37 @@ function assertStepCompleted(stepStatus: "pending" | "done" | "skipped", stepNam
 
 router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler(async (req, res) => {
   const body = req.body as z.infer<typeof signupSchema>;
+  let ownerMobile = body.owner_mobile;
+  let ownerName = body.owner_name;
+  let ownerEmail = body.owner_email?.trim().toLowerCase();
+
+  if (body.id_token) {
+    let identity;
+    try {
+      identity = await resolveFirebaseIdentity(body.id_token);
+    } catch (error) {
+      throw badRequest(error instanceof Error ? error.message : "Invalid Firebase ID token");
+    }
+
+    if (identity.provider === "google") {
+      ownerEmail = identity.email;
+      ownerName = identity.name || body.owner_name;
+      ownerMobile = body.owner_mobile || googlePlaceholderMobile(identity.uid);
+      const existing = await findActiveUsersByEmail(identity.email!);
+      if (existing.length > 0) {
+        throw conflict("This Google account already has a FundLedger login. Sign in instead.");
+      }
+    } else {
+      ownerMobile = identity.phoneNumber;
+      if (body.owner_mobile && !mobilesEquivalent(ownerMobile!, body.owner_mobile)) {
+        throw badRequest("Mobile number does not match the verified Firebase phone");
+      }
+    }
+  }
+
+  if (!ownerName) throw badRequest("Enter owner name.");
+  if (!ownerMobile) throw badRequest("Enter owner mobile, or continue with Google.");
+
   const slug = body.slug ?? slugifyOrgName(body.org_name);
 
   let result;
@@ -146,9 +178,9 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
       currency: body.currency,
       projectName: body.project_name,
       projectTotalShares: body.total_shares,
-      adminName: body.owner_name,
-      adminMobile: body.owner_mobile,
-      adminEmail: body.owner_email,
+      adminName: ownerName,
+      adminMobile: ownerMobile,
+      adminEmail: ownerEmail,
       source: "self_signup"
     });
   } catch (error) {
