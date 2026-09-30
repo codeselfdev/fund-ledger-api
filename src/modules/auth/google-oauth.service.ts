@@ -113,15 +113,35 @@ function escapeHtml(value: string): string {
   });
 }
 
+function isHttpRedirect(uri: string): boolean {
+  return uri.startsWith("http://") || uri.startsWith("https://");
+}
+
 export function sendOAuthResult(res: Response, redirectUri: string, params: Record<string, string>) {
-  if (redirectUri && isAllowedAppRedirect(redirectUri)) {
-    return res.redirect(appendQueryParams(redirectUri, params));
+  const target = redirectUri && isAllowedAppRedirect(redirectUri) ? appendQueryParams(redirectUri, params) : "";
+  if (target && isHttpRedirect(target)) {
+    return res.redirect(target);
   }
-  const message = params.error ?? (params.ticket ? "Google sign-in completed. Return to the FundLedger app." : "Google sign-in failed.");
+
+  const message =
+    params.error ?? (params.ticket ? "Google sign-in completed. Return to Fund Nesta." : "Google sign-in failed.");
+  const safeTarget = target ? escapeHtml(target) : "";
   return res
     .status(params.error ? 400 : 200)
     .type("html")
-    .send(`<!doctype html><html><head><meta charset="utf-8"><title>FundLedger</title></head><body><p>${escapeHtml(message)}</p></body></html>`);
+    .send(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    ${target ? `<meta http-equiv="refresh" content="0;url=${safeTarget}">` : ""}
+    <title>Fund Nesta</title>
+  </head>
+  <body style="font-family:sans-serif;padding:24px;line-height:1.4">
+    <p>${escapeHtml(message)}</p>
+    ${target ? `<p><a href="${safeTarget}">Open Fund Nesta</a></p>` : ""}
+  </body>
+</html>`);
 }
 
 function queryString(req: Request, key: string): string | undefined {
