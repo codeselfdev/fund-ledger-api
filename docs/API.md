@@ -27,7 +27,7 @@ Every new org gets **~6 months free** (`182` days), then yearly renewal.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/v1/onboarding/signup` | public | Step 1: create org + owner + initial project + 6‑month trial; returns token. Accepts Firebase phone `id_token`. Google signup uses `GET /v1/auth/google?intent=signup` instead. |
+| POST | `/v1/onboarding/signup` | public | Step 1: create org + owner + initial project + 6‑month trial; returns token. Accepts Google or Firebase phone `id_token`. Google signup does not require `owner_mobile`. |
 | GET | `/v1/onboarding/status` | any | Current onboarding step states, approval flow, and completion status |
 | POST | `/v1/onboarding/accounting` | owner | Step 2: assign accountant and set approval flow (`accountant_only` / `accountant_and_approver`) for income & expense |
 | POST | `/v1/onboarding/accounts` | owner | Step 3: create required bank/cash accounts |
@@ -51,12 +51,12 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | GET | `/v1/projects` | any | Projects accessible to caller |
 | POST | `/v1/projects` | owner | Create project with share cap and optional penalty policy |
 | POST | `/v1/invitations` | owner, approver | Invite or grant project role by mobile |
-| GET | `/v1/auth/google` | public | Start Google OAuth. Query: `intent` (`login` or `signup`), `redirect_uri`, optional `tenant_slug`. Google returns to `/v1/auth/google/callback`. New Google accounts get a signup ticket; existing accounts get a session ticket. |
-| GET | `/v1/auth/google/callback` | public | Google redirect target. Issues a short-lived `ticket` and redirects to the app (`status=session` or `status=signup`). |
-| POST | `/v1/auth/google/complete` | public | Exchange `{ ticket }`. Returns either a login session (`kind=session`) or `{ kind: identity, email, name, ticket }` so the client can collect org details. |
+| GET | `/v1/auth/google` | public | Start Google OAuth. Query: `intent` (`login` or `signup`), `redirect_uri`, optional `tenant_slug`. Google returns to `/v1/auth/google/callback`. |
+| GET | `/v1/auth/google/callback` | public | Google redirect target. Issues a short-lived identity `ticket` (includes ID token) and redirects to the app. |
+| POST | `/v1/auth/google/complete` | public | Exchange `{ ticket }`. Returns `{ kind: identity, email, name, ticket, id_token }` for `POST /v1/auth/login` or `POST /v1/onboarding/signup`. |
 | POST | `/v1/auth/google/signup` | public | Finish Google signup with `{ ticket, org_name, owner_name?, owner_mobile?, project_name?, total_shares? }`. |
 | POST | `/v1/auth/otp/request` | public | Create one-time login code for registered mobile (legacy fallback) |
-| POST | `/v1/auth/login` | public | Login with Firebase phone `id_token` or `{ mobile, otp }`. Google sign-in uses `/v1/auth/google`. |
+| POST | `/v1/auth/login` | public | Login with `{ id_token }` (Google or Firebase phone) or `{ mobile, otp }`. Google users are matched by email. |
 | POST | `/v1/auth/switch-project` | any | Set active project for current session |
 | GET | `/v1/auth/me` | any | Current user, tenant, active project, roles, linked member, `can_pay_for_members`, onboarding, subscription |
 | POST | `/v1/auth/logout` | any | Revoke current token |

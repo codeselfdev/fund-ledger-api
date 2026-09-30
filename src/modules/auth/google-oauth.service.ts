@@ -4,7 +4,6 @@ import jwt from "jsonwebtoken";
 import { nanoid } from "nanoid";
 import { env } from "../../config/env.js";
 import { slugifyOrgName } from "../../core/onboarding/onboarding.service.js";
-import { writeAudit } from "../../core/audit/audit.service.js";
 import { badRequest, conflict, serviceUnavailable, unauthorized } from "../../core/http/api-error.js";
 import { verifyGoogleOAuthIdToken } from "../../core/firebase/admin.js";
 import { provisionTenant } from "../tenants/tenants.service.js";
@@ -12,14 +11,12 @@ import {
   findActiveUsersByEmail,
   getActiveUserForLogin,
   googlePlaceholderMobile,
-  issueLoginSession,
   toLoginSessionPayload,
   type LoginSessionPayload
 } from "./auth.service.js";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
-const SESSION_TICKET_TTL_MS = 2 * 60 * 1000;
 const IDENTITY_TICKET_TTL_MS = 30 * 60 * 1000;
 
 type GoogleOAuthState = {
@@ -38,11 +35,11 @@ export type GoogleIdentity = {
 
 export type GoogleCompleteResult =
   | ({ kind: "session" } & LoginSessionPayload)
-  | { kind: "identity"; email: string; name: string; ticket: string };
+  | { kind: "identity"; email: string; name: string; ticket: string; id_token: string };
 
 type TicketRecord =
   | { kind: "session"; payload: LoginSessionPayload; expiresAt: number }
-  | { kind: "identity"; identity: GoogleIdentity; expiresAt: number };
+  | { kind: "identity"; identity: GoogleIdentity; idToken: string; expiresAt: number };
 
 const tickets = new Map<string, TicketRecord>();
 
@@ -68,8 +65,12 @@ export function isAllowedAppRedirect(uri: string): boolean {
     if (url.protocol === "fundledger:") return true;
     if (url.protocol === "exp:" || url.protocol === "exps:") return true;
     if (url.protocol === "http:" || url.protocol === "https:") {
-      if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return true;
-      if (url.protocol === "https:" && (url.hostname === "auth.expo.io" || url.hostname.endsWith(".expo.io"))) {
+      const host = url.hostname;
+      if (host === "localhost" || host === "127.0.0.1") return true;
+      if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+      if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+      if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+      if (url.protocol === "https:" && (host === "auth.expo.io" || host.endsWith(".expo.io") || host.endsWith(".exp.direct"))) {
         return true;
       }
     }
@@ -160,15 +161,15 @@ function pruneTickets() {
   }
 }
 
-type GoogleResolveResult =
-  | { kind: "session"; payload: LoginSessionPayload }
-  | { kind: "identity"; identity: GoogleIdentity };
-
-function storeTicket(record: GoogleResolveResult): string {
+function storeIdentityTicket(identity: GoogleIdentity, idToken: string): string {
   pruneTickets();
   const ticket = nanoid(24);
-  const expiresAt = Date.now() + (record.kind === "identity" ? IDENTITY_TICKET_TTL_MS : SESSION_TICKET_TTL_MS);
-  tickets.set(ticket, { ...record, expiresAt });
+  tickets.set(ticket, {
+    kind: "identity",
+    identity,
+    idToken,
+    expiresAt: Date.now() + IDENTITY_TICKET_TTL_MS
+  });
   return ticket;
 }
 
@@ -184,7 +185,8 @@ export function resolveGoogleAuthTicket(ticket: string): GoogleCompleteResult {
     kind: "identity",
     email: row.identity.email,
     name: row.identity.name,
-    ticket
+    ticket,
+    id_token: row.idToken
   };
 }
 
@@ -256,33 +258,13 @@ function toGoogleIdentity(identity: { uid: string; email?: string; name?: string
   return { uid: identity.uid, email, name };
 }
 
-async function resolveGoogleIdentity(identity: GoogleIdentity, tenantSlug?: string): Promise<GoogleResolveResult> {
-  const users = await findActiveUsersByEmail(identity.email, tenantSlug);
-  if (users.length === 0) {
-    return { kind: "identity", identity };
-  }
-  if (users.length > 1 && !tenantSlug) {
-    throw badRequest("tenant_slug is required when this login belongs to multiple tenants");
-  }
-  const user = users[0];
-  if (!user) throw unauthorized("Invalid login");
-  const payload = await issueLoginSession(user);
-  await writeAudit({
-    tenantId: user.tenantId,
-    projectId: payload.active_project_id,
-    actorUserId: user.id,
-    action: "auth.login",
-    entityType: "session",
-    after: { user_id: user.id, provider: "google" }
-  });
-  return { kind: "session", payload };
-}
-
-export async function completeGoogleAuthorization(code: string, stateToken: string): Promise<GoogleResolveResult> {
-  const state = readState(stateToken);
-  const idToken = await exchangeGoogleCode(code, state);
+export async function completeGoogleAuthorization(
+  code: string,
+  stateToken: string
+): Promise<{ identity: GoogleIdentity; idToken: string }> {
+  const idToken = await exchangeGoogleCode(code, readState(stateToken));
   const verified = await verifyGoogleOAuthIdToken(idToken);
-  return resolveGoogleIdentity(toGoogleIdentity(verified), state.tenantSlug);
+  return { identity: toGoogleIdentity(verified), idToken };
 }
 
 export async function signupWithGoogleTicket(input: {
@@ -347,15 +329,9 @@ export async function handleGoogleOAuthCallback(req: Request, res: Response) {
     if (!code || !stateToken) {
       return sendOAuthResult(res, redirectUri, { error: "Google sign-in did not complete." });
     }
-    const result = await completeGoogleAuthorization(code, stateToken);
-    const ticket =
-      result.kind === "session"
-        ? storeTicket({ kind: "session", payload: result.payload })
-        : storeTicket({ kind: "identity", identity: result.identity });
-    return sendOAuthResult(res, redirectUri, {
-      ticket,
-      status: result.kind === "identity" ? "signup" : "session"
-    });
+    const { identity, idToken } = await completeGoogleAuthorization(code, stateToken);
+    const ticket = storeIdentityTicket(identity, idToken);
+    return sendOAuthResult(res, redirectUri, { ticket, status: "identity" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Google sign-in failed.";
     return sendOAuthResult(res, redirectUri, { error: message });

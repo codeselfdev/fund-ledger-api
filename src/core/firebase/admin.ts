@@ -60,7 +60,8 @@ export type FirebaseAuthIdentity = {
 };
 
 const DEFAULT_GOOGLE_CLIENT_IDS = [
-  "953182652005-qvkt24gr8r88javb0la2q8r0iasgeojm.apps.googleusercontent.com"
+  "953182652005-qvkt24gr8r88javb0la2q8r0iasgeojm.apps.googleusercontent.com",
+  "953182652005-5q814sgq7bhvki19pj8lkhen1ek7dk57.apps.googleusercontent.com"
 ];
 
 function allowedGoogleAudiences(): string[] {
