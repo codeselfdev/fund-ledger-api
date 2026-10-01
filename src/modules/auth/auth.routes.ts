@@ -8,7 +8,7 @@ import { authenticate, requireRoles } from "../../core/security/auth.middleware.
 import { requireAuthContext } from "../../core/security/auth.context.js";
 import { hashToken } from "../../core/security/jwt.js";
 import { validateBody } from "../../core/validation/validate.js";
-import { findActiveUsersByEmail, findActiveUsersByMobile, issueLoginSession, issueOtp, resolveFirebaseIdentity, verifyOtp } from "./auth.service.js";
+import { findActiveUsersByEmail, findActiveUsersByMobile, googlePlaceholderMobile, issueLoginSession, issueOtp, resolveFirebaseIdentity, verifyOtp } from "./auth.service.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { buildGoogleAuthorizationUrl, handleGoogleOAuthCallback, resolveGoogleAuthTicket, sendOAuthResult, signupWithGoogleTicket } from "./google-oauth.service.js";
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
@@ -112,7 +112,15 @@ router.post("/login", validateBody(loginSchema), asyncHandler(async (req, res) =
     if (identity.provider === "google") {
       users = await findActiveUsersByEmail(identity.email!, body.tenant_slug);
       if (users.length === 0) {
-        throw unauthorized("No FundLedger account for this Google email. Create an organization or ask an admin to add this email.");
+        return ok(res, {
+          googleSignupNeeded: true,
+          googleIdentity: {
+            email: identity.email!.trim().toLowerCase(),
+            name: identity.name || identity.email!.split("@")[0],
+            uid: identity.uid
+          },
+          tenantSlug: body.tenant_slug
+        });
       }
     } else {
       users = await findActiveUsersByMobile(identity.phoneNumber!, body.tenant_slug);

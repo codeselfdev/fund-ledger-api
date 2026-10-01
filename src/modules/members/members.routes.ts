@@ -12,6 +12,7 @@ import { STAFF_ROLES } from "../../core/security/roles.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams, validateQuery } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
+import { findActiveUsersByEmail, findActiveUsersByMobile, googlePlaceholderMobile, issueOtp, mobilesEquivalent, resolveFirebaseIdentity } from "../auth/auth.service.js";
 
 const router = Router();
 const importUpload = multer({
@@ -525,7 +526,9 @@ router.post("/", requireProject, requireRoles("owner", "accountant", "admin"), v
       previousDueScheduleId = schedule.id;
     }
 
-    return { member, previousDueAmount, previousDueScheduleId };
+    const otp = await issueOtp(member.mobile, member.email);
+
+    return { member, previousDueAmount, previousDueScheduleId, otp };
   });
 
   await writeAudit({
@@ -538,10 +541,31 @@ router.post("/", requireProject, requireRoles("owner", "accountant", "admin"), v
     after: result
   });
 
+  const memberLink = `${process.env.PUBLIC_API_URL || `${req.protocol}://${req.get("host")}`}/v1/members/accept/${result.member.id}`;
+
   return created(res, {
     ...result.member,
     previous_due_amount: result.previousDueAmount,
-    previous_due_schedule_id: result.previousDueScheduleId
+    previous_due_schedule_id: result.previousDueScheduleId,
+    otp: {
+      sent: true,
+      emailed: result.otp.emailed,
+      ...(process.env.NODE_ENV === "production" ? {} : { dev_code: result.otp.code })
+    },
+    memberLink,
+    signInOptions: [
+      {
+        method: "google",
+        label: "Sign in with Google",
+        description: "Use your Gmail account to join the project"
+      },
+      {
+        method: "otp",
+        label: "Sign in with OTP",
+        description: "Enter the OTP sent to your phone or email"
+      }
+    ],
+    onboardingSummary: `Member ${result.member.name} has been added to the project. Use the member link to accept and choose your sign-in method.`
   });
 }));
 

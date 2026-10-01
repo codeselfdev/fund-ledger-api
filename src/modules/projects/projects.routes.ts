@@ -296,13 +296,29 @@ invitationsRouter.post("/", requireProject, requireRoles("owner", "approver", "a
     after: invitation
   });
 
+  const invitationLink = `${process.env.PUBLIC_API_URL || `${req.protocol}://${req.get("host")}`}/v1/invitations/accept/${invitation.id}`;
+
   return created(res, {
     ...invitation,
     otp: {
       sent: true,
       emailed: otp.emailed,
       ...(process.env.NODE_ENV === "production" ? {} : { dev_code: otp.code })
-    }
+    },
+    invitationLink,
+    signInOptions: [
+      {
+        method: "google",
+        label: "Sign in with Google",
+        description: "Use your Gmail account to join the project"
+      },
+      {
+        method: "otp",
+        label: "Sign in with OTP",
+        description: "Enter the OTP sent to your phone or email"
+      }
+    ],
+    onboardingSummary: `You've been invited to join ${project.name} as ${body.role}. Click the invitation link to accept and choose your sign-in method.`
   });
 }));
 
