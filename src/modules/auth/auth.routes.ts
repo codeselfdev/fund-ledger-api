@@ -12,7 +12,7 @@ import { findActiveUsersByEmail, findActiveUsersByMobile, issueLoginSession, iss
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { buildGoogleAuthorizationUrl, handleGoogleOAuthCallback, resolveGoogleAuthTicket, sendOAuthResult, signupWithGoogleTicket } from "./google-oauth.service.js";
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
-import { summarizeOnboarding } from "../../core/onboarding/onboarding.service.js";
+import { summarizeOnboardingForClient } from "../../core/onboarding/onboarding.service.js";
 import { canUserPayOnBehalf } from "../../core/security/deposit-delegate.service.js";
 
 const router = Router();
@@ -208,7 +208,10 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
   const canPayForMembers = canPayForMembersByRole || (
     auth.projectId ? canUserPayOnBehalf(user.tenant.contact, auth.projectId, auth.userId) : false
   );
-  const onboarding = summarizeOnboarding(onboardingProgress);
+  const onboardingProject = user.memberships.find((membership) => membership.projectId === auth.projectId)?.project
+    ?? user.memberships[0]?.project
+    ?? null;
+  const onboarding = summarizeOnboardingForClient(onboardingProgress, onboardingProject);
   const subscription = evaluateSubscription(user.tenant.contact);
 
   return ok(res, {

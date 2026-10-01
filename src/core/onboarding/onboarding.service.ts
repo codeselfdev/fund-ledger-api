@@ -74,7 +74,7 @@ export function createProvisionedOnboardingSeed(input: {
   if (input.source === "self_signup") {
     return {
       status: "in_progress" as OnboardingProgressStatus,
-      organizationStepStatus: "done" as OnboardingStepStatus,
+      organizationStepStatus: "pending" as OnboardingStepStatus,
       accountantStepStatus: "pending" as OnboardingStepStatus,
       accountsStepStatus: "pending" as OnboardingStepStatus,
       shareholdersStepStatus: "pending" as OnboardingStepStatus,
@@ -156,6 +156,30 @@ export function summarizeOnboarding(progress: OnboardingProgressLike | null) {
     },
     accountant_user_id: progress.accountantUserId,
     completed_at: progress.completedAt?.toISOString() ?? null
+  };
+}
+
+const PLACEHOLDER_PROJECT_NAME = "My Project";
+
+export function summarizeOnboardingForClient(
+  progress: OnboardingProgressLike | null,
+  project?: { name?: string | null; totalShares?: number | null } | null
+) {
+  const summary = summarizeOnboarding(progress);
+  if (!progress) return summary;
+  const projectName = project?.name?.trim() || "";
+  const looksUnset = projectName.length === 0 || projectName === PLACEHOLDER_PROJECT_NAME;
+  if (progress.organizationStepStatus !== "pending" && !looksUnset) return summary;
+
+  const steps = summary.steps.map((step) =>
+    step.id === "organization" ? { ...step, status: "pending" as const } : step
+  );
+  return {
+    ...summary,
+    required: true,
+    current_step: "organization" as OnboardingStepId,
+    completed_steps: steps.filter((step) => step.status !== "pending").length,
+    steps
   };
 }
 

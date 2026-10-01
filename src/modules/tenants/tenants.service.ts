@@ -54,6 +54,24 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
   if (existingSlug) {
     throw Object.assign(new Error("Tenant slug already exists"), { code: "SLUG_TAKEN" });
   }
+  if (input.adminEmail) {
+    const existingEmail = await prisma.user.findFirst({
+      where: { isActive: true, email: { equals: input.adminEmail.trim().toLowerCase(), mode: "insensitive" } },
+      select: { id: true }
+    });
+    if (existingEmail) {
+      throw Object.assign(new Error("Email already registered"), { code: "EMAIL_TAKEN" });
+    }
+  }
+  if (input.adminMobile) {
+    const existingMobile = await prisma.user.findFirst({
+      where: { isActive: true, mobile: input.adminMobile },
+      select: { id: true }
+    });
+    if (existingMobile) {
+      throw Object.assign(new Error("Mobile already registered"), { code: "MOBILE_TAKEN" });
+    }
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     const contact = jsonValue({ subscription: createTrialSubscription(trialDays) });

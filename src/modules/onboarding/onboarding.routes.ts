@@ -9,7 +9,8 @@ import { prisma } from "../../core/prisma/client.js";
 import {
   recomputeOnboardingStatus,
   slugifyOrgName,
-  summarizeOnboarding
+  summarizeOnboarding,
+  summarizeOnboardingForClient
 } from "../../core/onboarding/onboarding.service.js";
 import { authenticate, requireProject, requireRoles } from "../../core/security/auth.middleware.js";
 import { requireAuthContext, requireProjectContext } from "../../core/security/auth.context.js";
@@ -17,7 +18,7 @@ import { ensureUserProjectMember } from "../../core/security/member-link.service
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
 import { validateBody } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
-import { findActiveUsersByEmail, googlePlaceholderMobile, issueOtp, mobilesEquivalent, resolveFirebaseIdentity } from "../auth/auth.service.js";
+import { findActiveUsersByEmail, findActiveUsersByMobile, googlePlaceholderMobile, issueOtp, mobilesEquivalent, resolveFirebaseIdentity } from "../auth/auth.service.js";
 import { provisionTenant } from "../tenants/tenants.service.js";
 
 const router = Router();
@@ -40,6 +41,15 @@ const signupSchema = z.object({
   owner_mobile: z.string().min(6).max(32).optional(),
   owner_email: z.string().email().optional(),
   id_token: z.string().min(20).optional()
+});
+
+const organizationSetupSchema = z.object({
+  org_name: z.string().min(2).max(120).optional(),
+  name: z.string().min(2).max(120).optional(),
+  project_name: z.string().min(2).max(120).optional(),
+  total_shares: z.number().int().positive().max(100_000).optional()
+}).refine((value) => Boolean(value.org_name || value.name || value.project_name || value.total_shares), {
+  message: "Enter organization name, project name, or total shares"
 });
 
 const accountingSchema = z.object({
@@ -108,11 +118,18 @@ async function loadOnboardingBundle(tenantId: string) {
     }),
     getOnboardingProgress(tenantId)
   ]);
+  const project = progress
+    ? await prisma.project.findFirst({
+        where: { tenantId, id: progress.projectId },
+        select: { id: true, name: true, totalShares: true }
+      })
+    : null;
 
   return {
     tenant,
     progress,
-    onboarding: summarizeOnboarding(progress),
+    project,
+    onboarding: summarizeOnboardingForClient(progress, project),
     subscription: evaluateSubscription(tenant.contact)
   };
 }
@@ -168,6 +185,19 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
   if (!ownerName) throw badRequest("Enter owner name.");
   if (!ownerMobile) throw badRequest("Enter owner mobile, or continue with Google.");
 
+  if (ownerEmail) {
+    const existingEmail = await findActiveUsersByEmail(ownerEmail);
+    if (existingEmail.length > 0) {
+      throw conflict("This email already has a FundLedger login. Sign in instead.");
+    }
+  }
+  if (ownerMobile) {
+    const existingMobile = await findActiveUsersByMobile(ownerMobile);
+    if (existingMobile.length > 0) {
+      throw conflict("This mobile already has a FundLedger login. Sign in instead.");
+    }
+  }
+
   const slug = body.slug ?? slugifyOrgName(body.org_name);
 
   let result;
@@ -186,6 +216,12 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
   } catch (error) {
     if ((error as { code?: string }).code === "SLUG_TAKEN") {
       throw conflict("This organization slug is already taken. Choose another slug.");
+    }
+    if ((error as { code?: string }).code === "EMAIL_TAKEN") {
+      throw conflict("This email already has a FundLedger login. Sign in instead.");
+    }
+    if ((error as { code?: string }).code === "MOBILE_TAKEN") {
+      throw conflict("This mobile already has a FundLedger login. Sign in instead.");
     }
     throw error;
   }
@@ -248,6 +284,8 @@ router.get("/status", authenticate, requireRoles("any"), asyncHandler(async (req
     shareholders_count: number;
     shares_assigned: number;
     shares_target: number | null;
+    organization_name: string | null;
+    project_name: string | null;
   } = {
     project_id: bundle.progress?.projectId ?? null,
     accountant_set: false,
@@ -257,7 +295,9 @@ router.get("/status", authenticate, requireRoles("any"), asyncHandler(async (req
     accounts_count: 0,
     shareholders_count: 0,
     shares_assigned: 0,
-    shares_target: null
+    shares_target: bundle.project?.totalShares ?? null,
+    organization_name: bundle.tenant.name,
+    project_name: bundle.project?.name ?? null
   };
 
   if (bundle.progress) {
@@ -309,7 +349,9 @@ router.get("/status", authenticate, requireRoles("any"), asyncHandler(async (req
       accounts_count: accountCount,
       shareholders_count: membersCount,
       shares_assigned: membersAggregate._sum.shares ?? 0,
-      shares_target: project?.totalShares ?? null
+      shares_target: project?.totalShares ?? bundle.project?.totalShares ?? null,
+      organization_name: bundle.tenant.name,
+      project_name: bundle.project?.name ?? null
     };
   }
 
@@ -326,6 +368,86 @@ router.get("/status", authenticate, requireRoles("any"), asyncHandler(async (req
     checks
   });
 }));
+
+async function completeOrganizationStep(req: import("express").Request, res: import("express").Response) {
+  const auth = requireProjectContext(req);
+  assertOwnerOnboarding(auth.roles);
+  const body = req.body as z.infer<typeof organizationSetupSchema>;
+
+  const progress = await prisma.onboardingProgress.findUnique({
+    where: { tenantId: auth.tenantId },
+    select: onboardingProgressSelect
+  });
+  if (!progress) throw badRequest("Onboarding is not initialized for this tenant");
+  assertOnboardingProject(auth.projectId, progress.projectId);
+
+  const orgName = body.org_name?.trim();
+  const projectName = (body.project_name ?? body.name)?.trim();
+  if (!orgName && !projectName && body.total_shares == null) {
+    throw badRequest("Enter organization name, project name, or total shares");
+  }
+
+  const nextProgress = await prisma.$transaction(async (tx) => {
+    if (orgName) {
+      await tx.tenant.update({
+        where: { id: auth.tenantId },
+        data: { name: orgName }
+      });
+    }
+    if (projectName || body.total_shares != null) {
+      await tx.project.update({
+        where: { id: progress.projectId },
+        data: {
+          ...(projectName ? { name: projectName } : {}),
+          ...(body.total_shares != null ? { totalShares: body.total_shares } : {})
+        }
+      });
+    }
+
+    const nextState = recomputeOnboardingStatus({
+      organizationStepStatus: "done",
+      accountantStepStatus: progress.accountantStepStatus,
+      accountsStepStatus: progress.accountsStepStatus,
+      shareholdersStepStatus: progress.shareholdersStepStatus
+    });
+
+    return tx.onboardingProgress.update({
+      where: { tenantId: auth.tenantId },
+      data: {
+        organizationStepStatus: "done",
+        status: nextState.status,
+        completedAt: nextState.completedAt
+      },
+      select: onboardingProgressSelect
+    });
+  });
+
+  await writeAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    action: "onboarding.organization_configured",
+    entityType: "onboarding_progress",
+    entityId: progress.tenantId,
+    after: {
+      org_name: orgName,
+      project_name: projectName,
+      total_shares: body.total_shares
+    }
+  });
+
+  const project = await prisma.project.findFirst({
+    where: { id: progress.projectId },
+    select: { name: true, totalShares: true }
+  });
+
+  return ok(res, {
+    onboarding: summarizeOnboardingForClient(nextProgress, project)
+  });
+}
+
+router.post("/organization", authenticate, requireProject, requireRoles("owner"), validateBody(organizationSetupSchema), asyncHandler(completeOrganizationStep));
+router.post("/project", authenticate, requireProject, requireRoles("owner"), validateBody(organizationSetupSchema), asyncHandler(completeOrganizationStep));
 
 router.post("/accounting", authenticate, requireProject, requireRoles("owner"), validateBody(accountingSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
