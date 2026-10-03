@@ -36,7 +36,7 @@ router.get("/", requireProject, requireRoles("any"), asyncHandler(async (req, re
     where: { tenantId: auth.tenantId, projectId: auth.projectId },
     include: {
       dues: {
-        select: { amount: true, paidAmount: true, penaltyDue: true, penaltyPaid: true, status: true }
+        select: { amount: true, paidAmount: true, waivedAmount: true, penaltyDue: true, penaltyPaid: true, status: true }
       }
     },
     orderBy: { createdAt: "desc" }
@@ -44,7 +44,7 @@ router.get("/", requireProject, requireRoles("any"), asyncHandler(async (req, re
 
   return ok(res, schedules.map((schedule) => {
     const totalPaid = schedule.dues.reduce((sum, due) => sum + due.paidAmount + due.penaltyPaid, 0);
-    const totalDue = schedule.dues.reduce((sum, due) => sum + due.amount + due.penaltyDue, 0);
+    const totalDue = schedule.dues.reduce((sum, due) => sum + due.amount - due.waivedAmount + due.penaltyDue, 0);
     return {
       ...schedule,
       collected_percent: totalDue === 0 ? 0 : Math.round((totalPaid / totalDue) * 100)

@@ -11,7 +11,7 @@ import { isSelfOrRole, requireProjectContext } from "../../core/security/auth.co
 import { STAFF_ROLES } from "../../core/security/roles.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams, validateQuery } from "../../core/validation/validate.js";
-import { writeAudit } from "../../core/audit/audit.service.js";
+import { writeAccountTransactionAudit, writeAudit } from "../../core/audit/audit.service.js";
 import { issueOtp } from "../auth/auth.service.js";
 import {
   PROJECT_SIGN_IN_OPTIONS,
@@ -20,6 +20,13 @@ import {
   resolveAppDownloadLink,
   sendProjectInvitationEmail
 } from "../../core/invitations/project-invitation.service.js";
+import {
+  assertMemberCanExit,
+  assertNoActiveManagementRoles,
+  calculateDueBalance,
+  getMemberSettlement,
+  settleMemberBalance
+} from "./member-settlement.service.js";
 
 const router = Router();
 const importUpload = multer({
@@ -49,6 +56,35 @@ const memberUpdateSchema = z.object({
 const memberQuerySchema = z.object({
   status: z.nativeEnum(MemberStatus).optional(),
   search: z.string().optional()
+});
+
+const memberSettlementSchema = z.object({
+  reason: z.string().min(3).max(500),
+  apply_advance_to_dues: z.boolean().default(true),
+  write_off_remaining_dues: z.boolean().default(false),
+  refund_remaining_advance: z.boolean().default(false)
+}).refine((value) =>
+  value.apply_advance_to_dues || value.write_off_remaining_dues || value.refund_remaining_advance, {
+  message: "Select at least one settlement action"
+});
+
+const memberRemovalSchema = z.object({
+  reason: z.string().min(3).max(500)
+});
+
+const transferTargetSchema = z.object({
+  name: z.string().min(2).max(120),
+  mobile: z.string().min(6).max(32),
+  email: z.string().email().optional(),
+  address: z.string().optional()
+});
+
+const memberTransferSchema = z.object({
+  target_member_id: z.string().min(1).optional(),
+  new_member: transferTargetSchema.optional(),
+  reason: z.string().min(3).max(500)
+}).refine((value) => Boolean(value.target_member_id) !== Boolean(value.new_member), {
+  message: "Provide either target_member_id or new_member"
 });
 
 const memberImportRowSchema = z.object({
@@ -236,13 +272,14 @@ router.get("/", requireProject, requireRoles("owner", "staff"), validateQuery(me
     _sum: {
       amount: true,
       paidAmount: true,
+      waivedAmount: true,
       penaltyDue: true,
       penaltyPaid: true
     }
   });
 
   const dueByMember = new Map(dueTotals.map((item) => {
-    const totalDue = (item._sum.amount ?? 0) + (item._sum.penaltyDue ?? 0);
+    const totalDue = (item._sum.amount ?? 0) + (item._sum.penaltyDue ?? 0) - (item._sum.waivedAmount ?? 0);
     const totalPaid = (item._sum.paidAmount ?? 0) + (item._sum.penaltyPaid ?? 0);
     return [item.memberId, Math.max(0, totalDue - totalPaid)];
   }));
@@ -460,6 +497,13 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
   return created(res, responseSummary);
 }));
 
+router.get("/:id/settlement", requireProject, requireRoles("any"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  const { id } = req.params as z.infer<typeof idParamSchema>;
+  if (!isSelfOrRole(auth, id, [...STAFF_ROLES, "owner"])) throw forbidden();
+  return ok(res, await getMemberSettlement(auth.tenantId, auth.projectId, id));
+}));
+
 router.get("/:id", requireProject, requireRoles("any"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
@@ -472,6 +516,7 @@ router.get("/:id", requireProject, requireRoles("any"), validateParams(idParamSc
         select: {
           amount: true,
           paidAmount: true,
+          waivedAmount: true,
           penaltyDue: true,
           penaltyPaid: true,
           status: true
@@ -484,9 +529,10 @@ router.get("/:id", requireProject, requireRoles("any"), validateParams(idParamSc
   const summary = member.dues.reduce((totals, due) => {
     totals.payable += due.amount + due.penaltyDue;
     totals.paid += due.paidAmount + due.penaltyPaid;
-    totals.outstanding += Math.max(0, due.amount + due.penaltyDue - due.paidAmount - due.penaltyPaid);
+    totals.waived += due.waivedAmount;
+    totals.outstanding += calculateDueBalance(due).total;
     return totals;
-  }, { payable: 0, paid: 0, outstanding: 0 });
+  }, { payable: 0, paid: 0, waived: 0, outstanding: 0 });
 
   return ok(res, { ...member, contribution_summary: summary });
 }));
@@ -647,6 +693,285 @@ router.post("/", requireProject, requireRoles("owner", "accountant", "admin"), v
   });
 }));
 
+router.post("/:id/settle", requireProject, requireRoles("accountant", "admin"), validateParams(idParamSchema), validateBody(memberSettlementSchema), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  const { id } = req.params as z.infer<typeof idParamSchema>;
+  const body = req.body as z.infer<typeof memberSettlementSchema>;
+  const before = await getMemberSettlement(auth.tenantId, auth.projectId, id);
+
+  const adjustment = await settleMemberBalance({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    memberId: id,
+    actorUserId: auth.userId,
+    reason: body.reason,
+    applyAdvanceToDues: body.apply_advance_to_dues,
+    writeOffRemainingDues: body.write_off_remaining_dues,
+    refundRemainingAdvance: body.refund_remaining_advance
+  });
+
+  for (const refund of adjustment.refundTransactions) {
+    await writeAccountTransactionAudit({
+      tenantId: auth.tenantId,
+      projectId: auth.projectId,
+      actorUserId: auth.userId,
+      transaction: refund.transaction,
+      balanceBefore: refund.balanceBefore
+    });
+  }
+
+  const after = await getMemberSettlement(auth.tenantId, auth.projectId, id);
+  const summary = {
+    applied_advance: adjustment.applied_advance,
+    written_off_principal: adjustment.written_off_principal,
+    written_off_penalty: adjustment.written_off_penalty,
+    refunded_advance: adjustment.refunded_advance,
+    advance_applications: adjustment.advance_applications,
+    write_offs: adjustment.write_offs,
+    refunds: adjustment.refunds,
+    reason: body.reason
+  };
+  await writeAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    action: "member.balance_settled",
+    entityType: "member",
+    entityId: id,
+    before,
+    after: { settlement: after, adjustment: summary }
+  });
+
+  return ok(res, { adjustment: summary, settlement: after });
+}));
+
+router.post("/:id/remove", requireProject, requireRoles("owner", "admin"), validateParams(idParamSchema), validateBody(memberRemovalSchema), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  const { id } = req.params as z.infer<typeof idParamSchema>;
+  const body = req.body as z.infer<typeof memberRemovalSchema>;
+  const result = await prisma.$transaction(async (tx) => {
+    const before = await tx.member.findFirst({
+      where: { id, tenantId: auth.tenantId, projectId: auth.projectId }
+    });
+    if (!before) throw notFound("Member not found");
+    if (before.status === "inactive") throw badRequest("Member is already inactive");
+
+    const settlement = await assertMemberCanExit(auth.tenantId, auth.projectId, id, tx);
+    await assertNoActiveManagementRoles(auth.tenantId, auth.projectId, id, tx);
+
+    const member = await tx.member.update({
+      where: { id },
+      data: { status: "inactive", shares: 0 }
+    });
+    await tx.projectMembership.updateMany({
+      where: {
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        memberId: id,
+        role: "member"
+      },
+      data: { isActive: false }
+    });
+    return { before, member, settlement };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+  await writeAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    action: "member.removed",
+    entityType: "member",
+    entityId: id,
+    before: result.before,
+    after: { member: result.member, reason: body.reason, settlement: result.settlement }
+  });
+
+  return ok(res, { member: result.member, settlement: result.settlement, reason: body.reason });
+}));
+
+router.post("/:id/transfer", requireProject, requireRoles("owner", "admin"), validateParams(idParamSchema), validateBody(memberTransferSchema), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  const { id } = req.params as z.infer<typeof idParamSchema>;
+  const body = req.body as z.infer<typeof memberTransferSchema>;
+  if (body.target_member_id === id) throw badRequest("Source and target member must differ");
+
+  const project = await prisma.project.findFirstOrThrow({
+    where: { id: auth.projectId, tenantId: auth.tenantId }
+  });
+  const result = await prisma.$transaction(async (tx) => {
+    const source = await tx.member.findFirst({
+      where: { id, tenantId: auth.tenantId, projectId: auth.projectId }
+    });
+    if (!source) throw notFound("Member not found");
+    if (source.status !== "active") throw badRequest("Only an active member can be transferred");
+
+    const settlement = await assertMemberCanExit(auth.tenantId, auth.projectId, id, tx);
+    await assertNoActiveManagementRoles(auth.tenantId, auth.projectId, id, tx);
+
+    const existingTarget = body.target_member_id
+      ? await tx.member.findFirst({
+          where: { id: body.target_member_id, tenantId: auth.tenantId, projectId: auth.projectId }
+        })
+      : await tx.member.findFirst({
+          where: { tenantId: auth.tenantId, projectId: auth.projectId, mobile: body.new_member!.mobile }
+        });
+    if (body.target_member_id && !existingTarget) throw notFound("Target member not found");
+    if (existingTarget?.id === id) throw badRequest("Source and target member must differ");
+    if (existingTarget?.status === "inactive") {
+      await assertMemberCanExit(auth.tenantId, auth.projectId, existingTarget.id, tx);
+      await assertNoActiveManagementRoles(auth.tenantId, auth.projectId, existingTarget.id, tx);
+    }
+
+    const identity = body.new_member ?? {
+      name: existingTarget!.name,
+      mobile: existingTarget!.mobile,
+      email: existingTarget!.email ?? undefined,
+      address: existingTarget!.address ?? undefined
+    };
+    let user = existingTarget?.userId
+      ? await tx.user.findFirst({ where: { id: existingTarget.userId, tenantId: auth.tenantId } })
+      : await tx.user.findFirst({ where: { tenantId: auth.tenantId, mobile: identity.mobile } });
+    const userCreated = !user;
+    if (!user) {
+      user = await tx.user.create({
+        data: {
+          tenantId: auth.tenantId,
+          name: identity.name,
+          mobile: identity.mobile,
+          email: identity.email
+        }
+      });
+    } else {
+      user = await tx.user.update({
+        where: { id: user.id },
+        data: {
+          name: identity.name,
+          ...(identity.email ? { email: identity.email } : {})
+        }
+      });
+    }
+    if (source.userId === user.id) throw badRequest("Membership cannot be transferred to the same user");
+
+    const target = existingTarget
+      ? await tx.member.update({
+          where: { id: existingTarget.id },
+          data: {
+            userId: user.id,
+            name: identity.name,
+            mobile: identity.mobile,
+            email: identity.email,
+            address: identity.address,
+            shares: { increment: source.shares },
+            status: "active"
+          }
+        })
+      : await tx.member.create({
+          data: {
+            tenantId: auth.tenantId,
+            projectId: auth.projectId,
+            userId: user.id,
+            name: identity.name,
+            mobile: identity.mobile,
+            email: identity.email,
+            address: identity.address,
+            shares: source.shares
+          }
+        });
+
+    const updatedSource = await tx.member.update({
+      where: { id },
+      data: { status: "inactive", shares: 0 }
+    });
+    await tx.projectMembership.updateMany({
+      where: {
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        memberId: id,
+        role: "member"
+      },
+      data: { isActive: false }
+    });
+    await tx.projectMembership.upsert({
+      where: {
+        projectId_userId_role: {
+          projectId: auth.projectId,
+          userId: user.id,
+          role: "member"
+        }
+      },
+      update: { memberId: target.id, isActive: true },
+      create: {
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        userId: user.id,
+        memberId: target.id,
+        role: "member"
+      }
+    });
+    return { source: updatedSource, sourceBefore: source, target, user, userCreated, settlement };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+  const otp = await issueOtp(result.user.mobile, result.user.email);
+  const invitationLink = buildProjectInvitationLink(req, {
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    role: "member",
+    mobile: result.user.mobile,
+    email: result.user.email,
+    memberId: result.target.id
+  });
+  const appDownloadLink = resolveAppDownloadLink(invitationLink);
+  let invitationEmailSent = false;
+  if (result.user.email) {
+    try {
+      invitationEmailSent = await sendProjectInvitationEmail({
+        to: result.user.email,
+        inviteeName: result.user.name,
+        projectName: project.name,
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        role: "member",
+        mobile: result.user.mobile,
+        email: result.user.email,
+        memberId: result.target.id,
+        invitationLink,
+        appDownloadLink,
+        otpEmailed: otp.emailed
+      });
+    } catch (error) {
+      console.error("[mailer] failed to send transferred member invitation email", error);
+    }
+  }
+
+  await writeAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    action: "member.membership_transferred",
+    entityType: "member_transfer",
+    entityId: id,
+    before: { member: result.sourceBefore, settlement: result.settlement },
+    after: {
+      source_member: result.source,
+      target_member: result.target,
+      target_user_id: result.user.id,
+      transferred_shares: result.sourceBefore.shares,
+      reason: body.reason
+    }
+  });
+
+  return created(res, {
+    source_member: result.source,
+    target_member: result.target,
+    transferred_shares: result.sourceBefore.shares,
+    user_created: result.userCreated,
+    invitation_link: invitationLink,
+    app_download_link: appDownloadLink,
+    invitation_email: { sent: invitationEmailSent, to: result.user.email },
+    sign_in_options: PROJECT_SIGN_IN_OPTIONS
+  });
+}));
+
 router.patch("/:id", requireProject, requireRoles("owner", "accountant", "admin"), validateParams(idParamSchema), validateBody(memberUpdateSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
@@ -655,6 +980,17 @@ router.patch("/:id", requireProject, requireRoles("owner", "accountant", "admin"
     where: { id, tenantId: auth.tenantId, projectId: auth.projectId }
   });
   if (!before) throw notFound("Member not found");
+
+  if (body.status === "inactive" && before.status !== "inactive") {
+    if (!auth.roles.includes("owner") && !auth.roles.includes("admin")) {
+      throw forbidden("Only an owner or admin can remove a member");
+    }
+    await assertMemberCanExit(auth.tenantId, auth.projectId, id);
+    await assertNoActiveManagementRoles(auth.tenantId, auth.projectId, id);
+  }
+  if (body.status === "active" && before.status === "inactive" && body.shares === undefined) {
+    throw badRequest("shares is required when reactivating a removed member");
+  }
 
   if (body.shares) {
     await assertShareCap({
@@ -666,27 +1002,80 @@ router.patch("/:id", requireProject, requireRoles("owner", "accountant", "admin"
   }
 
   const member = await prisma.$transaction(async (tx) => {
-    const updated = await tx.member.update({
+    if (body.status === "inactive" && before.status !== "inactive") {
+      await assertMemberCanExit(auth.tenantId, auth.projectId, id, tx);
+      await assertNoActiveManagementRoles(auth.tenantId, auth.projectId, id, tx);
+    }
+
+    let updated = await tx.member.update({
       where: { id },
       data: {
         name: body.name,
         mobile: body.mobile,
-        shares: body.shares,
+        shares: body.status === "inactive" ? 0 : body.shares,
         address: body.address,
         email: body.email,
         status: body.status
       }
     });
 
+    let userId = updated.userId;
+    if (!userId && body.status === "active") {
+      const user = await tx.user.upsert({
+        where: {
+          tenantId_mobile: {
+            tenantId: auth.tenantId,
+            mobile: updated.mobile
+          }
+        },
+        update: { name: updated.name, email: updated.email },
+        create: {
+          tenantId: auth.tenantId,
+          name: updated.name,
+          mobile: updated.mobile,
+          email: updated.email
+        }
+      });
+      userId = user.id;
+      updated = await tx.member.update({ where: { id }, data: { userId } });
+    } else if (userId && (body.name !== undefined || body.mobile !== undefined || body.email !== undefined)) {
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          name: updated.name,
+          mobile: updated.mobile,
+          email: updated.email
+        }
+      });
+    }
+
     if (body.status === "inactive") {
       await tx.projectMembership.updateMany({
-        where: { tenantId: auth.tenantId, projectId: auth.projectId, memberId: id },
+        where: { tenantId: auth.tenantId, projectId: auth.projectId, memberId: id, role: "member" },
         data: { isActive: false }
+      });
+    } else if (body.status === "active" && userId) {
+      await tx.projectMembership.upsert({
+        where: {
+          projectId_userId_role: {
+            projectId: auth.projectId,
+            userId,
+            role: "member"
+          }
+        },
+        update: { memberId: id, isActive: true },
+        create: {
+          tenantId: auth.tenantId,
+          projectId: auth.projectId,
+          userId,
+          memberId: id,
+          role: "member"
+        }
       });
     }
 
     return updated;
-  });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
   const auditAction = body.status === "inactive" && before.status !== "inactive"
     ? "member.removed"

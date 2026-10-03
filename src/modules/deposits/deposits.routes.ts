@@ -13,6 +13,7 @@ import { writeAccountTransactionAudit, writeAudit } from "../../core/audit/audit
 import { getRoleEmails, notifyProjectMembers } from "../../core/notifications/notification.service.js";
 import { sendDecisionEmail } from "../../core/mail/mailer.service.js";
 import { canUserPayOnBehalf } from "../../core/security/deposit-delegate.service.js";
+import { calculateDueBalance } from "../members/member-settlement.service.js";
 
 const router = Router();
 
@@ -97,6 +98,7 @@ async function emailDepositDecision(input: {
 function allocatePayment(due: {
   amount: number;
   paidAmount: number;
+  waivedAmount: number;
   penaltyDue: number;
   penaltyPaid: number;
 }, amount: number, allocate: string) {
@@ -112,7 +114,7 @@ function allocatePayment(due: {
   };
 
   const payPrincipal = () => {
-    const outstandingPrincipal = Math.max(0, due.amount - paidAmount);
+    const outstandingPrincipal = Math.max(0, due.amount - paidAmount - due.waivedAmount);
     const applied = Math.min(remaining, outstandingPrincipal);
     paidAmount += applied;
     remaining -= applied;
@@ -126,7 +128,7 @@ function allocatePayment(due: {
     payPrincipal();
   }
 
-  const status: DueStatus = paidAmount >= due.amount && penaltyPaid >= due.penaltyDue
+  const status: DueStatus = paidAmount + due.waivedAmount >= due.amount && penaltyPaid >= due.penaltyDue
     ? "paid"
     : paidAmount > 0 || penaltyPaid > 0
       ? "partial"
@@ -161,7 +163,7 @@ async function finalizeDepositConfirmation(input: {
   );
 
   const freshOutstanding = dues.reduce(
-    (sum, due) => sum + Math.max(0, due.amount + due.penaltyDue - due.paidAmount - due.penaltyPaid),
+    (sum, due) => sum + calculateDueBalance(due).total,
     0
   );
   if (input.before.amount > freshOutstanding) {
@@ -177,7 +179,7 @@ async function finalizeDepositConfirmation(input: {
 
   let remaining = input.before.amount;
   const perDueAllocations = dues.map((due) => {
-    const dueOutstanding = Math.max(0, due.amount + due.penaltyDue - due.paidAmount - due.penaltyPaid);
+    const dueOutstanding = calculateDueBalance(due).total;
     const appliedToThisDue = Math.min(remaining, dueOutstanding);
     remaining -= appliedToThisDue;
     const allocation = allocatePayment(due, appliedToThisDue, input.before.allocate ?? "penalty_first");
@@ -338,7 +340,7 @@ router.post("/", requireProject, requireRoles("member", "cashier", "accountant",
   }
 
   const outstanding = dues.reduce(
-    (sum, due) => sum + Math.max(0, due.amount + due.penaltyDue - due.paidAmount - due.penaltyPaid),
+    (sum, due) => sum + calculateDueBalance(due).total,
     0
   );
   if (body.amount > outstanding) {

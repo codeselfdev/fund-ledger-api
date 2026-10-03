@@ -1,5 +1,8 @@
 # FundLedger API List
 
+Detailed member exit payloads and responses are available in
+[`MEMBER_EXIT_API.md`](./MEMBER_EXIT_API.md).
+
 All responses use:
 
 ```json
@@ -82,13 +85,26 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | GET | `/v1/members/import/csv-format` | accountant, admin | Download CSV format for initial bulk import |
 | POST | `/v1/members/import` | accountant, admin | Bulk import members via CSV, create users/project memberships, email app invitation instructions when email exists, and put previous dues on `Previous installment` |
 | GET | `/v1/members/:id` | staff, self | Member detail and contribution summary |
+| GET | `/v1/members/:id/settlement` | staff, self | Show outstanding principal/penalty, unused advance, pending deposits, and whether removal/transfer is allowed |
 | POST | `/v1/members` | accountant, admin | Add member, create/link user and project membership, validate total shares, email app invitation instructions when email exists, and support `previous_due_amount` |
-| PATCH | `/v1/members/:id` | accountant | Update contact, shares, activate/deactivate |
+| POST | `/v1/members/:id/settle` | accountant, admin | Apply unused advance to dues, optionally write off remaining dues, and/or refund remaining advance through the original account |
+| POST | `/v1/members/:id/remove` | owner, admin | Soft-remove a zero-balance member, set shares to zero, and revoke the member role |
+| POST | `/v1/members/:id/transfer` | owner, admin | Transfer shares and member access to an existing or newly created member after the source balance reaches zero |
+| PATCH | `/v1/members/:id` | accountant, admin | Update contact/shares; owner/admin may activate or deactivate, subject to the same zero-balance guard |
 | GET | `/v1/deposit-delegates` | owner, admin | List member users who are allowed to submit deposits on behalf of others |
 | POST | `/v1/deposit-delegates` | owner, admin | Grant or revoke on-behalf deposit permission for a specific member user |
 | PATCH | `/v1/deposit-delegates/:id` | owner, admin | Toggle an existing on-behalf deposit permission record |
 
 Required member fields: `name`, `mobile`, `shares`. Optional: `address`, `email`, `previous_due_amount`.
+
+Member exit workflow:
+
+1. Read `/members/:id/settlement`. Pending deposits must be approved/rejected first.
+2. Record a normal deposit when the member pays outstanding dues, or call `/settle` for an authorized advance application, write-off, or refund.
+3. Continue only when `can_exit` is `true`.
+4. Call `/remove` or `/transfer`. Active owner/admin/accountant/approver/auditor/cashier roles must be reassigned or deactivated separately before exit.
+
+`/settle` never treats a write-off as payment. Written-off principal is stored separately, and an advance refund creates a `money_out` account transaction against the advance's original account.
 
 Member document files are grouped in storage as: `tenant scoped > project scoped > member scoped`.
 

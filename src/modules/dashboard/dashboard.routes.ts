@@ -38,7 +38,7 @@ router.get("/dashboard", requireProject, requireRoles("staff", "admin", "owner")
     prisma.account.findMany({ where: { tenantId: auth.tenantId, projectId: auth.projectId } })
   ]);
 
-  const dueTotal = dues.reduce((sum, due) => sum + due.amount + due.penaltyDue, 0);
+  const dueTotal = dues.reduce((sum, due) => sum + due.amount - due.waivedAmount + due.penaltyDue, 0);
   const paidTotal = dues.reduce((sum, due) => sum + due.paidAmount + due.penaltyPaid, 0);
 
   return ok(res, {

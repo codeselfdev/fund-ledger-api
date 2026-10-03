@@ -1,0 +1,5 @@
+ALTER TABLE "dues"
+ADD COLUMN "waived_amount" INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE "deposits"
+ADD COLUMN "refunded_amount" INTEGER NOT NULL DEFAULT 0;

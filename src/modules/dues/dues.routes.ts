@@ -12,6 +12,7 @@ import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams, validateQuery } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { notifyProjectMembers } from "../../core/notifications/notification.service.js";
+import { calculateDueBalance } from "../members/member-settlement.service.js";
 
 const router = Router();
 
@@ -39,7 +40,7 @@ router.get("/me/dues", requireProject, requireRoles("member"), asyncHandler(asyn
 
   return ok(res, dues.map((due) => ({
     ...due,
-    outstanding: Math.max(0, due.amount + due.penaltyDue - due.paidAmount - due.penaltyPaid)
+    outstanding: calculateDueBalance(due).total
   })));
 }));
 
@@ -55,12 +56,12 @@ router.get("/me/summary", requireProject, requireRoles("member"), asyncHandler(a
 
   const verifiedContribution = deposits
     .filter((deposit) => deposit.status === "confirmed")
-    .reduce((sum, deposit) => sum + deposit.amount, 0);
+    .reduce((sum, deposit) => sum + Math.max(0, deposit.amount - deposit.refundedAmount), 0);
   const pending = deposits
     .filter((deposit) => deposit.status === "pending_accountant" || deposit.status === "pending_approver")
     .reduce((sum, deposit) => sum + deposit.amount, 0);
   const outstanding = dues.reduce((sum, due) =>
-    sum + Math.max(0, due.amount + due.penaltyDue - due.paidAmount - due.penaltyPaid), 0);
+    sum + calculateDueBalance(due).total, 0);
   const penaltyDue = dues.reduce((sum, due) => sum + Math.max(0, due.penaltyDue - due.penaltyPaid), 0);
   const project = await prisma.project.findFirstOrThrow({ where: { id: auth.projectId, tenantId: auth.tenantId } });
 
@@ -130,7 +131,7 @@ router.post("/dues/:id/penalty/waive", requireProject, requireRoles("approver"),
       where: { id },
       data: {
         penaltyDue: due.penaltyPaid,
-        status: due.paidAmount >= due.amount ? "paid" : due.status
+        status: due.paidAmount + due.waivedAmount >= due.amount ? "paid" : due.status
       }
     });
   });

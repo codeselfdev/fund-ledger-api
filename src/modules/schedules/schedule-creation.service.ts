@@ -44,7 +44,7 @@ async function applyAdvanceToNewDues(tx: Prisma.TransactionClient, input: {
   const advancesByMember = new Map<string, Array<{ id: string; remaining: number }>>();
   for (const advance of advances) {
     const consumed = advance.allocations.reduce((sum, allocation) => sum + allocation.amount, 0);
-    const remaining = Math.max(0, advance.amount - consumed);
+    const remaining = Math.max(0, advance.amount - consumed - advance.refundedAmount);
     if (remaining <= 0) continue;
     const list = advancesByMember.get(advance.memberId) ?? [];
     list.push({ id: advance.id, remaining });

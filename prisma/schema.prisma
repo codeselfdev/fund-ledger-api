@@ -406,6 +406,7 @@ model Due {
   memberId    String    @map("member_id")
   amount      Int
   paidAmount  Int       @default(0) @map("paid_amount")
+  waivedAmount Int      @default(0) @map("waived_amount")
   penaltyDue  Int       @default(0) @map("penalty_due")
   penaltyPaid Int       @default(0) @map("penalty_paid")
   status      DueStatus @default(due)
@@ -451,6 +452,7 @@ model Deposit {
   memberId       String        @map("member_id")
   accountId      String?       @map("account_id")
   amount         Int
+  refundedAmount Int           @default(0) @map("refunded_amount")
   method         PaymentMethod
   proofFileId    String?       @map("proof_file_id")
   reference      String?

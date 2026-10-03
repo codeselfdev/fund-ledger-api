@@ -4,6 +4,9 @@ This guide is the mobile implementation handoff. The complete endpoint inventory
 [`API.md`](./API.md), and the Apidog/Postman import file is
 [`apidog-openapi.json`](./apidog-openapi.json).
 
+Detailed member settlement, removal, and transfer payloads are in
+[`MEMBER_EXIT_API.md`](./MEMBER_EXIT_API.md).
+
 ## Environments
 
 | Environment | Base URL |
@@ -285,7 +288,9 @@ Example account setup:
 | Project picker | `GET /v1/projects`, `POST /v1/auth/switch-project` |
 | Dashboard | `GET /v1/dashboard` |
 | Member list/detail | `GET /v1/members`, `GET /v1/members/:id` |
-| Add/edit/remove member | `POST /v1/members`, `PATCH /v1/members/:id` |
+| Add/edit member | `POST /v1/members`, `PATCH /v1/members/:id` |
+| Member exit balance | `GET /v1/members/:id/settlement`, `POST /v1/members/:id/settle` |
+| Remove/transfer member | `POST /v1/members/:id/remove`, `POST /v1/members/:id/transfer` |
 | Project roles | `GET /v1/memberships`, `POST /v1/memberships`, `PATCH /v1/memberships/:id` |
 | Invite user | `POST /v1/invitations` |
 | My dues/summary | `GET /v1/me/dues`, `GET /v1/me/summary` |
@@ -320,11 +325,53 @@ Add a member (also creates/links the user and member membership):
 }
 ```
 
-Remove a member by setting the status to inactive:
+Before removing or transferring a member, load the settlement summary:
+
+```http
+GET /v1/members/mem_1/settlement
+```
+
+The operation is allowed only when `can_exit` is `true`. Pending deposits must be approved or
+rejected through the normal payment workflow first. To apply advance credit, write off an
+authorized remainder, and refund unused advance through its original account:
 
 ```json
-{ "status": "inactive" }
+{
+  "reason": "Final settlement before ownership transfer",
+  "apply_advance_to_dues": true,
+  "write_off_remaining_dues": true,
+  "refund_remaining_advance": true
+}
 ```
+
+Send that payload to `POST /v1/members/:id/settle`. A real payment should still use the normal
+deposit flow; `write_off_remaining_dues` records a waiver, not a payment.
+
+Remove a settled member:
+
+```json
+{ "reason": "Member resigned from the project" }
+```
+
+Send to `POST /v1/members/:id/remove`.
+
+Transfer settled membership and shares to a new user:
+
+```json
+{
+  "reason": "Ownership transferred by agreement",
+  "new_member": {
+    "name": "New Shareholder",
+    "mobile": "+8801711000022",
+    "email": "new.member@gmail.com",
+    "address": "Dhaka"
+  }
+}
+```
+
+Alternatively, send `target_member_id` instead of `new_member` to transfer shares to an existing
+member. The old member's historical dues, deposits, receipts, and audit records remain attached
+to the old record; only shares and active member access move.
 
 Submit a payment. `schedule_ids` and `account_id` are required:
 
@@ -407,6 +454,7 @@ Project Owner updated member Imran Hossain
 Important actions include:
 
 - Members: `member.created`, `member.updated`, `member.removed`, `member.reactivated`, `member.bulk_imported`
+- Member exit: `member.balance_settled`, `member.membership_transferred`
 - Roles: `invitation.created`, `membership.created`, `membership.updated`, `membership.reactivated`
 - Payments: `deposit.submitted`, `deposit.approved_by_accountant`, `deposit.confirmed`, `deposit.rejected`, `deposit.cancelled`
 - Expenses: `expense.submitted`, `expense.approved`, `expense.rejected`, `expense.disbursed`

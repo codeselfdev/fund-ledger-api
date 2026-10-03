@@ -674,6 +674,54 @@
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
       }
     },
+    "/v1/members/{id}/settlement": {
+      "get": {
+        "tags": ["Members"],
+        "summary": "Get member exit settlement and blockers",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/members/{id}/settle": {
+      "post": {
+        "tags": ["Members"],
+        "summary": "Apply advance, write off dues, or refund advance before member exit",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MemberSettlement" } } }
+        },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/members/{id}/remove": {
+      "post": {
+        "tags": ["Members"],
+        "summary": "Remove a zero-balance member",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MemberRemoval" } } }
+        },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/members/{id}/transfer": {
+      "post": {
+        "tags": ["Members"],
+        "summary": "Transfer settled membership and shares",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MemberTransfer" } } }
+        },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/Error" } }
+      }
+    },
     "/v1/schedules": {
       "get": {
         "tags": ["Schedules"],
@@ -1496,6 +1544,45 @@
           "address": { "type": "string", "nullable": true },
           "email": { "type": "string", "format": "email", "nullable": true },
           "status": { "$ref": "#/components/schemas/MemberStatus" }
+        }
+      },
+      "MemberSettlement": {
+        "type": "object",
+        "required": ["reason"],
+        "properties": {
+          "reason": { "type": "string", "minLength": 3, "maxLength": 500 },
+          "apply_advance_to_dues": { "type": "boolean", "default": true },
+          "write_off_remaining_dues": { "type": "boolean", "default": false },
+          "refund_remaining_advance": { "type": "boolean", "default": false }
+        }
+      },
+      "MemberRemoval": {
+        "type": "object",
+        "required": ["reason"],
+        "properties": {
+          "reason": { "type": "string", "minLength": 3, "maxLength": 500 }
+        }
+      },
+      "MemberTransfer": {
+        "type": "object",
+        "required": ["reason"],
+        "oneOf": [
+          { "required": ["target_member_id"] },
+          { "required": ["new_member"] }
+        ],
+        "properties": {
+          "target_member_id": { "type": "string" },
+          "new_member": {
+            "type": "object",
+            "required": ["name", "mobile"],
+            "properties": {
+              "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+              "mobile": { "type": "string", "minLength": 6, "maxLength": 32 },
+              "email": { "type": "string", "format": "email" },
+              "address": { "type": "string" }
+            }
+          },
+          "reason": { "type": "string", "minLength": 3, "maxLength": 500 }
         }
       },
       "ScheduleCreate": {
