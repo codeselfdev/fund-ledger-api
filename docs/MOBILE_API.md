@@ -375,6 +375,26 @@ authorized remainder, and refund unused advance through its original account:
 Send that payload to `POST /v1/members/:id/settle`. A real payment should still use the normal
 deposit flow; `write_off_remaining_dues` records a waiver, not a payment.
 
+When `refund_remaining_advance` refunds money to the member, each `refunds` item identifies the
+bank/cash account and confirms the ledger impact:
+
+```json
+{
+  "deposit_id": "dep_advance_01",
+  "account_id": "acc_main_01",
+  "account_name": "Main Bank Account",
+  "account_is_default": true,
+  "transaction_id": "txn_refund_01",
+  "amount": 3000,
+  "account_balance_before": 25000,
+  "account_balance_after": 22000
+}
+```
+
+Applying advance to a due does not deduct the account again because the confirmed advance already
+increased that account. It changes the member's advance allocation and due balance, and creates a
+`member.advance_applied` audit event with `account_balance_changed: false`.
+
 Remove a settled member:
 
 ```json

@@ -111,7 +111,15 @@ Member exit workflow:
 3. Continue only when `can_exit` is `true`.
 4. Call `/remove` or `/transfer`. Active owner/admin/accountant/approver/auditor/cashier roles must be reassigned or deactivated separately before exit.
 
-`/settle` never treats a write-off as payment. Written-off principal is stored separately, and an advance refund creates a `money_out` account transaction against the advance's original account.
+`/settle` never treats a write-off as payment. Written-off principal is stored separately. An
+advance refund atomically deducts the advance's original bank/cash account, creates a `money_out`
+account transaction, and writes both account and member audit events. The refund response includes
+the account balance before and after the deduction.
+
+Applying advance credit to a due does not reduce a bank/cash balance: the cash entered the account
+when the advance deposit was confirmed. Application is a non-cash reclassification from member
+advance to paid due and is audited as `member.advance_applied`. Deducting cash again would count the
+same advance twice.
 
 Member document files are grouped in storage as: `tenant scoped > project scoped > member scoped`.
 

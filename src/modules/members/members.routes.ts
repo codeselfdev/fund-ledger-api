@@ -11,7 +11,7 @@ import { isSelfOrRole, requireProjectContext } from "../../core/security/auth.co
 import { STAFF_ROLES } from "../../core/security/roles.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams, validateQuery } from "../../core/validation/validate.js";
-import { writeAccountTransactionAudit, writeAudit } from "../../core/audit/audit.service.js";
+import { writeAudit } from "../../core/audit/audit.service.js";
 import { issueOtp } from "../auth/auth.service.js";
 import { describeMailFailure } from "../../core/mail/mailer.service.js";
 import {
@@ -829,16 +829,6 @@ router.post("/:id/settle", requireProject, requireRoles("accountant", "admin"), 
     writeOffRemainingDues: body.write_off_remaining_dues,
     refundRemainingAdvance: body.refund_remaining_advance
   });
-
-  for (const refund of adjustment.refundTransactions) {
-    await writeAccountTransactionAudit({
-      tenantId: auth.tenantId,
-      projectId: auth.projectId,
-      actorUserId: auth.userId,
-      transaction: refund.transaction,
-      balanceBefore: refund.balanceBefore
-    });
-  }
 
   const after = await getMemberSettlement(auth.tenantId, auth.projectId, id);
   const summary = {

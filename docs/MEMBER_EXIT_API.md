@@ -211,6 +211,26 @@ An advance refund also creates a `money_out` account transaction. A write-off is
 waiver and is not counted as a payment. If the member pays money, submit and approve a normal
 deposit instead of using `write_off_remaining_dues`.
 
+The refund operation, account balance update, money-out transaction, and audit entries are one
+database transaction. A successful refund item includes:
+
+```json
+{
+  "deposit_id": "dep_advance_01",
+  "account_id": "acc_main_01",
+  "account_name": "Main Bank Account",
+  "account_is_default": true,
+  "transaction_id": "txn_refund_01",
+  "amount": 3000,
+  "account_balance_before": 25000,
+  "account_balance_after": 22000
+}
+```
+
+Applying advance to dues is not a cash withdrawal. The advance already increased the account when
+it was confirmed, so application leaves the account balance unchanged and records the
+reclassification as `member.advance_applied`. Only refunding money to the member deducts an account.
+
 ### Pending Deposit Error
 
 ```http
@@ -589,6 +609,9 @@ The APIs create activity records available from `GET /v1/activity`:
 | Action | Created When |
 | --- | --- |
 | `member.balance_settled` | Advance application, write-off, or refund is posted |
+| `member.advance_applied` | Advance credit is reclassified against a due; cash balance is unchanged |
+| `member.advance_refunded` | Advance is refunded and its original account is reduced |
+| `member.due_written_off` | Remaining member due is waived with an audit reason |
 | `account_transaction.created` | An advance refund creates a money-out transaction |
 | `member.removed` | A settled member is removed |
 | `member.membership_transferred` | Shares and member access are transferred |

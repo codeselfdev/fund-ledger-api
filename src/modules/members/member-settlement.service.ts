@@ -10,6 +10,10 @@ type SettlementClient = Pick<Prisma.TransactionClient, "member" | "due" | "depos
 
 const pendingDepositStatuses = ["submitted", "pending_accountant", "pending_approver"] as const;
 
+function toJson(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
 export function calculateDueBalance(due: DueBalanceSource) {
   const principal = Math.max(0, due.amount - due.paidAmount - due.waivedAmount);
   const penalty = Math.max(0, due.penaltyDue - due.penaltyPaid);
@@ -184,12 +188,12 @@ export async function settleMemberBalance(input: {
     const refunds: Array<{
       deposit_id: string;
       account_id: string;
+      account_name: string;
+      account_is_default: boolean;
       transaction_id: string;
       amount: number;
-    }> = [];
-    const refundTransactions: Array<{
-      transaction: Awaited<ReturnType<typeof tx.accountTransaction.create>>;
-      balanceBefore: number;
+      account_balance_before: number;
+      account_balance_after: number;
     }> = [];
 
     if (input.applyAdvanceToDues) {
@@ -235,7 +239,7 @@ export async function settleMemberBalance(input: {
               status: afterBalance.total === 0 ? "paid" : "partial"
             }
           });
-          await tx.depositAllocation.upsert({
+          const allocation = await tx.depositAllocation.upsert({
             where: { depositId_dueId: { depositId: advance.id, dueId: due.id } },
             update: { amount: { increment: applied } },
             create: {
@@ -253,6 +257,27 @@ export async function settleMemberBalance(input: {
             amount: applied,
             principal_amount: principalApplied,
             penalty_amount: penaltyApplied
+          });
+          await tx.activity.create({
+            data: {
+              tenantId: input.tenantId,
+              projectId: input.projectId,
+              actorUserId: input.actorUserId,
+              action: "member.advance_applied",
+              entityType: "deposit_allocation",
+              entityId: allocation.id,
+              after: toJson({
+                member_id: input.memberId,
+                deposit_id: advance.id,
+                due_id: due.id,
+                account_id: advance.accountId,
+                amount: applied,
+                principal_amount: principalApplied,
+                penalty_amount: penaltyApplied,
+                account_balance_changed: false,
+                reason: input.reason
+              })
+            }
           });
         }
       }
@@ -284,6 +309,23 @@ export async function settleMemberBalance(input: {
           due_id: due.id,
           principal_amount: balance.principal,
           penalty_amount: balance.penalty
+        });
+        await tx.activity.create({
+          data: {
+            tenantId: input.tenantId,
+            projectId: input.projectId,
+            actorUserId: input.actorUserId,
+            action: "member.due_written_off",
+            entityType: "due",
+            entityId: due.id,
+            before: toJson(balance),
+            after: toJson({
+              member_id: input.memberId,
+              principal_written_off: balance.principal,
+              penalty_written_off: balance.penalty,
+              reason: input.reason
+            })
+          }
         });
       }
     }
@@ -359,12 +401,51 @@ export async function settleMemberBalance(input: {
         });
         refundedAdvance += amount;
         runningBalances.set(advance.accountId, account.balance);
-        refundTransactions.push({ transaction, balanceBefore });
         refunds.push({
           deposit_id: advance.id,
           account_id: advance.accountId,
+          account_name: account.name,
+          account_is_default: account.isDefault,
           transaction_id: transaction.id,
-          amount
+          amount,
+          account_balance_before: balanceBefore,
+          account_balance_after: account.balance
+        });
+        await tx.activity.create({
+          data: {
+            tenantId: input.tenantId,
+            projectId: input.projectId,
+            actorUserId: input.actorUserId,
+            action: "account_transaction.created",
+            entityType: "account_transaction",
+            entityId: transaction.id,
+            before: toJson({ account_id: advance.accountId, balance: balanceBefore }),
+            after: toJson(transaction)
+          }
+        });
+        await tx.activity.create({
+          data: {
+            tenantId: input.tenantId,
+            projectId: input.projectId,
+            actorUserId: input.actorUserId,
+            action: "member.advance_refunded",
+            entityType: "deposit",
+            entityId: advance.id,
+            before: toJson({
+              member_id: input.memberId,
+              unused_advance: amount,
+              account_id: advance.accountId,
+              account_balance: balanceBefore
+            }),
+            after: toJson({
+              member_id: input.memberId,
+              refunded_amount: amount,
+              account_id: advance.accountId,
+              account_balance: account.balance,
+              transaction_id: transaction.id,
+              reason: input.reason
+            })
+          }
         });
       }
     }
@@ -377,8 +458,7 @@ export async function settleMemberBalance(input: {
       refunded_advance: refundedAdvance,
       advance_applications: advanceApplications,
       write_offs: writeOffs,
-      refunds,
-      refundTransactions
+      refunds
     };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
