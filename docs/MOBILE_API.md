@@ -7,6 +7,9 @@ This guide is the mobile implementation handoff. The complete endpoint inventory
 Detailed member settlement, removal, and transfer payloads are in
 [`MEMBER_EXIT_API.md`](./MEMBER_EXIT_API.md).
 
+For settlement-only integration, use
+[`MEMBER_SETTLEMENT_API.md`](./MEMBER_SETTLEMENT_API.md).
+
 ## Environments
 
 | Environment | Base URL |
@@ -435,6 +438,11 @@ Submit a payment. `schedule_ids` and `account_id` are required:
   "allocate": "penalty_first"
 }
 ```
+
+For member submissions, show the upload control as **Receipt (required)**. Upload the receipt or
+transaction screenshot through `POST /v1/uploads`, then send the returned file ID as
+`proof_file_id`. If it is missing, display the API message: `Please upload a receipt before
+submitting this payment`. Do not display internal request-property names as validation text.
 
 Submit an expense:
 

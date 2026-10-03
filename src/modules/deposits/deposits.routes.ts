@@ -16,6 +16,7 @@ import { canUserPayOnBehalf } from "../../core/security/deposit-delegate.service
 import { calculateDueBalance } from "../members/member-settlement.service.js";
 
 const router = Router();
+const MEMBER_RECEIPT_REQUIRED_MESSAGE = "Please upload a receipt before submitting this payment";
 
 const depositBodySchema = z.object({
   schedule_ids: z.array(z.string().min(1)).min(1),
@@ -322,7 +323,7 @@ router.post("/", requireProject, requireRoles("member", "cashier", "accountant",
     throw forbidden("You are not allowed to submit deposit for this member");
   }
   if (auth.roles.includes("member") && !body.proof_file_id) {
-    throw badRequest("proof_file_id is required for member submissions");
+    throw badRequest(MEMBER_RECEIPT_REQUIRED_MESSAGE);
   }
 
   const scheduleIds = [...new Set(body.schedule_ids)];
@@ -414,7 +415,7 @@ router.post("/", requireProject, requireRoles("member", "cashier", "accountant",
       roles: ["accountant"],
       type: "deposit.submitted",
       title: "Deposit awaiting accountant review",
-      body: "A member payment was submitted with proof.",
+      body: "A member payment was submitted with a receipt.",
       entityType: "deposit",
       entityId: deposit.id
     });
@@ -431,7 +432,7 @@ router.post("/advance", requireProject, requireRoles("member", "cashier", "accou
     throw forbidden("You are not allowed to submit deposit for this member");
   }
   if (auth.roles.includes("member") && !body.proof_file_id) {
-    throw badRequest("proof_file_id is required for member submissions");
+    throw badRequest(MEMBER_RECEIPT_REQUIRED_MESSAGE);
   }
 
   const account = await prisma.account.findFirst({

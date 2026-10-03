@@ -3,6 +3,9 @@
 Detailed member exit payloads and responses are available in
 [`MEMBER_EXIT_API.md`](./MEMBER_EXIT_API.md).
 
+The standalone member settlement reference is
+[`MEMBER_SETTLEMENT_API.md`](./MEMBER_SETTLEMENT_API.md).
+
 All responses use:
 
 ```json
@@ -157,7 +160,10 @@ Generated schedule names are dynamic by frequency/date (examples: weekly `1W JAN
 | POST | `/v1/uploads` | any | Multipart upload for proof or invoice, returns `file_id` |
 | GET | `/v1/uploads/:id/view` | any | View/download uploaded attachment by `file_id` |
 
-Required deposit fields: `schedule_ids` (array), `member_id`, `account_id`, `amount`, `method`. Optional: `proof_file_id`, `reference`, `allocate`.
+Required deposit fields: `schedule_ids` (array), `member_id`, `account_id`, `amount`, `method`.
+Members must also upload a payment receipt before submission; the uploaded receipt ID is sent in
+`proof_file_id`. Receipt upload is optional for authorized staff submissions. Optional fields:
+`reference`, `allocate`.
 
 Notifications are created after submission, accountant approval, final confirmation, and rejection.
 
