@@ -14,6 +14,13 @@ import { writeAudit } from "../../core/audit/audit.service.js";
 import { notifyProjectMembers } from "../../core/notifications/notification.service.js";
 import { ensureUserProjectMember } from "../../core/security/member-link.service.js";
 import { issueOtp } from "../auth/auth.service.js";
+import {
+  PROJECT_SIGN_IN_OPTIONS,
+  buildProjectInvitationLink,
+  buildProjectInvitationSummary,
+  resolveAppDownloadLink,
+  sendProjectInvitationEmail
+} from "../../core/invitations/project-invitation.service.js";
 
 const projectsRouter = Router();
 const invitationsRouter = Router();
@@ -213,7 +220,10 @@ invitationsRouter.post("/", requireProject, requireRoles("owner", "approver", "a
           mobile: body.mobile
         }
       },
-      update: body.email ? { email: body.email } : {},
+      update: {
+        name: body.name,
+        ...(body.email ? { email: body.email } : {})
+      },
       create: {
         tenantId: auth.tenantId,
         name: body.name,
@@ -273,6 +283,36 @@ invitationsRouter.post("/", requireProject, requireRoles("owner", "approver", "a
   });
 
   const otp = await issueOtp(user.mobile, user.email);
+  const invitationLink = buildProjectInvitationLink(req, {
+    tenantId: auth.tenantId,
+    projectId: project.id,
+    role: body.role,
+    mobile: user.mobile,
+    email: user.email,
+    invitationId: invitation.id
+  });
+  const appDownloadLink = resolveAppDownloadLink(invitationLink);
+  let invitationEmailSent = false;
+  if (user.email) {
+    try {
+      invitationEmailSent = await sendProjectInvitationEmail({
+        to: user.email,
+        inviteeName: user.name,
+        projectName: project.name,
+        tenantId: auth.tenantId,
+        projectId: project.id,
+        role: body.role,
+        mobile: user.mobile,
+        email: user.email,
+        invitationId: invitation.id,
+        invitationLink,
+        appDownloadLink,
+        otpEmailed: otp.emailed
+      });
+    } catch (error) {
+      console.error("[mailer] failed to send project invitation email", error);
+    }
+  }
 
   await notifyProjectMembers({
     tenantId: auth.tenantId,
@@ -296,8 +336,6 @@ invitationsRouter.post("/", requireProject, requireRoles("owner", "approver", "a
     after: invitation
   });
 
-  const invitationLink = `${process.env.PUBLIC_API_URL || `${req.protocol}://${req.get("host")}`}/v1/invitations/accept/${invitation.id}`;
-
   return created(res, {
     ...invitation,
     otp: {
@@ -306,19 +344,19 @@ invitationsRouter.post("/", requireProject, requireRoles("owner", "approver", "a
       ...(process.env.NODE_ENV === "production" ? {} : { dev_code: otp.code })
     },
     invitationLink,
-    signInOptions: [
-      {
-        method: "google",
-        label: "Sign in with Google",
-        description: "Use your Gmail account to join the project"
-      },
-      {
-        method: "otp",
-        label: "Sign in with OTP",
-        description: "Enter the OTP sent to your phone or email"
-      }
-    ],
-    onboardingSummary: `You've been invited to join ${project.name} as ${body.role}. Click the invitation link to accept and choose your sign-in method.`
+    invitation_link: invitationLink,
+    appDownloadLink,
+    app_download_link: appDownloadLink,
+    invitationEmail: {
+      sent: invitationEmailSent,
+      to: user.email
+    },
+    signInOptions: PROJECT_SIGN_IN_OPTIONS,
+    onboardingSummary: buildProjectInvitationSummary({
+      inviteeName: user.name,
+      projectName: project.name,
+      role: body.role
+    })
   });
 }));
 

@@ -58,6 +58,10 @@ export const env = {
     pass: process.env.SMTP_PASS,
     from: process.env.MAIL_FROM ?? process.env.SMTP_USER
   },
+  app: {
+    inviteUrl: optional("APP_INVITE_URL"),
+    downloadUrl: optional("APP_DOWNLOAD_URL") ?? optional("PUBLIC_APP_URL")
+  },
   googleOAuth: {
     clientId:
       optional("GOOGLE_OAUTH_CLIENT_ID") ??

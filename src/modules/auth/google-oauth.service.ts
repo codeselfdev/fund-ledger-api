@@ -3,14 +3,17 @@ import type { Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { nanoid } from "nanoid";
 import { env } from "../../config/env.js";
-import { slugifyOrgName } from "../../core/onboarding/onboarding.service.js";
+import { slugifyOrgName, summarizeOnboardingForClient } from "../../core/onboarding/onboarding.service.js";
 import { badRequest, conflict, serviceUnavailable, unauthorized } from "../../core/http/api-error.js";
+import { prisma } from "../../core/prisma/client.js";
+import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
 import { verifyGoogleOAuthIdToken } from "../../core/firebase/admin.js";
 import { provisionTenant } from "../tenants/tenants.service.js";
 import {
   findActiveUsersByEmail,
   getActiveUserForLogin,
   googlePlaceholderMobile,
+  issueLoginSession,
   toLoginSessionPayload,
   type LoginSessionPayload
 } from "./auth.service.js";
@@ -35,11 +38,46 @@ export type GoogleIdentity = {
 
 export type GoogleCompleteResult =
   | ({ kind: "session" } & LoginSessionPayload)
-  | { kind: "identity"; email: string; name: string; ticket: string; id_token: string };
+  | {
+      kind: "signup";
+      signup_needed: true;
+      googleSignupNeeded: true;
+      provider: "google";
+      email: string;
+      name: string;
+      ticket: string;
+      id_token: string;
+      googleIdentity: { email: string; name: string; uid: string };
+      signupFlow: {
+        next_endpoint: "/v1/auth/google/signup";
+        onboarding_entrypoint: "organization";
+        prefill: {
+          owner_email: string;
+          owner_name: string;
+        };
+      };
+    };
+
+type SubscriptionSummary = Pick<
+  ReturnType<typeof evaluateSubscription>,
+  "status" | "has_access" | "trial_ends_at" | "days_left" | "renewal_term_years"
+>;
+
+export type GoogleSignupResult = LoginSessionPayload & {
+  onboarding: ReturnType<typeof summarizeOnboardingForClient>;
+  subscription: SubscriptionSummary;
+};
 
 type TicketRecord =
   | { kind: "session"; payload: LoginSessionPayload; expiresAt: number }
-  | { kind: "identity"; identity: GoogleIdentity; idToken: string; expiresAt: number };
+  | {
+      kind: "identity";
+      identity: GoogleIdentity;
+      idToken: string;
+      tenantSlug?: string;
+      intent: "login" | "signup";
+      expiresAt: number;
+    };
 
 const tickets = new Map<string, TicketRecord>();
 
@@ -181,19 +219,51 @@ function pruneTickets() {
   }
 }
 
-function storeIdentityTicket(identity: GoogleIdentity, idToken: string): string {
+function googleSignupPayload(row: Extract<TicketRecord, { kind: "identity" }>, ticket: string): GoogleCompleteResult {
+  return {
+    kind: "signup",
+    signup_needed: true,
+    googleSignupNeeded: true,
+    provider: "google",
+    email: row.identity.email,
+    name: row.identity.name,
+    ticket,
+    id_token: row.idToken,
+    googleIdentity: {
+      email: row.identity.email,
+      name: row.identity.name,
+      uid: row.identity.uid
+    },
+    signupFlow: {
+      next_endpoint: "/v1/auth/google/signup",
+      onboarding_entrypoint: "organization",
+      prefill: {
+        owner_email: row.identity.email,
+        owner_name: row.identity.name
+      }
+    }
+  };
+}
+
+function storeIdentityTicket(
+  identity: GoogleIdentity,
+  idToken: string,
+  state: Pick<GoogleOAuthState, "tenantSlug" | "intent">
+): string {
   pruneTickets();
   const ticket = nanoid(24);
   tickets.set(ticket, {
     kind: "identity",
     identity,
     idToken,
+    tenantSlug: state.tenantSlug,
+    intent: state.intent,
     expiresAt: Date.now() + IDENTITY_TICKET_TTL_MS
   });
   return ticket;
 }
 
-export function resolveGoogleAuthTicket(ticket: string): GoogleCompleteResult {
+export async function resolveGoogleAuthTicket(ticket: string): Promise<GoogleCompleteResult> {
   pruneTickets();
   const row = tickets.get(ticket);
   if (!row) throw unauthorized("Google sign-in expired. Try again.");
@@ -201,13 +271,19 @@ export function resolveGoogleAuthTicket(ticket: string): GoogleCompleteResult {
     tickets.delete(ticket);
     return { kind: "session", ...row.payload };
   }
-  return {
-    kind: "identity",
-    email: row.identity.email,
-    name: row.identity.name,
-    ticket,
-    id_token: row.idToken
-  };
+
+  const users = await findActiveUsersByEmail(row.identity.email, row.tenantSlug);
+  if (users.length > 1 && !row.tenantSlug) {
+    throw badRequest("tenant_slug is required when this Google account belongs to multiple tenants");
+  }
+  const user = users[0];
+  if (user) {
+    tickets.delete(ticket);
+    const payload = await issueLoginSession(user);
+    return { kind: "session", ...payload };
+  }
+
+  return googleSignupPayload(row, ticket);
 }
 
 export function buildGoogleAuthorizationUrl(req: Request): string {
@@ -281,10 +357,11 @@ function toGoogleIdentity(identity: { uid: string; email?: string; name?: string
 export async function completeGoogleAuthorization(
   code: string,
   stateToken: string
-): Promise<{ identity: GoogleIdentity; idToken: string }> {
-  const idToken = await exchangeGoogleCode(code, readState(stateToken));
+): Promise<{ identity: GoogleIdentity; idToken: string; state: GoogleOAuthState }> {
+  const state = readState(stateToken);
+  const idToken = await exchangeGoogleCode(code, state);
   const verified = await verifyGoogleOAuthIdToken(idToken);
-  return { identity: toGoogleIdentity(verified), idToken };
+  return { identity: toGoogleIdentity(verified), idToken, state };
 }
 
 export async function signupWithGoogleTicket(input: {
@@ -294,7 +371,7 @@ export async function signupWithGoogleTicket(input: {
   ownerMobile?: string;
   projectName?: string;
   totalShares?: number;
-}): Promise<LoginSessionPayload> {
+}): Promise<GoogleSignupResult> {
   pruneTickets();
   const row = tickets.get(input.ticket);
   if (!row) throw unauthorized("Google sign-in expired. Connect Google again.");
@@ -331,8 +408,32 @@ export async function signupWithGoogleTicket(input: {
     throw error;
   }
 
-  const user = await getActiveUserForLogin(result.ownerUserId);
-  return toLoginSessionPayload(user, result.token, result.defaultProjectId);
+  const [user, progress, project, tenant] = await Promise.all([
+    getActiveUserForLogin(result.ownerUserId),
+    prisma.onboardingProgress.findUnique({
+      where: { tenantId: result.tenantId }
+    }),
+    prisma.project.findFirst({
+      where: { id: result.defaultProjectId, tenantId: result.tenantId },
+      select: { name: true, totalShares: true }
+    }),
+    prisma.tenant.findUniqueOrThrow({
+      where: { id: result.tenantId },
+      select: { contact: true }
+    })
+  ]);
+  const subscription = evaluateSubscription(tenant.contact);
+  return {
+    ...toLoginSessionPayload(user, result.token, result.defaultProjectId),
+    onboarding: summarizeOnboardingForClient(progress, project),
+    subscription: {
+      status: subscription.status,
+      has_access: subscription.has_access,
+      trial_ends_at: subscription.trial_ends_at,
+      days_left: subscription.days_left,
+      renewal_term_years: subscription.renewal_term_years
+    }
+  };
 }
 
 export async function handleGoogleOAuthCallback(req: Request, res: Response) {
@@ -349,8 +450,8 @@ export async function handleGoogleOAuthCallback(req: Request, res: Response) {
     if (!code || !stateToken) {
       return sendOAuthResult(res, redirectUri, { error: "Google sign-in did not complete." });
     }
-    const { identity, idToken } = await completeGoogleAuthorization(code, stateToken);
-    const ticket = storeIdentityTicket(identity, idToken);
+    const { identity, idToken, state } = await completeGoogleAuthorization(code, stateToken);
+    const ticket = storeIdentityTicket(identity, idToken, state);
     return sendOAuthResult(res, redirectUri, { ticket, status: "identity" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Google sign-in failed.";

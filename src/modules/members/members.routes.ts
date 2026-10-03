@@ -12,7 +12,14 @@ import { STAFF_ROLES } from "../../core/security/roles.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams, validateQuery } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
-import { findActiveUsersByEmail, findActiveUsersByMobile, googlePlaceholderMobile, issueOtp, mobilesEquivalent, resolveFirebaseIdentity } from "../auth/auth.service.js";
+import { issueOtp } from "../auth/auth.service.js";
+import {
+  PROJECT_SIGN_IN_OPTIONS,
+  buildProjectInvitationLink,
+  buildProjectInvitationSummary,
+  resolveAppDownloadLink,
+  sendProjectInvitationEmail
+} from "../../core/invitations/project-invitation.service.js";
 
 const router = Router();
 const importUpload = multer({
@@ -81,6 +88,8 @@ async function assertShareCap(input: {
       requested_total: total
     });
   }
+
+  return project;
 }
 
 function parseCsvLine(line: string) {
@@ -398,6 +407,45 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
     };
   });
 
+  let invitationEmailsSent = 0;
+  let invitationEmailsFailed = 0;
+  for (const row of rows) {
+    const email = row.email?.trim();
+    if (!email) continue;
+
+    const invitationLink = buildProjectInvitationLink(req, {
+      tenantId: auth.tenantId,
+      projectId: auth.projectId,
+      role: "member",
+      mobile: row.mobile,
+      email
+    });
+    try {
+      const sent = await sendProjectInvitationEmail({
+        to: email,
+        inviteeName: row.name,
+        projectName: project.name,
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        role: "member",
+        mobile: row.mobile,
+        email,
+        invitationLink,
+        appDownloadLink: resolveAppDownloadLink(invitationLink)
+      });
+      if (sent) invitationEmailsSent += 1;
+    } catch (error) {
+      invitationEmailsFailed += 1;
+      console.error("[mailer] failed to send member import invitation email", error);
+    }
+  }
+
+  const responseSummary = {
+    ...summary,
+    invitation_emails_sent: invitationEmailsSent,
+    invitation_emails_failed: invitationEmailsFailed
+  };
+
   await writeAudit({
     tenantId: auth.tenantId,
     projectId: auth.projectId,
@@ -405,10 +453,10 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
     action: "member.bulk_imported",
     entityType: "member_import",
     entityId: auth.projectId,
-    after: summary
+    after: responseSummary
   });
 
-  return created(res, summary);
+  return created(res, responseSummary);
 }));
 
 router.get("/:id", requireProject, requireRoles("any"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
@@ -445,7 +493,7 @@ router.get("/:id", requireProject, requireRoles("any"), validateParams(idParamSc
 router.post("/", requireProject, requireRoles("owner", "accountant", "admin"), validateBody(memberBodySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const body = req.body as z.infer<typeof memberBodySchema>;
-  await assertShareCap({ tenantId: auth.tenantId, projectId: auth.projectId, shares: body.shares });
+  const project = await assertShareCap({ tenantId: auth.tenantId, projectId: auth.projectId, shares: body.shares });
 
   const result = await prisma.$transaction(async (tx) => {
     const user = await tx.user.upsert({
@@ -528,7 +576,7 @@ router.post("/", requireProject, requireRoles("owner", "accountant", "admin"), v
 
     const otp = await issueOtp(member.mobile, member.email);
 
-    return { member, previousDueAmount, previousDueScheduleId, otp };
+    return { user, member, previousDueAmount, previousDueScheduleId, otp };
   });
 
   await writeAudit({
@@ -541,7 +589,36 @@ router.post("/", requireProject, requireRoles("owner", "accountant", "admin"), v
     after: result
   });
 
-  const memberLink = `${process.env.PUBLIC_API_URL || `${req.protocol}://${req.get("host")}`}/v1/members/accept/${result.member.id}`;
+  const memberLink = buildProjectInvitationLink(req, {
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    role: "member",
+    mobile: result.user.mobile,
+    email: result.user.email,
+    memberId: result.member.id
+  });
+  const appDownloadLink = resolveAppDownloadLink(memberLink);
+  let invitationEmailSent = false;
+  if (result.user.email) {
+    try {
+      invitationEmailSent = await sendProjectInvitationEmail({
+        to: result.user.email,
+        inviteeName: result.user.name,
+        projectName: project.name,
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        role: "member",
+        mobile: result.user.mobile,
+        email: result.user.email,
+        memberId: result.member.id,
+        invitationLink: memberLink,
+        appDownloadLink,
+        otpEmailed: result.otp.emailed
+      });
+    } catch (error) {
+      console.error("[mailer] failed to send member invitation email", error);
+    }
+  }
 
   return created(res, {
     ...result.member,
@@ -553,19 +630,19 @@ router.post("/", requireProject, requireRoles("owner", "accountant", "admin"), v
       ...(process.env.NODE_ENV === "production" ? {} : { dev_code: result.otp.code })
     },
     memberLink,
-    signInOptions: [
-      {
-        method: "google",
-        label: "Sign in with Google",
-        description: "Use your Gmail account to join the project"
-      },
-      {
-        method: "otp",
-        label: "Sign in with OTP",
-        description: "Enter the OTP sent to your phone or email"
-      }
-    ],
-    onboardingSummary: `Member ${result.member.name} has been added to the project. Use the member link to accept and choose your sign-in method.`
+    member_link: memberLink,
+    appDownloadLink,
+    app_download_link: appDownloadLink,
+    invitationEmail: {
+      sent: invitationEmailSent,
+      to: result.user.email
+    },
+    signInOptions: PROJECT_SIGN_IN_OPTIONS,
+    onboardingSummary: buildProjectInvitationSummary({
+      inviteeName: result.member.name,
+      projectName: project.name,
+      role: "member"
+    })
   });
 }));
 

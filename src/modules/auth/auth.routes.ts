@@ -66,7 +66,7 @@ router.get("/google/callback", asyncHandler(async (req, res) => {
 
 router.post("/google/complete", validateBody(googleCompleteSchema), asyncHandler(async (req, res) => {
   const body = req.body as z.infer<typeof googleCompleteSchema>;
-  return ok(res, resolveGoogleAuthTicket(body.ticket));
+  return ok(res, await resolveGoogleAuthTicket(body.ticket));
 }));
 
 router.post("/google/signup", validateBody(googleSignupSchema), asyncHandler(async (req, res) => {
@@ -112,14 +112,30 @@ router.post("/login", validateBody(loginSchema), asyncHandler(async (req, res) =
     if (identity.provider === "google") {
       users = await findActiveUsersByEmail(identity.email!, body.tenant_slug);
       if (users.length === 0) {
+        const email = identity.email!.trim().toLowerCase();
+        const name = identity.name || email.split("@")[0];
         return ok(res, {
+          kind: "signup",
+          signup_needed: true,
           googleSignupNeeded: true,
+          provider: "google",
+          email,
+          name,
           googleIdentity: {
-            email: identity.email!.trim().toLowerCase(),
-            name: identity.name || identity.email!.split("@")[0],
+            email,
+            name,
             uid: identity.uid
           },
-          tenantSlug: body.tenant_slug
+          tenantSlug: body.tenant_slug,
+          signupFlow: {
+            next_endpoint: "/v1/onboarding/signup",
+            onboarding_entrypoint: "organization",
+            prefill: {
+              owner_email: email,
+              owner_name: name
+            },
+            id_token: body.id_token
+          }
         });
       }
     } else {

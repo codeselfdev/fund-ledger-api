@@ -918,7 +918,12 @@
         "content": {
           "application/json": {
             "schema": { "$ref": "#/components/schemas/InvitationCreate" },
-            "example": { "mobile": "+8801811553300", "role": "accountant" }
+            "example": {
+              "name": "Nadia Rahman",
+              "mobile": "+8801811553300",
+              "email": "nadia@example.com",
+              "role": "accountant"
+            }
           }
         }
       },
@@ -1179,9 +1184,11 @@
       },
       "InvitationCreate": {
         "type": "object",
-        "required": ["mobile", "role"],
+        "required": ["name", "mobile", "role"],
         "properties": {
+          "name": { "type": "string", "minLength": 1 },
           "mobile": { "type": "string", "minLength": 6 },
+          "email": { "type": "string", "format": "email" },
           "role": { "$ref": "#/components/schemas/Role" },
           "project_id": { "type": "string" }
         }

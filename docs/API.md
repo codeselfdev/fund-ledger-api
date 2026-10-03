@@ -50,11 +50,12 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | PATCH | `/v1/tenants/current` | owner | Update tenant branding, contact, locale, currency |
 | GET | `/v1/projects` | any | Projects accessible to caller |
 | POST | `/v1/projects` | owner | Create project with share cap and optional penalty policy |
-| POST | `/v1/invitations` | owner, approver | Invite or grant project role by mobile |
+| POST | `/v1/invitations` | owner, approver, admin | Invite or grant project role by mobile, create/link the user and member, issue OTP, and email app/invitation instructions when email exists |
+| POST | `/v1/memberships` | owner, admin | Add or reactivate a project role by `user_id` or mobile; creates a user when mobile is new and `name` is supplied |
 | GET | `/v1/auth/google` | public | Start Google OAuth. Query: `intent` (`login` or `signup`), `redirect_uri`, optional `tenant_slug`. Google returns to `/v1/auth/google/callback`. |
 | GET | `/v1/auth/google/callback` | public | Google redirect target. Issues a short-lived identity `ticket` (includes ID token) and redirects to the app. |
-| POST | `/v1/auth/google/complete` | public | Exchange `{ ticket }`. Returns `{ kind: identity, email, name, ticket, id_token }` for `POST /v1/auth/login` or `POST /v1/onboarding/signup`. |
-| POST | `/v1/auth/google/signup` | public | Finish Google signup with `{ ticket, org_name, owner_name?, owner_mobile?, project_name?, total_shares? }`. |
+| POST | `/v1/auth/google/complete` | public | Exchange `{ ticket }`. Existing Gmail returns `{ kind: session, token, ... }`; unknown Gmail returns `{ kind: signup, signup_needed: true, email, name, ticket, id_token, signupFlow }`. |
+| POST | `/v1/auth/google/signup` | public | Finish Google signup with `{ ticket, org_name, owner_name?, owner_mobile?, project_name?, total_shares? }`; returns token, memberships, onboarding, and subscription state. |
 | POST | `/v1/auth/otp/request` | public | Create one-time login code for registered mobile (legacy fallback) |
 | POST | `/v1/auth/login` | public | Login with `{ id_token }` (Google or Firebase phone) or `{ mobile, otp }`. Google users are matched by email. |
 | POST | `/v1/auth/switch-project` | any | Set active project for current session |
@@ -76,9 +77,9 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | GET | `/v1/members/:id/documents` | self, staff | List member documents with titles |
 | GET | `/v1/members/:id/documents/:documentId/view` | self, staff | View/download member document |
 | GET | `/v1/members/import/csv-format` | accountant, admin | Download CSV format for initial bulk import |
-| POST | `/v1/members/import` | accountant, admin | Bulk import members via CSV; previous dues go to schedule `Previous installment` |
+| POST | `/v1/members/import` | accountant, admin | Bulk import members via CSV, create users/project memberships, email app invitation instructions when email exists, and put previous dues on `Previous installment` |
 | GET | `/v1/members/:id` | staff, self | Member detail and contribution summary |
-| POST | `/v1/members` | accountant, admin | Add member; validates total shares and supports `previous_due_amount` |
+| POST | `/v1/members` | accountant, admin | Add member, create/link user and project membership, validate total shares, email app invitation instructions when email exists, and support `previous_due_amount` |
 | PATCH | `/v1/members/:id` | accountant | Update contact, shares, activate/deactivate |
 | GET | `/v1/deposit-delegates` | owner, admin | List member users who are allowed to submit deposits on behalf of others |
 | POST | `/v1/deposit-delegates` | owner, admin | Grant or revoke on-behalf deposit permission for a specific member user |

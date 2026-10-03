@@ -11,6 +11,14 @@ import { ensureUserProjectMember } from "../../core/security/member-link.service
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
+import { issueOtp } from "../auth/auth.service.js";
+import {
+  PROJECT_SIGN_IN_OPTIONS,
+  buildProjectInvitationLink,
+  buildProjectInvitationSummary,
+  resolveAppDownloadLink,
+  sendProjectInvitationEmail
+} from "../../core/invitations/project-invitation.service.js";
 
 const router = Router();
 
@@ -23,6 +31,8 @@ const createMembershipSchema = z
   .object({
     user_id: z.string().min(1).optional(),
     mobile: z.string().min(6).optional(),
+    name: z.string().min(2).optional(),
+    email: z.string().email().optional(),
     role: z.nativeEnum(Role)
   })
   .refine((v) => v.user_id != null || v.mobile != null, {
@@ -55,49 +65,49 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
   const auth = requireProjectContext(req);
   const body = req.body as z.infer<typeof createMembershipSchema>;
 
-  const user = body.user_id
-    ? await prisma.user.findFirst({ where: { id: body.user_id, tenantId: auth.tenantId, isActive: true } })
-    : await prisma.user.findFirst({ where: { mobile: body.mobile!, tenantId: auth.tenantId, isActive: true } });
-  if (!user) throw notFound("No active user found for the given identity");
-
-  const existing = await prisma.projectMembership.findFirst({
-    where: { projectId: auth.projectId, userId: user.id, role: body.role }
+  const project = await prisma.project.findFirstOrThrow({
+    where: { id: auth.projectId, tenantId: auth.tenantId }
   });
-  if (existing) {
-    if (!existing.isActive) {
-      const reactivated = await prisma.$transaction(async (tx) => {
-        const ensured = await ensureUserProjectMember(tx, {
-          tenantId: auth.tenantId,
-          projectId: auth.projectId,
-          user: {
-            id: user.id,
-            name: user.name,
-            mobile: user.mobile,
-            email: user.email
-          },
-          defaultShares: defaultShareSeedForRole(existing.role)
-        });
-        return tx.projectMembership.update({
-          where: { id: existing.id },
-          data: { isActive: true, memberId: ensured.memberId }
-        });
-      });
-      await writeAudit({
-        tenantId: auth.tenantId,
-        projectId: auth.projectId,
-        actorUserId: auth.userId,
-        action: "membership.reactivated",
-        entityType: "project_membership",
-        entityId: reactivated.id,
-        before: existing,
-        after: reactivated
-      });
-      return ok(res, { id: reactivated.id, role: reactivated.role, is_active: reactivated.isActive, user_id: user.id });
-    }
-    throw conflict("This user already has that role on the project");
-  }
 
-  const membership = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
+    let user = body.user_id
+      ? await tx.user.findFirst({ where: { id: body.user_id, tenantId: auth.tenantId, isActive: true } })
+      : await tx.user.findFirst({ where: { mobile: body.mobile!, tenantId: auth.tenantId, isActive: true } });
+    let userCreated = false;
+
+    if (!user && body.user_id) {
+      throw notFound("No active user found for the given identity");
+    }
+    if (!user) {
+      if (!body.name) {
+        throw badRequest("name is required when creating a new user by mobile");
+      }
+      user = await tx.user.create({
+        data: {
+          tenantId: auth.tenantId,
+          name: body.name,
+          mobile: body.mobile!,
+          email: body.email
+        }
+      });
+      userCreated = true;
+    } else if (body.name || body.email) {
+      user = await tx.user.update({
+        where: { id: user.id },
+        data: {
+          ...(body.name ? { name: body.name } : {}),
+          ...(body.email ? { email: body.email } : {})
+        }
+      });
+    }
+
+    const existing = await tx.projectMembership.findFirst({
+      where: { projectId: auth.projectId, userId: user.id, role: body.role }
+    });
+    if (existing?.isActive) {
+      throw conflict("This user already has that role on the project");
+    }
+
     const ensured = await ensureUserProjectMember(tx, {
       tenantId: auth.tenantId,
       projectId: auth.projectId,
@@ -110,8 +120,16 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
       defaultShares: defaultShareSeedForRole(body.role)
     });
 
+    if (existing) {
+      const membership = await tx.projectMembership.update({
+        where: { id: existing.id },
+        data: { isActive: true, memberId: ensured.memberId }
+      });
+      return { user, membership, userCreated, reactivated: true, before: existing };
+    }
+
     if (body.role === "member") {
-      return tx.projectMembership.findFirstOrThrow({
+      const membership = await tx.projectMembership.findFirstOrThrow({
         where: {
           tenantId: auth.tenantId,
           projectId: auth.projectId,
@@ -119,9 +137,10 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
           role: "member"
         }
       });
+      return { user, membership, userCreated, reactivated: false, before: null };
     }
 
-    return tx.projectMembership.create({
+    const membership = await tx.projectMembership.create({
       data: {
         tenantId: auth.tenantId,
         projectId: auth.projectId,
@@ -130,24 +149,79 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
         role: body.role
       }
     });
+
+    return { user, membership, userCreated, reactivated: false, before: null };
   });
 
   await writeAudit({
     tenantId: auth.tenantId,
     projectId: auth.projectId,
     actorUserId: auth.userId,
-    action: "membership.created",
+    action: result.reactivated ? "membership.reactivated" : "membership.created",
     entityType: "project_membership",
-    entityId: membership.id,
-    after: membership
+    entityId: result.membership.id,
+    before: result.before,
+    after: result.membership
   });
 
+  const otp = await issueOtp(result.user.mobile, result.user.email);
+  const membershipLink = buildProjectInvitationLink(req, {
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    role: result.membership.role,
+    mobile: result.user.mobile,
+    email: result.user.email,
+    memberId: result.membership.memberId ?? undefined
+  });
+  const appDownloadLink = resolveAppDownloadLink(membershipLink);
+  let invitationEmailSent = false;
+  if (result.user.email) {
+    try {
+      invitationEmailSent = await sendProjectInvitationEmail({
+        to: result.user.email,
+        inviteeName: result.user.name,
+        projectName: project.name,
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        role: result.membership.role,
+        mobile: result.user.mobile,
+        email: result.user.email,
+        memberId: result.membership.memberId ?? undefined,
+        invitationLink: membershipLink,
+        appDownloadLink,
+        otpEmailed: otp.emailed
+      });
+    } catch (error) {
+      console.error("[mailer] failed to send membership invitation email", error);
+    }
+  }
+
   return created(res, {
-    id: membership.id,
-    role: membership.role,
-    is_active: membership.isActive,
-    user_id: user.id,
-    user: { id: user.id, name: user.name, mobile: user.mobile, email: user.email }
+    id: result.membership.id,
+    role: result.membership.role,
+    is_active: result.membership.isActive,
+    user_id: result.user.id,
+    user_created: result.userCreated,
+    user: { id: result.user.id, name: result.user.name, mobile: result.user.mobile, email: result.user.email },
+    otp: {
+      sent: true,
+      emailed: otp.emailed,
+      ...(process.env.NODE_ENV === "production" ? {} : { dev_code: otp.code })
+    },
+    membershipLink,
+    membership_link: membershipLink,
+    appDownloadLink,
+    app_download_link: appDownloadLink,
+    invitationEmail: {
+      sent: invitationEmailSent,
+      to: result.user.email
+    },
+    signInOptions: PROJECT_SIGN_IN_OPTIONS,
+    onboardingSummary: buildProjectInvitationSummary({
+      inviteeName: result.user.name,
+      projectName: project.name,
+      role: result.membership.role
+    })
   });
 }));
 

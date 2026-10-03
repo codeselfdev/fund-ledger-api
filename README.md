@@ -230,6 +230,8 @@ The mobile app opens the API; Google OAuth runs on this service.
 3. The API redirects to the app with a one-time `ticket`
 4. The app calls `POST /v1/auth/google/complete` `{ ticket }`
 
+`/v1/auth/google/complete` returns a normal `{ kind: "session", token, ... }` payload when the Gmail already belongs to an active user. If the Gmail is not registered yet, it returns `{ kind: "signup", signup_needed: true, email, name, ticket, id_token, signupFlow }` so the app can open signup/onboarding immediately with the Google identity prefilled.
+
 Create a **Web application** OAuth client in Google Cloud (an Android/iOS installed client will not work) and set:
 
 ```bash
