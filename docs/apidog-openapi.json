@@ -637,7 +637,7 @@
     "/v1/members/import": {
       "post": {
         "tags": ["Members"],
-        "summary": "Bulk import members from CSV",
+        "summary": "Idempotently import, update, or reactivate members from CSV",
         "security": [{ "BearerAuth": [] }],
         "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
         "requestBody": {

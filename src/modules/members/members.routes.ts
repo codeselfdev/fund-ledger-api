@@ -326,7 +326,7 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
         projectId: auth.projectId,
         mobile: { in: rows.map((row) => row.mobile) }
       },
-      select: { mobile: true }
+      select: { id: true, mobile: true, status: true, shares: true }
     }),
     prisma.member.aggregate({
       where: { tenantId: auth.tenantId, projectId: auth.projectId, status: "active" },
@@ -334,14 +334,12 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
     })
   ]);
 
-  if (existingMembers.length > 0) {
-    throw badRequest("Some member mobile numbers already exist in this project", {
-      mobiles: existingMembers.map((member) => member.mobile)
-    });
-  }
-
+  const existingByMobile = new Map(existingMembers.map((member) => [member.mobile, member]));
+  const replacedActiveShares = existingMembers
+    .filter((member) => member.status === "active")
+    .reduce((sum, member) => sum + member.shares, 0);
   const importingShares = rows.reduce((sum, row) => sum + row.shares, 0);
-  const requestedTotalShares = (existingActiveShares._sum.shares ?? 0) + importingShares;
+  const requestedTotalShares = (existingActiveShares._sum.shares ?? 0) - replacedActiveShares + importingShares;
   if (requestedTotalShares > project.totalShares) {
     throw badRequest("Total member shares exceed project share cap", {
       total_shares: project.totalShares,
@@ -349,12 +347,26 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
     });
   }
 
-  const summary = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const createdMembers: string[] = [];
+    const reactivatedMembers: string[] = [];
+    const updatedMembers: string[] = [];
+    const invitationCandidates: Array<{
+      memberId: string;
+      name: string;
+      mobile: string;
+      email: string;
+    }> = [];
     let previousInstallmentSchedule: { id: string; dueDate: Date } | null = null;
     let previousDueTotal = 0;
+    let ignoredPreviousDueCount = 0;
 
     for (const row of rows) {
+      const existingMember = existingByMobile.get(row.mobile);
+      if (existingMember?.status === "inactive") {
+        await assertMemberCanExit(auth.tenantId, auth.projectId, existingMember.id, tx);
+      }
+
       const user = await tx.user.upsert({
         where: {
           tenantId_mobile: {
@@ -364,7 +376,8 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
         },
         update: {
           name: row.name,
-          email: row.email
+          email: row.email,
+          isActive: true
         },
         create: {
           tenantId: auth.tenantId,
@@ -374,19 +387,42 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
         }
       });
 
-      const member = await tx.member.create({
-        data: {
-          tenantId: auth.tenantId,
-          projectId: auth.projectId,
-          userId: user.id,
-          name: row.name,
-          mobile: row.mobile,
-          email: row.email,
-          address: row.address,
-          shares: row.shares
-        }
-      });
-      createdMembers.push(member.id);
+      const member = existingMember
+        ? await tx.member.update({
+            where: { id: existingMember.id },
+            data: {
+              userId: user.id,
+              name: row.name,
+              email: row.email,
+              address: row.address,
+              shares: row.shares,
+              status: "active"
+            }
+          })
+        : await tx.member.create({
+            data: {
+              tenantId: auth.tenantId,
+              projectId: auth.projectId,
+              userId: user.id,
+              name: row.name,
+              mobile: row.mobile,
+              email: row.email,
+              address: row.address,
+              shares: row.shares
+            }
+          });
+      if (!existingMember) createdMembers.push(member.id);
+      else if (existingMember.status === "inactive") reactivatedMembers.push(member.id);
+      else updatedMembers.push(member.id);
+
+      if ((!existingMember || existingMember.status === "inactive") && member.email) {
+        invitationCandidates.push({
+          memberId: member.id,
+          name: member.name,
+          mobile: member.mobile,
+          email: member.email
+        });
+      }
 
       await tx.projectMembership.upsert({
         where: {
@@ -406,7 +442,7 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
         }
       });
 
-      if (row.previous_due_amount > 0) {
+      if (row.previous_due_amount > 0 && !existingMember) {
         if (!previousInstallmentSchedule) {
           const schedule = await ensurePreviousInstallmentSchedule(tx, {
             tenantId: auth.tenantId,
@@ -428,6 +464,8 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
           }
         });
         previousDueTotal += row.previous_due_amount;
+      } else if (row.previous_due_amount > 0) {
+        ignoredPreviousDueCount += 1;
       }
     }
 
@@ -439,35 +477,44 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
     }
 
     return {
-      imported_count: createdMembers.length,
-      previous_due_total: previousDueTotal,
-      schedule_name: previousInstallmentSchedule ? PREVIOUS_INSTALLMENT_SCHEDULE_NAME : null
+      summary: {
+        imported_count: rows.length,
+        created_count: createdMembers.length,
+        reactivated_count: reactivatedMembers.length,
+        updated_count: updatedMembers.length,
+        created_member_ids: createdMembers,
+        reactivated_member_ids: reactivatedMembers,
+        updated_member_ids: updatedMembers,
+        previous_due_total: previousDueTotal,
+        previous_due_ignored_count: ignoredPreviousDueCount,
+        schedule_name: previousInstallmentSchedule ? PREVIOUS_INSTALLMENT_SCHEDULE_NAME : null
+      },
+      invitationCandidates
     };
-  });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
   let invitationEmailsSent = 0;
   let invitationEmailsFailed = 0;
-  for (const row of rows) {
-    const email = row.email?.trim();
-    if (!email) continue;
-
+  for (const candidate of result.invitationCandidates) {
     const invitationLink = buildProjectInvitationLink(req, {
       tenantId: auth.tenantId,
       projectId: auth.projectId,
       role: "member",
-      mobile: row.mobile,
-      email
+      mobile: candidate.mobile,
+      email: candidate.email,
+      memberId: candidate.memberId
     });
     try {
       const sent = await sendProjectInvitationEmail({
-        to: email,
-        inviteeName: row.name,
+        to: candidate.email,
+        inviteeName: candidate.name,
         projectName: project.name,
         tenantId: auth.tenantId,
         projectId: auth.projectId,
         role: "member",
-        mobile: row.mobile,
-        email,
+        mobile: candidate.mobile,
+        email: candidate.email,
+        memberId: candidate.memberId,
         invitationLink,
         appDownloadLink: resolveAppDownloadLink(invitationLink)
       });
@@ -480,7 +527,7 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
   }
 
   const responseSummary = {
-    ...summary,
+    ...result.summary,
     invitation_emails_sent: invitationEmailsSent,
     invitation_emails_failed: invitationEmailsFailed
   };

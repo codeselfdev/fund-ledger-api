@@ -83,7 +83,7 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | GET | `/v1/members/:id/documents` | self, staff | List member documents with titles |
 | GET | `/v1/members/:id/documents/:documentId/view` | self, staff | View/download member document |
 | GET | `/v1/members/import/csv-format` | accountant, admin | Download CSV format for initial bulk import |
-| POST | `/v1/members/import` | accountant, admin | Bulk import members via CSV, create users/project memberships, email app invitation instructions when email exists, and put previous dues on `Previous installment` |
+| POST | `/v1/members/import` | accountant, admin | Idempotent CSV import: create new members, reactivate inactive matches, update active matches, reuse users/memberships, and email invitations to created/reactivated members |
 | GET | `/v1/members/:id` | staff, self | Member detail and contribution summary |
 | GET | `/v1/members/:id/settlement` | staff, self | Show outstanding principal/penalty, unused advance, pending deposits, and whether removal/transfer is allowed |
 | POST | `/v1/members` | accountant, admin | Add member, create/link user and project membership, validate total shares, email app invitation instructions when email exists, and support `previous_due_amount` |
@@ -97,6 +97,12 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | PATCH | `/v1/deposit-delegates/:id` | owner, admin | Toggle an existing on-behalf deposit permission record |
 
 Required member fields: `name`, `mobile`, `shares`. Optional: `address`, `email`, `previous_due_amount`.
+
+CSV import matches members by mobile within the active project. Existing member and user records are
+reused; historical dues, deposits, receipts, and audit data are never deleted. For an existing
+member, `previous_due_amount` is ignored to prevent duplicate accounting entries. An inactive
+member must still have zero dues, zero unused advance, and no pending deposits before import can
+reactivate them.
 
 Member exit workflow:
 

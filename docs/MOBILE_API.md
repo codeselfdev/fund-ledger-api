@@ -326,6 +326,33 @@ Add a member (also creates/links the user and member membership):
 }
 ```
 
+Bulk member import is safe to repeat with the same CSV. `POST /v1/members/import` creates new
+mobiles, reactivates inactive matches, and updates active matches in place. It does not delete or
+duplicate historical accounting data. The response includes:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "imported_count": 12,
+    "created_count": 0,
+    "reactivated_count": 4,
+    "updated_count": 8,
+    "created_member_ids": [],
+    "reactivated_member_ids": ["mem_09", "mem_10", "mem_11", "mem_12"],
+    "updated_member_ids": ["mem_01", "mem_02", "mem_03", "mem_04", "mem_05", "mem_06", "mem_07", "mem_08"],
+    "previous_due_total": 0,
+    "previous_due_ignored_count": 12,
+    "schedule_name": null,
+    "invitation_emails_sent": 4,
+    "invitation_emails_failed": 0
+  }
+}
+```
+
+`previous_due_amount` is created only for new members. It is ignored for existing members so
+uploading the same file cannot add the same opening due twice.
+
 Before removing or transferring a member, load the settlement summary:
 
 ```http
