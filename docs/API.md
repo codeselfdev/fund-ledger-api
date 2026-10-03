@@ -87,6 +87,7 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | GET | `/v1/members/:id` | staff, self | Member detail and contribution summary |
 | GET | `/v1/members/:id/settlement` | staff, self | Show outstanding principal/penalty, unused advance, pending deposits, and whether removal/transfer is allowed |
 | POST | `/v1/members` | accountant, admin | Add member, create/link user and project membership, validate total shares, email app invitation instructions when email exists, and support `previous_due_amount` |
+| POST | `/v1/members/:id/invitation/resend` | owner, accountant, admin | Issue a fresh OTP and resend the app invitation email to an existing member |
 | POST | `/v1/members/:id/settle` | accountant, admin | Apply unused advance to dues, optionally write off remaining dues, and/or refund remaining advance through the original account |
 | POST | `/v1/members/:id/remove` | owner, admin | Soft-remove a zero-balance member, set shares to zero, and revoke the member role |
 | POST | `/v1/members/:id/transfer` | owner, admin | Transfer shares and member access to an existing or newly created member after the source balance reaches zero |

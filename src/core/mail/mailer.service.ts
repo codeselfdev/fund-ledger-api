@@ -2,6 +2,8 @@ import nodemailer, { type Transporter } from "nodemailer";
 import { env } from "../../config/env.js";
 
 let transporter: Transporter | null | undefined;
+type MailFailure = { code: "SMTP_NOT_CONFIGURED" | "SMTP_AUTH_FAILED" | "SMTP_DELIVERY_FAILED"; message: string };
+let lastMailFailure: MailFailure | null = null;
 
 function isAuthenticationError(error: unknown) {
   const smtpError = error as { code?: string; responseCode?: number };
@@ -19,11 +21,31 @@ function authenticationError(error: unknown) {
   return wrapped;
 }
 
+export function describeMailFailure(error?: unknown): MailFailure {
+  if (isAuthenticationError(error) || (error as { code?: string } | undefined)?.code === "SMTP_AUTH_FAILED") {
+    return {
+      code: "SMTP_AUTH_FAILED",
+      message: "SMTP authentication failed. For Brevo, use the SMTP Login and an SMTP key."
+    };
+  }
+  if (!env.smtp.user || !env.smtp.pass) {
+    return {
+      code: "SMTP_NOT_CONFIGURED",
+      message: "SMTP credentials are not configured on the API server."
+    };
+  }
+  return lastMailFailure ?? {
+    code: "SMTP_DELIVERY_FAILED",
+    message: "The email provider did not accept the message. Check the API server mail logs."
+  };
+}
+
 function getTransporter(): Transporter | null {
   if (transporter !== undefined) return transporter;
 
   if (!env.smtp.user || !env.smtp.pass) {
     console.warn("[mailer] SMTP_USER/SMTP_PASS not set — email sending is disabled");
+    lastMailFailure = describeMailFailure();
     transporter = null;
     return transporter;
   }
@@ -47,15 +69,19 @@ export async function verifyMailTransport(): Promise<boolean> {
 
   try {
     await transport.verify();
+    lastMailFailure = null;
     console.info(`[mailer] SMTP connection verified (${env.smtp.host}:${env.smtp.port})`);
     return true;
   } catch (error) {
     if (isAuthenticationError(error)) {
       transporter = null;
-      console.error(`[mailer] ${authenticationError(error).message}`);
+      const wrapped = authenticationError(error);
+      lastMailFailure = describeMailFailure(wrapped);
+      console.error(`[mailer] ${wrapped.message}`);
       return false;
     }
 
+    lastMailFailure = describeMailFailure(error);
     console.error("[mailer] SMTP connection verification failed", error);
     return false;
   }
@@ -74,12 +100,16 @@ export async function sendMail(input: { to: string; cc?: string[]; subject: stri
       text: input.text,
       html: input.html
     });
+    lastMailFailure = null;
   } catch (error) {
     if (isAuthenticationError(error)) {
       // Stop retrying the same rejected credentials for every row in a bulk import.
       transporter = null;
-      throw authenticationError(error);
+      const wrapped = authenticationError(error);
+      lastMailFailure = describeMailFailure(wrapped);
+      throw wrapped;
     }
+    lastMailFailure = describeMailFailure(error);
     throw error;
   }
 

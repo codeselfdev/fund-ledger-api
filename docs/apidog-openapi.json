@@ -683,6 +683,19 @@
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
       }
     },
+    "/v1/members/{id}/invitation/resend": {
+      "post": {
+        "tags": ["Members"],
+        "summary": "Issue a fresh OTP and resend the member invitation email",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/Success" },
+          "400": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/v1/members/{id}/settle": {
       "post": {
         "tags": ["Members"],

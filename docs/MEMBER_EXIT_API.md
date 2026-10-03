@@ -430,6 +430,66 @@ HTTP/1.1 201 Created
 For an existing target member, `target_member.shares` is their previous shares plus
 `transferred_shares`, and `user_created` is normally `false`.
 
+### Email Delivery Failure
+
+Membership transfer succeeds independently of email delivery. Always inspect
+`data.invitation_email.sent`. When it is `false`, the response includes a safe failure code:
+
+```json
+{
+  "invitation_email": {
+    "sent": false,
+    "to": "nadia@gmail.com",
+    "error": {
+      "code": "SMTP_AUTH_FAILED",
+      "message": "SMTP authentication failed. For Brevo, use the SMTP Login and an SMTP key."
+    }
+  }
+}
+```
+
+After correcting SMTP configuration, resend the invitation without repeating the transfer:
+
+```http
+POST /v1/members/{target_member_id}/invitation/resend
+Authorization: Bearer <access_token>
+X-Project-Id: <project_id>
+```
+
+No request body is required. Owner, admin, or accountant can call this endpoint. It creates a
+fresh OTP and returns:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "member_id": "mem_02",
+    "invitation_link": "fundledger://invite?tenant_id=tenant_01&project_id=project_01&role=member&member_id=mem_02",
+    "app_download_link": "https://example.com/download-fundledger",
+    "invitation_email": {
+      "sent": true,
+      "to": "nadia@gmail.com"
+    },
+    "sign_in_options": [
+      {
+        "method": "google",
+        "label": "Sign in with Google",
+        "description": "Use the Gmail or Google account email on the invitation"
+      },
+      {
+        "method": "otp",
+        "label": "Sign in with OTP",
+        "description": "Enter the OTP sent to your phone or email"
+      }
+    ]
+  }
+}
+```
+
+If delivery still fails, the resend endpoint returns `503 SERVICE_UNAVAILABLE` with
+`fields.error.code` set to `SMTP_NOT_CONFIGURED`, `SMTP_AUTH_FAILED`, or
+`SMTP_DELIVERY_FAILED`.
+
 ## Common Exit Errors
 
 ### Balance Is Not Zero
@@ -532,6 +592,8 @@ The APIs create activity records available from `GET /v1/activity`:
 | `account_transaction.created` | An advance refund creates a money-out transaction |
 | `member.removed` | A settled member is removed |
 | `member.membership_transferred` | Shares and member access are transferred |
+| `member.invitation_resent` | A fresh invitation email is successfully sent |
+| `member.invitation_email_failed` | A resend attempt fails at the email provider |
 
 Settlement audit data includes affected deposit IDs, due IDs, account IDs, refund transaction
 IDs, amounts, the actor, reason, and before/after settlement snapshots.

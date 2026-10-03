@@ -289,6 +289,7 @@ Example account setup:
 | Dashboard | `GET /v1/dashboard` |
 | Member list/detail | `GET /v1/members`, `GET /v1/members/:id` |
 | Add/edit member | `POST /v1/members`, `PATCH /v1/members/:id` |
+| Resend member invitation | `POST /v1/members/:id/invitation/resend` |
 | Member exit balance | `GET /v1/members/:id/settlement`, `POST /v1/members/:id/settle` |
 | Remove/transfer member | `POST /v1/members/:id/remove`, `POST /v1/members/:id/transfer` |
 | Project roles | `GET /v1/memberships`, `POST /v1/memberships`, `PATCH /v1/memberships/:id` |

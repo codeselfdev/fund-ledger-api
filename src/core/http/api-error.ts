@@ -26,5 +26,5 @@ export const notFound = (message = "Resource not found", fields?: unknown) =>
 export const conflict = (message: string, fields?: unknown) =>
   new ApiError(409, "CONFLICT", message, fields);
 
-export const serviceUnavailable = (message: string) =>
-  new ApiError(503, "SERVICE_UNAVAILABLE", message);
+export const serviceUnavailable = (message: string, fields?: unknown) =>
+  new ApiError(503, "SERVICE_UNAVAILABLE", message, fields);

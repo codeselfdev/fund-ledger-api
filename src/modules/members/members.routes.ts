@@ -3,7 +3,7 @@ import { z } from "zod";
 import multer from "multer";
 import { MemberStatus, Prisma } from "@prisma/client";
 import { asyncHandler } from "../../core/http/async-handler.js";
-import { badRequest, forbidden, notFound } from "../../core/http/api-error.js";
+import { badRequest, forbidden, notFound, serviceUnavailable } from "../../core/http/api-error.js";
 import { created, ok } from "../../core/http/response.js";
 import { prisma } from "../../core/prisma/client.js";
 import { requireProject, requireRoles } from "../../core/security/auth.middleware.js";
@@ -13,6 +13,7 @@ import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams, validateQuery } from "../../core/validation/validate.js";
 import { writeAccountTransactionAudit, writeAudit } from "../../core/audit/audit.service.js";
 import { issueOtp } from "../auth/auth.service.js";
+import { describeMailFailure } from "../../core/mail/mailer.service.js";
 import {
   PROJECT_SIGN_IN_OPTIONS,
   buildProjectInvitationLink,
@@ -504,6 +505,78 @@ router.get("/:id/settlement", requireProject, requireRoles("any"), validateParam
   return ok(res, await getMemberSettlement(auth.tenantId, auth.projectId, id));
 }));
 
+router.post("/:id/invitation/resend", requireProject, requireRoles("owner", "accountant", "admin"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  const { id } = req.params as z.infer<typeof idParamSchema>;
+  const member = await prisma.member.findFirst({
+    where: { id, tenantId: auth.tenantId, projectId: auth.projectId },
+    include: { project: { select: { name: true } } }
+  });
+  if (!member) throw notFound("Member not found");
+  if (!member.email) throw badRequest("Member email is required to send an invitation");
+
+  const otp = await issueOtp(member.mobile, member.email);
+  const invitationLink = buildProjectInvitationLink(req, {
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    role: "member",
+    mobile: member.mobile,
+    email: member.email,
+    memberId: member.id
+  });
+  const appDownloadLink = resolveAppDownloadLink(invitationLink);
+
+  let sent = false;
+  let deliveryError: ReturnType<typeof describeMailFailure> | undefined;
+  try {
+    sent = await sendProjectInvitationEmail({
+      to: member.email,
+      inviteeName: member.name,
+      projectName: member.project.name,
+      tenantId: auth.tenantId,
+      projectId: auth.projectId,
+      role: "member",
+      mobile: member.mobile,
+      email: member.email,
+      memberId: member.id,
+      invitationLink,
+      appDownloadLink,
+      otpEmailed: otp.emailed
+    });
+    if (!sent) deliveryError = describeMailFailure();
+  } catch (error) {
+    deliveryError = describeMailFailure(error);
+    console.error("[mailer] failed to resend member invitation email", error);
+  }
+
+  const delivery = {
+    sent,
+    to: member.email,
+    ...(deliveryError ? { error: deliveryError } : {})
+  };
+  await writeAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    action: sent ? "member.invitation_resent" : "member.invitation_email_failed",
+    entityType: "member",
+    entityId: member.id,
+    after: { delivery }
+  });
+
+  if (!sent) {
+    throw serviceUnavailable("Member invitation email could not be sent", delivery);
+  }
+
+  return ok(res, {
+    member_id: member.id,
+    invitation_link: invitationLink,
+    app_download_link: appDownloadLink,
+    invitation_email: delivery,
+    sign_in_options: PROJECT_SIGN_IN_OPTIONS
+  });
+}));
+
 router.get("/:id", requireProject, requireRoles("any"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
@@ -922,6 +995,7 @@ router.post("/:id/transfer", requireProject, requireRoles("owner", "admin"), val
   });
   const appDownloadLink = resolveAppDownloadLink(invitationLink);
   let invitationEmailSent = false;
+  let invitationEmailError: ReturnType<typeof describeMailFailure> | undefined;
   if (result.user.email) {
     try {
       invitationEmailSent = await sendProjectInvitationEmail({
@@ -938,7 +1012,9 @@ router.post("/:id/transfer", requireProject, requireRoles("owner", "admin"), val
         appDownloadLink,
         otpEmailed: otp.emailed
       });
+      if (!invitationEmailSent) invitationEmailError = describeMailFailure();
     } catch (error) {
+      invitationEmailError = describeMailFailure(error);
       console.error("[mailer] failed to send transferred member invitation email", error);
     }
   }
@@ -967,7 +1043,11 @@ router.post("/:id/transfer", requireProject, requireRoles("owner", "admin"), val
     user_created: result.userCreated,
     invitation_link: invitationLink,
     app_download_link: appDownloadLink,
-    invitation_email: { sent: invitationEmailSent, to: result.user.email },
+    invitation_email: {
+      sent: invitationEmailSent,
+      to: result.user.email,
+      ...(invitationEmailError ? { error: invitationEmailError } : {})
+    },
     sign_in_options: PROJECT_SIGN_IN_OPTIONS
   });
 }));
