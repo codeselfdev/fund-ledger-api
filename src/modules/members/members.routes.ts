@@ -434,6 +434,7 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
         appDownloadLink: resolveAppDownloadLink(invitationLink)
       });
       if (sent) invitationEmailsSent += 1;
+      else invitationEmailsFailed += 1;
     } catch (error) {
       invitationEmailsFailed += 1;
       console.error("[mailer] failed to send member import invitation email", error);

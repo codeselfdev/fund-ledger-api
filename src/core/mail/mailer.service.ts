@@ -3,6 +3,22 @@ import { env } from "../../config/env.js";
 
 let transporter: Transporter | null | undefined;
 
+function isAuthenticationError(error: unknown) {
+  const smtpError = error as { code?: string; responseCode?: number };
+  return smtpError?.code === "EAUTH" || smtpError?.responseCode === 535;
+}
+
+function authenticationError(error: unknown) {
+  const providerHint = env.smtp.host.includes("brevo.com")
+    ? "Brevo requires the SMTP Login as SMTP_USER and an SMTP key as SMTP_PASS; do not use the Brevo account password or an API key."
+    : "Verify SMTP_USER and SMTP_PASS with your email provider.";
+  const wrapped = new Error(
+    `SMTP authentication failed. ${providerHint}`
+  );
+  Object.assign(wrapped, { code: "SMTP_AUTH_FAILED", cause: error });
+  return wrapped;
+}
+
 function getTransporter(): Transporter | null {
   if (transporter !== undefined) return transporter;
 
@@ -25,18 +41,47 @@ function getTransporter(): Transporter | null {
   return transporter;
 }
 
+export async function verifyMailTransport(): Promise<boolean> {
+  const transport = getTransporter();
+  if (!transport) return false;
+
+  try {
+    await transport.verify();
+    console.info(`[mailer] SMTP connection verified (${env.smtp.host}:${env.smtp.port})`);
+    return true;
+  } catch (error) {
+    if (isAuthenticationError(error)) {
+      transporter = null;
+      console.error(`[mailer] ${authenticationError(error).message}`);
+      return false;
+    }
+
+    console.error("[mailer] SMTP connection verification failed", error);
+    return false;
+  }
+}
+
 export async function sendMail(input: { to: string; cc?: string[]; subject: string; text: string; html?: string }): Promise<boolean> {
   const transport = getTransporter();
   if (!transport) return false;
 
-  await transport.sendMail({
-    from: env.smtp.from,
-    to: input.to,
-    cc: input.cc?.length ? input.cc : undefined,
-    subject: input.subject,
-    text: input.text,
-    html: input.html
-  });
+  try {
+    await transport.sendMail({
+      from: env.smtp.from,
+      to: input.to,
+      cc: input.cc?.length ? input.cc : undefined,
+      subject: input.subject,
+      text: input.text,
+      html: input.html
+    });
+  } catch (error) {
+    if (isAuthenticationError(error)) {
+      // Stop retrying the same rejected credentials for every row in a bulk import.
+      transporter = null;
+      throw authenticationError(error);
+    }
+    throw error;
+  }
 
   return true;
 }

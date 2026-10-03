@@ -52,11 +52,11 @@ export const env = {
     .map((key) => key.trim())
     .filter(Boolean),
   smtp: {
-    host: process.env.SMTP_HOST ?? "smtp.gmail.com",
-    port: Number(process.env.SMTP_PORT ?? 465),
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-    from: process.env.MAIL_FROM ?? process.env.SMTP_USER
+    host: process.env.SMTP_HOST ?? "smtp-relay.brevo.com",
+    port: Number(process.env.SMTP_PORT ?? 587),
+    user: optional("SMTP_USER"),
+    pass: optional("SMTP_PASS"),
+    from: optional("MAIL_FROM") ?? "fundnesta@appnesta.com"
   },
   app: {
     inviteUrl: optional("APP_INVITE_URL"),

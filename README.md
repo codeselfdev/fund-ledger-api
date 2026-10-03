@@ -53,6 +53,28 @@ curl http://localhost:4000/health
 - Complete endpoint list: [`docs/API.md`](docs/API.md)
 - Apidog/Postman OpenAPI import: [`docs/apidog-openapi.json`](docs/apidog-openapi.json)
 
+## Brevo SMTP
+
+In Brevo, authenticate the `appnesta.com` domain and add `fundnesta@appnesta.com` as a
+transactional sender. Then open **Settings > SMTP & API**, copy the SMTP Login, generate an SMTP
+key, and configure:
+
+```bash
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_USER=your-brevo-smtp-login
+SMTP_PASS=your-brevo-smtp-key
+MAIL_FROM=fundnesta@appnesta.com
+```
+
+`SMTP_USER` is the value labeled **Login** in Brevo and may be an address such as
+`account-id@smtp-brevo.com`. `SMTP_PASS` must be an SMTP key, not the Brevo account password or
+an API key. Keep both values only in the deployment environment; do not commit them.
+
+For Docker Compose, place these values in the repository `.env` file and recreate the API
+container. For Coolify, set them in the service environment and redeploy. At startup, the API
+logs `[mailer] SMTP connection verified` when the credentials work.
+
 ## Onboarding (self-serve)
 
 Users sign up themselves. Onboarding state is persisted in the database (`onboarding_progress`) with 4 required steps:

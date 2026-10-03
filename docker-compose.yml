@@ -38,11 +38,11 @@ services:
       CORS_ORIGIN: http://localhost:3000
       UPLOAD_STORAGE: local
       UPLOAD_LOCAL_DIR: storage/uploads
-      SMTP_HOST: smtp.gmail.com
-      SMTP_PORT: 465
-      SMTP_USER: your-gmail-address@gmail.com
-      SMTP_PASS: replace-with-a-gmail-app-password
-      MAIL_FROM: your-gmail-address@gmail.com
+      SMTP_HOST: ${SMTP_HOST:-smtp-relay.brevo.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-fundnesta@appnesta.com}
     volumes:
       - uploads-data:/app/storage/uploads
 
