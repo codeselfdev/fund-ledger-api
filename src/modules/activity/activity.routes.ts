@@ -36,6 +36,11 @@ router.get("/activity", requireProject, requireRoles("any"), asyncHandler(async 
         { projectId: null }
       ]
     },
+    include: {
+      actor: {
+        select: { id: true, name: true, mobile: true, email: true }
+      }
+    },
     orderBy: { createdAt: "desc" },
     take: 100
   });

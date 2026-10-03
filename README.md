@@ -47,6 +47,12 @@ Health check:
 curl http://localhost:4000/health
 ```
 
+## API Documentation
+
+- Mobile implementation guide: [`docs/MOBILE_API.md`](docs/MOBILE_API.md)
+- Complete endpoint list: [`docs/API.md`](docs/API.md)
+- Apidog/Postman OpenAPI import: [`docs/apidog-openapi.json`](docs/apidog-openapi.json)
+
 ## Onboarding (self-serve)
 
 Users sign up themselves. Onboarding state is persisted in the database (`onboarding_progress`) with 4 required steps:

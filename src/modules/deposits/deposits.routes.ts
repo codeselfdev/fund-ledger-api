@@ -9,7 +9,7 @@ import { requireProject, requireRoles } from "../../core/security/auth.middlewar
 import { requireProjectContext } from "../../core/security/auth.context.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams, validateQuery } from "../../core/validation/validate.js";
-import { writeAudit } from "../../core/audit/audit.service.js";
+import { writeAccountTransactionAudit, writeAudit } from "../../core/audit/audit.service.js";
 import { getRoleEmails, notifyProjectMembers } from "../../core/notifications/notification.service.js";
 import { sendDecisionEmail } from "../../core/mail/mailer.service.js";
 import { canUserPayOnBehalf } from "../../core/security/deposit-delegate.service.js";
@@ -226,7 +226,7 @@ async function finalizeDepositConfirmation(input: {
       data: { balance: { increment: input.before.amount } }
     });
 
-    await tx.accountTransaction.create({
+    const accountTransaction = await tx.accountTransaction.create({
       data: {
         tenantId: input.auth.tenantId,
         projectId: input.auth.projectId,
@@ -241,10 +241,10 @@ async function finalizeDepositConfirmation(input: {
       }
     });
 
-    return { deposit, receipt };
+    return { deposit, receipt, accountTransaction };
   });
 
-  return { ...result, receiptNo };
+  return { ...result, receiptNo, accountBalanceBefore: account.balance };
 }
 
 async function finalizeAdvanceDepositConfirmation(input: {
@@ -291,7 +291,7 @@ async function finalizeAdvanceDepositConfirmation(input: {
       data: { balance: { increment: input.before.amount } }
     });
 
-    await tx.accountTransaction.create({
+    const accountTransaction = await tx.accountTransaction.create({
       data: {
         tenantId: input.auth.tenantId,
         projectId: input.auth.projectId,
@@ -306,10 +306,10 @@ async function finalizeAdvanceDepositConfirmation(input: {
       }
     });
 
-    return { deposit, receipt };
+    return { deposit, receipt, accountTransaction };
   });
 
-  return { ...result, receiptNo };
+  return { ...result, receiptNo, accountBalanceBefore: account.balance };
 }
 
 router.post("/", requireProject, requireRoles("member", "cashier", "accountant", "admin"), validateBody(depositBodySchema), asyncHandler(async (req, res) => {
@@ -658,6 +658,14 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
     after: result
   });
 
+  await writeAccountTransactionAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    transaction: result.accountTransaction,
+    balanceBefore: result.accountBalanceBefore
+  });
+
   await notifyProjectMembers({
     tenantId: auth.tenantId,
     projectId: auth.projectId,
@@ -717,6 +725,14 @@ router.post("/:id/confirm", requireProject, requireRoles("approver", "admin"), v
     entityId: id,
     before,
     after: result
+  });
+
+  await writeAccountTransactionAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    transaction: result.accountTransaction,
+    balanceBefore: result.accountBalanceBefore
   });
 
   await notifyProjectMembers({

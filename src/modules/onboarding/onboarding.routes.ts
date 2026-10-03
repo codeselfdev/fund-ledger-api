@@ -17,7 +17,7 @@ import { requireAuthContext, requireProjectContext } from "../../core/security/a
 import { ensureUserProjectMember } from "../../core/security/member-link.service.js";
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
 import { validateBody } from "../../core/validation/validate.js";
-import { writeAudit } from "../../core/audit/audit.service.js";
+import { writeAccountTransactionAudit, writeAudit } from "../../core/audit/audit.service.js";
 import { findActiveUsersByEmail, findActiveUsersByMobile, googlePlaceholderMobile, issueOtp, mobilesEquivalent, resolveFirebaseIdentity } from "../auth/auth.service.js";
 import { provisionTenant } from "../tenants/tenants.service.js";
 
@@ -608,7 +608,7 @@ router.post("/accounts", authenticate, requireProject, requireRoles("owner"), va
     throw badRequest("Only one account can be marked as default");
   }
 
-  const { createdAccounts, nextProgress } = await prisma.$transaction(async (tx) => {
+  const { createdAccounts, openingTransactions, nextProgress } = await prisma.$transaction(async (tx) => {
     if (defaultCount === 1) {
       await tx.account.updateMany({
         where: { tenantId: auth.tenantId, projectId: progress.projectId, isDefault: true },
@@ -617,6 +617,7 @@ router.post("/accounts", authenticate, requireProject, requireRoles("owner"), va
     }
 
     const createdAccounts = [];
+    const openingTransactions = [];
     for (const account of body.accounts) {
       const openingBalance = account.opening_balance ?? 0;
       const created = await tx.account.create({
@@ -631,7 +632,7 @@ router.post("/accounts", authenticate, requireProject, requireRoles("owner"), va
       });
 
       if (openingBalance > 0) {
-        await tx.accountTransaction.create({
+        const openingTransaction = await tx.accountTransaction.create({
           data: {
             tenantId: auth.tenantId,
             projectId: progress.projectId,
@@ -645,6 +646,7 @@ router.post("/accounts", authenticate, requireProject, requireRoles("owner"), va
             createdById: auth.userId
           }
         });
+        openingTransactions.push(openingTransaction);
       }
 
       createdAccounts.push(created);
@@ -667,7 +669,7 @@ router.post("/accounts", authenticate, requireProject, requireRoles("owner"), va
       select: onboardingProgressSelect
     });
 
-    return { createdAccounts, nextProgress };
+    return { createdAccounts, openingTransactions, nextProgress };
   });
 
   await writeAudit({
@@ -679,6 +681,28 @@ router.post("/accounts", authenticate, requireProject, requireRoles("owner"), va
     entityId: progress.tenantId,
     after: { created_count: createdAccounts.length }
   });
+
+  for (const account of createdAccounts) {
+    await writeAudit({
+      tenantId: auth.tenantId,
+      projectId: auth.projectId,
+      actorUserId: auth.userId,
+      action: "account.created",
+      entityType: "account",
+      entityId: account.id,
+      after: account
+    });
+  }
+
+  for (const transaction of openingTransactions) {
+    await writeAccountTransactionAudit({
+      tenantId: auth.tenantId,
+      projectId: auth.projectId,
+      actorUserId: auth.userId,
+      transaction,
+      balanceBefore: 0
+    });
+  }
 
   return created(res, {
     accounts: createdAccounts,

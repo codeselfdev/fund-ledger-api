@@ -687,11 +687,17 @@ router.patch("/:id", requireProject, requireRoles("owner", "accountant", "admin"
     return updated;
   });
 
+  const auditAction = body.status === "inactive" && before.status !== "inactive"
+    ? "member.removed"
+    : body.status === "active" && before.status !== "active"
+      ? "member.reactivated"
+      : "member.updated";
+
   await writeAudit({
     tenantId: auth.tenantId,
     projectId: auth.projectId,
     actorUserId: auth.userId,
-    action: "member.updated",
+    action: auditAction,
     entityType: "member",
     entityId: member.id,
     before,

@@ -19,6 +19,7 @@
     { "name": "Health" },
     { "name": "Tenants" },
     { "name": "Auth" },
+    { "name": "Onboarding" },
     { "name": "Projects" },
     { "name": "Members" },
     { "name": "Schedules" },
@@ -133,10 +134,87 @@
     "/v1/auth/login": {
       "post": {
         "tags": ["Auth"],
-        "summary": "Login with mobile and OTP",
+        "summary": "Login with mobile OTP or a Firebase ID token",
         "security": [],
         "requestBody": { "$ref": "#/components/requestBodies/LoginRequest" },
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/auth/google": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Start mobile Google OAuth",
+        "description": "Open in a system browser. Google returns through the API callback, which redirects to redirect_uri with a one-time ticket or error.",
+        "security": [],
+        "parameters": [
+          { "name": "intent", "in": "query", "schema": { "type": "string", "enum": ["login", "signup"], "default": "login" } },
+          { "name": "redirect_uri", "in": "query", "required": true, "schema": { "type": "string", "example": "fundledger://auth" } },
+          { "name": "tenant_slug", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "302": { "description": "Redirect to Google" },
+          "400": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/auth/google/callback": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Google OAuth callback",
+        "description": "Google calls this endpoint. It redirects back to the app with ticket and status query parameters.",
+        "security": [],
+        "parameters": [
+          { "name": "code", "in": "query", "schema": { "type": "string" } },
+          { "name": "state", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Deep-link handoff page" }, "302": { "description": "Redirect to app" } }
+      }
+    },
+    "/v1/auth/google/complete": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Exchange Google ticket for session or signup flow",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["ticket"],
+                "properties": { "ticket": { "type": "string", "minLength": 8 } }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "401": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/auth/google/signup": {
+      "post": {
+        "tags": ["Auth", "Onboarding"],
+        "summary": "Create tenant and session from an unknown Google identity",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["ticket", "org_name"],
+                "properties": {
+                  "ticket": { "type": "string", "minLength": 8 },
+                  "org_name": { "type": "string", "minLength": 2, "maxLength": 120 },
+                  "owner_name": { "type": "string", "minLength": 2, "maxLength": 120 },
+                  "owner_mobile": { "type": "string", "minLength": 6, "maxLength": 32 },
+                  "project_name": { "type": "string", "minLength": 2, "maxLength": 120 },
+                  "total_shares": { "type": "integer", "minimum": 1, "maximum": 100000 }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/Error" } }
       }
     },
     "/v1/auth/switch-project": {
@@ -171,6 +249,194 @@
         "summary": "Revoke current token",
         "security": [{ "BearerAuth": [] }],
         "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/onboarding/signup": {
+      "post": {
+        "tags": ["Onboarding"],
+        "summary": "Create organization, owner, initial project and session",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["org_name"],
+                "properties": {
+                  "org_name": { "type": "string", "minLength": 2, "maxLength": 120 },
+                  "slug": { "type": "string", "minLength": 3, "maxLength": 48, "pattern": "^[a-z0-9-]+$" },
+                  "currency": { "type": "string", "minLength": 3, "maxLength": 3, "default": "BDT" },
+                  "project_name": { "type": "string", "minLength": 2, "maxLength": 120 },
+                  "total_shares": { "type": "integer", "minimum": 1, "maximum": 100000 },
+                  "owner_name": { "type": "string", "minLength": 2, "maxLength": 120 },
+                  "owner_mobile": { "type": "string", "minLength": 6, "maxLength": 32 },
+                  "owner_email": { "type": "string", "format": "email" },
+                  "id_token": { "type": "string", "minLength": 20 }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/onboarding/status": {
+      "get": {
+        "tags": ["Onboarding"],
+        "summary": "Get resumable onboarding state and checks",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/onboarding/organization": {
+      "post": {
+        "tags": ["Onboarding"],
+        "summary": "Update organization or initial project details",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "org_name": { "type": "string", "minLength": 2, "maxLength": 120 },
+                  "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+                  "project_name": { "type": "string", "minLength": 2, "maxLength": 120 },
+                  "total_shares": { "type": "integer", "minimum": 1, "maximum": 100000 }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/onboarding/accounting": {
+      "post": {
+        "tags": ["Onboarding"],
+        "summary": "Assign accountant and configure approval flows",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["accountant", "approval_flow"],
+                "properties": {
+                  "accountant": {
+                    "type": "object",
+                    "required": ["name", "mobile"],
+                    "properties": {
+                      "name": { "type": "string", "minLength": 2 },
+                      "mobile": { "type": "string", "minLength": 6 },
+                      "email": { "type": "string", "format": "email" }
+                    }
+                  },
+                  "approval_flow": {
+                    "type": "object",
+                    "required": ["income", "expense"],
+                    "properties": {
+                      "income": { "$ref": "#/components/schemas/ApprovalFlowMode" },
+                      "expense": { "$ref": "#/components/schemas/ApprovalFlowMode" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/onboarding/accounts": {
+      "post": {
+        "tags": ["Onboarding"],
+        "summary": "Create onboarding bank and cash accounts",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["accounts"],
+                "properties": {
+                  "accounts": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 25,
+                    "items": { "$ref": "#/components/schemas/AccountCreate" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/onboarding/shareholders": {
+      "post": {
+        "tags": ["Onboarding"],
+        "summary": "Create or update onboarding shareholders",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["members"],
+                "properties": {
+                  "members": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 300,
+                    "items": { "$ref": "#/components/schemas/MemberCreate" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/onboarding/skip": {
+      "post": {
+        "tags": ["Onboarding"],
+        "summary": "Skip final shareholder completion when at least one share exists",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "step": { "type": "string", "enum": ["shareholders"] } }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/onboarding/complete": {
+      "post": {
+        "tags": ["Onboarding"],
+        "summary": "Complete onboarding after all required steps",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
       }
     },
     "/v1/subscription": {
@@ -969,8 +1235,9 @@
           "application/json": {
             "schema": { "$ref": "#/components/schemas/DepositCreate" },
             "example": {
-              "schedule_id": "sch_q3struct",
+              "schedule_ids": ["sch_q3struct"],
               "member_id": "mem_imran",
+              "account_id": "acc_citybank",
               "amount": 60000,
               "method": "bkash",
               "proof_file_id": "file_8hg4k21",
@@ -1075,7 +1342,11 @@
       },
       "Role": {
         "type": "string",
-        "enum": ["owner", "member", "cashier", "accountant", "approver", "auditor"]
+        "enum": ["owner", "admin", "member", "cashier", "accountant", "approver", "auditor"]
+      },
+      "ApprovalFlowMode": {
+        "type": "string",
+        "enum": ["accountant_only", "accountant_and_approver"]
       },
       "Plan": {
         "type": "string",
@@ -1160,13 +1431,14 @@
       },
       "LoginRequest": {
         "type": "object",
-        "required": ["mobile"],
         "properties": {
           "mobile": { "type": "string", "minLength": 6 },
           "otp": { "type": "string" },
+          "id_token": { "type": "string", "minLength": 20 },
           "tenant_slug": { "type": "string" },
           "project_id": { "type": "string" }
-        }
+        },
+        "description": "Send either id_token, or mobile plus otp. An unknown Google identity returns the signup flow instead of a session."
       },
       "SwitchProjectRequest": {
         "type": "object",
@@ -1203,6 +1475,16 @@
           "address": { "type": "string" },
           "email": { "type": "string", "format": "email" },
           "previous_due_amount": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "AccountCreate": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": {
+          "name": { "type": "string", "minLength": 2, "maxLength": 64 },
+          "type": { "type": "string", "enum": ["bank", "cash"] },
+          "is_default": { "type": "boolean" },
+          "opening_balance": { "type": "integer", "minimum": 0 }
         }
       },
       "MemberUpdate": {
@@ -1261,10 +1543,15 @@
       },
       "DepositCreate": {
         "type": "object",
-        "required": ["schedule_id", "member_id", "amount", "method"],
+        "required": ["schedule_ids", "member_id", "account_id", "amount", "method"],
         "properties": {
-          "schedule_id": { "type": "string" },
+          "schedule_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" }
+          },
           "member_id": { "type": "string" },
+          "account_id": { "type": "string" },
           "amount": { "type": "integer", "minimum": 1 },
           "method": { "$ref": "#/components/schemas/PaymentMethod" },
           "proof_file_id": { "type": "string" },
@@ -1291,12 +1578,19 @@
       },
       "ExpenseCreate": {
         "type": "object",
-        "required": ["title", "amount", "category"],
+        "required": ["title", "amount", "account_id"],
+        "anyOf": [
+          { "required": ["category"] },
+          { "required": ["category_def_id"] }
+        ],
         "properties": {
           "title": { "type": "string" },
           "amount": { "type": "integer", "minimum": 1 },
           "category": { "$ref": "#/components/schemas/ExpenseCategory" },
+          "category_def_id": { "type": "string" },
           "vendor": { "type": "string" },
+          "vendor_id": { "type": "string" },
+          "account_id": { "type": "string" },
           "doc_file_id": { "type": "string" }
         }
       },

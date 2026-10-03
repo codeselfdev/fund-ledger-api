@@ -29,6 +29,7 @@ Every new org gets **~6 months free** (`182` days), then yearly renewal.
 | --- | --- | --- | --- |
 | POST | `/v1/onboarding/signup` | public | Step 1: create org + owner + initial project + 6‑month trial; returns token. Accepts Google or Firebase phone `id_token`. Google signup does not require `owner_mobile`. |
 | GET | `/v1/onboarding/status` | any | Current onboarding step states, approval flow, and completion status |
+| POST | `/v1/onboarding/organization` | owner | Update organization/project details and complete the organization step (`/project` is a compatibility alias) |
 | POST | `/v1/onboarding/accounting` | owner | Step 2: assign accountant and set approval flow (`accountant_only` / `accountant_and_approver`) for income & expense |
 | POST | `/v1/onboarding/accounts` | owner | Step 3: create required bank/cash accounts |
 | POST | `/v1/onboarding/shareholders` | owner | Step 4: create shareholder members and allocate shares toward project cap |
@@ -51,7 +52,9 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | GET | `/v1/projects` | any | Projects accessible to caller |
 | POST | `/v1/projects` | owner | Create project with share cap and optional penalty policy |
 | POST | `/v1/invitations` | owner, approver, admin | Invite or grant project role by mobile, create/link the user and member, issue OTP, and email app/invitation instructions when email exists |
+| GET | `/v1/memberships` | owner, admin | List project role memberships and linked users |
 | POST | `/v1/memberships` | owner, admin | Add or reactivate a project role by `user_id` or mobile; creates a user when mobile is new and `name` is supplied |
+| PATCH | `/v1/memberships/:id` | owner, admin | Change a project role or activate/deactivate the membership |
 | GET | `/v1/auth/google` | public | Start Google OAuth. Query: `intent` (`login` or `signup`), `redirect_uri`, optional `tenant_slug`. Google returns to `/v1/auth/google/callback`. |
 | GET | `/v1/auth/google/callback` | public | Google redirect target. Issues a short-lived identity `ticket` (includes ID token) and redirects to the app. |
 | POST | `/v1/auth/google/complete` | public | Exchange `{ ticket }`. Existing Gmail returns `{ kind: session, token, ... }`; unknown Gmail returns `{ kind: signup, signup_needed: true, email, name, ticket, id_token, signupFlow }`. |
@@ -113,16 +116,17 @@ Generated schedule names are dynamic by frequency/date (examples: weekly `1W JAN
 
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
-| POST | `/v1/deposits` | member, cashier, accountant, admin | Submit member payment; member can submit for another member only when delegated by owner/admin. Accountant submission is auto-marked accountant-approved (`pending_approver`) |
+| POST | `/v1/deposits` | member, cashier, accountant, admin | Submit member payment with `schedule_ids`, `account_id`, `member_id`, amount and method; member can submit for another member only when delegated by owner/admin. Accountant submission is auto-marked accountant-approved (`pending_approver`) |
 | POST | `/v1/deposits/advance` | member, cashier, accountant, admin | Submit advance member payment; member can submit for another member only when delegated by owner/admin. Accountant submission is auto-marked accountant-approved (`pending_approver`) |
 | GET | `/v1/deposits` | staff | Deposit queue; default list is role-scoped (accountant sees `pending_accountant`, approver sees `pending_approver`) |
+| DELETE | `/v1/deposits/:id` | member, cashier | Cancel the caller's own payment while it is still pending accountant review |
 | POST | `/v1/deposits/:id/approve` | accountant, approver | Accountant step: move to `pending_approver`; approver step: final confirmation, receipt, ledger posting |
 | POST | `/v1/deposits/:id/confirm` | approver | Attempt 2: confirm, issue receipt, post ledger entry |
 | POST | `/v1/deposits/:id/reject` | accountant, approver | Reject pending deposit with reason |
 | POST | `/v1/uploads` | any | Multipart upload for proof or invoice, returns `file_id` |
 | GET | `/v1/uploads/:id/view` | any | View/download uploaded attachment by `file_id` |
 
-Required deposit fields: `schedule_id`, `member_id`, `amount`, `method`. Optional: `proof_file_id`, `reference`, `allocate`.
+Required deposit fields: `schedule_ids` (array), `member_id`, `account_id`, `amount`, `method`. Optional: `proof_file_id`, `reference`, `allocate`.
 
 Notifications are created after submission, accountant approval, final confirmation, and rejection.
 
@@ -146,7 +150,7 @@ When a new schedule is created, any confirmed advance deposits for a member are 
 | POST | `/v1/expenses/:id/reject` | accountant/approver/admin | Reject pending expense with reason. Permission follows onboarding expense approval flow |
 | POST | `/v1/expenses/:id/disburse` | accountant | Legacy/manual disburse for expenses already in `approved` state |
 
-Required expense fields: `title`, `amount`, `category`. Optional: `vendor`, `doc_file_id`.
+Required expense fields: `title`, `amount`, `account_id`, plus either `category` or `category_def_id`. Optional: `vendor`, `vendor_id`, `doc_file_id`.
 
 Notifications are created after submission, approval, rejection, and disbursement.
 
@@ -156,8 +160,9 @@ Notifications are created after submission, approval, rejection, and disbursemen
 | --- | --- | --- | --- |
 | POST | `/v1/accounts` | accountant, admin | Create account with optional `opening_balance` (posts initial `money_in` income entry labeled opening balance) |
 | POST | `/v1/incomes` | accountant/approver/admin | Record manual income. Role is enforced by onboarding income approval flow |
-| GET | `/v1/accounts` | accountant, auditor | Account balances and total |
-| GET | `/v1/accounts/:id/transactions` | accountant, auditor | Movement history for one account |
+| GET | `/v1/accounts` | any | Account balances and total |
+| POST | `/v1/accounts/:id/adjust` | accountant, admin | Post an audited manual `money_in` or `money_out` balance adjustment with a reason |
+| GET | `/v1/accounts/:id/transactions` | staff | Movement history for one account |
 | GET | `/v1/accounts/:id/in-out` | staff | List account cashflow entries as `in`/`out` with amount and title |
 | GET | `/v1/accounts/:id/entries` | staff | Alias of in/out cashflow endpoint for client compatibility |
 | POST | `/v1/transfers` | accountant | Move funds between accounts with paired ledger rows |
@@ -193,4 +198,4 @@ Required transfer fields: `from_account_id`, `to_account_id`, `amount`. Optional
 - `payment.method`: `bkash`, `nagad`, `bank`, `cheque`, `cash`
 - `account.type`: `bank`, `cash`
 - `txn.direction`: `in`, `out`, `transfer`, `penalty`
-- `role`: `owner`, `member`, `cashier`, `accountant`, `approver`, `auditor`
+- `role`: `owner`, `admin`, `member`, `cashier`, `accountant`, `approver`, `auditor`

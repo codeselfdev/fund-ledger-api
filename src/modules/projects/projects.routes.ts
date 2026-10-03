@@ -78,7 +78,7 @@ projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validat
     select: { id: true, name: true, mobile: true, email: true }
   });
 
-  const project = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const createdProject = await tx.project.create({
       data: {
         tenantId: auth.tenantId,
@@ -104,7 +104,7 @@ projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validat
       defaultShares: 1
     });
 
-    await tx.account.create({
+    const account = await tx.account.create({
       data: {
         tenantId: auth.tenantId,
         projectId: createdProject.id,
@@ -114,23 +114,33 @@ projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validat
       }
     });
 
-    return createdProject;
+    return { project: createdProject, account };
   });
 
   await writeAudit({
     tenantId: auth.tenantId,
-    projectId: project.id,
+    projectId: result.project.id,
     actorUserId: auth.userId,
     action: "project.created",
     entityType: "project",
-    entityId: project.id,
-    after: project
+    entityId: result.project.id,
+    after: result.project
+  });
+
+  await writeAudit({
+    tenantId: auth.tenantId,
+    projectId: result.project.id,
+    actorUserId: auth.userId,
+    action: "account.created",
+    entityType: "account",
+    entityId: result.account.id,
+    after: result.account
   });
 
   return created(res, {
-    project_id: project.id,
-    name: project.name,
-    total_shares: project.totalShares
+    project_id: result.project.id,
+    name: result.project.name,
+    total_shares: result.project.totalShares
   });
 }));
 

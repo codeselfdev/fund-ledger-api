@@ -8,7 +8,7 @@ import { requireProject, requireRoles } from "../../core/security/auth.middlewar
 import { requireProjectContext } from "../../core/security/auth.context.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams } from "../../core/validation/validate.js";
-import { writeAudit } from "../../core/audit/audit.service.js";
+import { writeAccountTransactionAudit, writeAudit } from "../../core/audit/audit.service.js";
 
 const router = Router();
 
@@ -245,6 +245,14 @@ router.post("/:id/adjust", requireProject, requireRoles("accountant", "admin"), 
     entityId: id,
     before: { balance: account.balance },
     after: result.account
+  });
+
+  await writeAccountTransactionAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    transaction: result.transaction,
+    balanceBefore: account.balance
   });
 
   return ok(res, result.account);

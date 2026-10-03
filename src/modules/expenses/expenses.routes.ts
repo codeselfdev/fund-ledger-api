@@ -9,7 +9,7 @@ import { requireProject, requireRoles } from "../../core/security/auth.middlewar
 import { requireProjectContext } from "../../core/security/auth.context.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams, validateQuery } from "../../core/validation/validate.js";
-import { writeAudit } from "../../core/audit/audit.service.js";
+import { writeAccountTransactionAudit, writeAudit } from "../../core/audit/audit.service.js";
 import { getRoleEmails, notifyProjectMembers } from "../../core/notifications/notification.service.js";
 import { sendDecisionEmail } from "../../core/mail/mailer.service.js";
 
@@ -184,7 +184,7 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
   if (!account) throw notFound("Account not found");
   if (account.balance < before.amount) throw badRequest("Source account has insufficient balance");
 
-  const expense = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const paidExpense = await tx.expense.update({
       where: { id },
       data: {
@@ -201,7 +201,7 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
       data: { balance: { decrement: before.amount } }
     });
 
-    await tx.accountTransaction.create({
+    const accountTransaction = await tx.accountTransaction.create({
       data: {
         tenantId: auth.tenantId,
         projectId: auth.projectId,
@@ -216,18 +216,26 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
       }
     });
 
-    return paidExpense;
+    return { expense: paidExpense, accountTransaction };
   });
 
   await writeAudit({
     tenantId: auth.tenantId,
     projectId: auth.projectId,
     actorUserId: auth.userId,
-    action: "expense.disbursed",
+    action: "expense.approved",
     entityType: "expense",
     entityId: id,
     before,
-    after: expense
+    after: result.expense
+  });
+
+  await writeAccountTransactionAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    transaction: result.accountTransaction,
+    balanceBefore: account.balance
   });
 
   await notifyProjectMembers({
@@ -237,7 +245,7 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
     roles: ["accountant", "auditor"],
     type: "expense.disbursed",
     title: "Expense paid",
-    body: `${expense.title} was disbursed on approval.`,
+    body: `${result.expense.title} was disbursed on approval.`,
     entityType: "expense",
     entityId: id
   });
@@ -246,11 +254,11 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
     tenantId: auth.tenantId,
     projectId: auth.projectId,
     createdById: before.createdById,
-    title: expense.title,
+    title: result.expense.title,
     decision: "approved"
   });
 
-  return ok(res, expense);
+  return ok(res, result.expense);
 }));
 
 router.post("/:id/reject", requireProject, requireRoles("accountant", "approver", "admin"), validateParams(idParamSchema), validateBody(rejectSchema), asyncHandler(async (req, res) => {
@@ -333,7 +341,7 @@ router.post("/:id/disburse", requireProject, requireRoles("accountant"), validat
   if (!account) throw notFound("Account not found");
   if (account.balance < before.amount) throw badRequest("Source account has insufficient balance");
 
-  const expense = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const paidExpense = await tx.expense.update({
       where: { id },
       data: {
@@ -349,7 +357,7 @@ router.post("/:id/disburse", requireProject, requireRoles("accountant"), validat
       data: { balance: { decrement: before.amount } }
     });
 
-    await tx.accountTransaction.create({
+    const accountTransaction = await tx.accountTransaction.create({
       data: {
         tenantId: auth.tenantId,
         projectId: auth.projectId,
@@ -364,7 +372,7 @@ router.post("/:id/disburse", requireProject, requireRoles("accountant"), validat
       }
     });
 
-    return paidExpense;
+    return { expense: paidExpense, accountTransaction };
   });
 
   await writeAudit({
@@ -375,7 +383,15 @@ router.post("/:id/disburse", requireProject, requireRoles("accountant"), validat
     entityType: "expense",
     entityId: id,
     before,
-    after: expense
+    after: result.expense
+  });
+
+  await writeAccountTransactionAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    transaction: result.accountTransaction,
+    balanceBefore: account.balance
   });
 
   await notifyProjectMembers({
@@ -385,12 +401,12 @@ router.post("/:id/disburse", requireProject, requireRoles("accountant"), validat
     roles: ["approver", "auditor"],
     type: "expense.disbursed",
     title: "Expense paid",
-    body: `${expense.title} was disbursed.`,
+    body: `${result.expense.title} was disbursed.`,
     entityType: "expense",
     entityId: id
   });
 
-  return ok(res, expense);
+  return ok(res, result.expense);
 }));
 
 export { router as expensesRouter };

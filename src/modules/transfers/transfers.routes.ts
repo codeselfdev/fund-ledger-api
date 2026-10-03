@@ -7,7 +7,7 @@ import { prisma } from "../../core/prisma/client.js";
 import { requireProject, requireRoles } from "../../core/security/auth.middleware.js";
 import { requireProjectContext } from "../../core/security/auth.context.js";
 import { validateBody } from "../../core/validation/validate.js";
-import { writeAudit } from "../../core/audit/audit.service.js";
+import { writeAccountTransactionAudit, writeAudit } from "../../core/audit/audit.service.js";
 
 const router = Router();
 
@@ -37,7 +37,7 @@ router.post("/", requireProject, requireRoles("accountant"), validateBody(transf
   if (!from || !to) throw notFound("Both accounts must exist in the active project");
   if (from.balance < body.amount) throw badRequest("Source account has insufficient balance");
 
-  const transfer = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const record = await tx.transfer.create({
       data: {
         tenantId: auth.tenantId,
@@ -59,36 +59,37 @@ router.post("/", requireProject, requireRoles("accountant"), validateBody(transf
       data: { balance: { increment: body.amount } }
     });
 
-    await tx.accountTransaction.createMany({
-      data: [
-        {
-          tenantId: auth.tenantId,
-          projectId: auth.projectId,
-          accountId: from.id,
-          direction: "transfer",
-          amount: body.amount,
-          referenceType: "transfer",
-          referenceId: record.id,
-          description: body.note ?? `Transfer to ${to.name}`,
-          balanceAfter: updatedFrom.balance,
-          createdById: auth.userId
-        },
-        {
-          tenantId: auth.tenantId,
-          projectId: auth.projectId,
-          accountId: to.id,
-          direction: "transfer",
-          amount: body.amount,
-          referenceType: "transfer",
-          referenceId: record.id,
-          description: body.note ?? `Transfer from ${from.name}`,
-          balanceAfter: updatedTo.balance,
-          createdById: auth.userId
-        }
-      ]
+    const fromTransaction = await tx.accountTransaction.create({
+      data: {
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        accountId: from.id,
+        direction: "transfer",
+        amount: body.amount,
+        referenceType: "transfer",
+        referenceId: record.id,
+        description: body.note ?? `Transfer to ${to.name}`,
+        balanceAfter: updatedFrom.balance,
+        createdById: auth.userId
+      }
     });
 
-    return record;
+    const toTransaction = await tx.accountTransaction.create({
+      data: {
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        accountId: to.id,
+        direction: "transfer",
+        amount: body.amount,
+        referenceType: "transfer",
+        referenceId: record.id,
+        description: body.note ?? `Transfer from ${from.name}`,
+        balanceAfter: updatedTo.balance,
+        createdById: auth.userId
+      }
+    });
+
+    return { transfer: record, fromTransaction, toTransaction };
   });
 
   await writeAudit({
@@ -97,11 +98,31 @@ router.post("/", requireProject, requireRoles("accountant"), validateBody(transf
     actorUserId: auth.userId,
     action: "transfer.created",
     entityType: "transfer",
-    entityId: transfer.id,
-    after: transfer
+    entityId: result.transfer.id,
+    before: {
+      from_account: { id: from.id, balance: from.balance },
+      to_account: { id: to.id, balance: to.balance }
+    },
+    after: result.transfer
   });
 
-  return created(res, transfer);
+  await writeAccountTransactionAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    transaction: result.fromTransaction,
+    balanceBefore: from.balance
+  });
+
+  await writeAccountTransactionAudit({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    transaction: result.toTransaction,
+    balanceBefore: to.balance
+  });
+
+  return created(res, result.transfer);
 }));
 
 export { router as transfersRouter };

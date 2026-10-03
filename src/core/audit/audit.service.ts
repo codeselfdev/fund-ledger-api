@@ -31,3 +31,28 @@ export async function writeAudit(input: AuditInput) {
     }
   });
 }
+
+export async function writeAccountTransactionAudit(input: {
+  tenantId: string;
+  projectId: string;
+  actorUserId?: string | null;
+  transaction: {
+    id: string;
+    accountId: string;
+    balanceAfter: number;
+  } & Record<string, unknown>;
+  balanceBefore?: number;
+}) {
+  return writeAudit({
+    tenantId: input.tenantId,
+    projectId: input.projectId,
+    actorUserId: input.actorUserId,
+    action: "account_transaction.created",
+    entityType: "account_transaction",
+    entityId: input.transaction.id,
+    before: input.balanceBefore === undefined
+      ? undefined
+      : { account_id: input.transaction.accountId, balance: input.balanceBefore },
+    after: input.transaction
+  });
+}

@@ -1,0 +1,437 @@
+# FundLedger Mobile API Integration
+
+This guide is the mobile implementation handoff. The complete endpoint inventory is in
+[`API.md`](./API.md), and the Apidog/Postman import file is
+[`apidog-openapi.json`](./apidog-openapi.json).
+
+## Environments
+
+| Environment | Base URL |
+| --- | --- |
+| Local | `http://localhost:4000` |
+| Production | Use the deployed `PUBLIC_API_URL` value |
+
+All application endpoints are under `/v1`. The health check is `GET /health`.
+
+## Response contract
+
+Successful responses use:
+
+```json
+{
+  "ok": true,
+  "data": {}
+}
+```
+
+Validation and application errors use:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "VALIDATION",
+    "message": "Invalid request",
+    "fields": {}
+  }
+}
+```
+
+The mobile client should always read business data from `data`, and display `error.message`
+for a failed request. `error.fields` can be mapped to form fields when present.
+
+## Authenticated requests
+
+Store the session token in secure device storage. Send both headers for project-scoped APIs:
+
+```http
+Authorization: Bearer <token>
+X-Project-Id: <active_project_id>
+Content-Type: application/json
+```
+
+Use `POST /v1/auth/switch-project` when the user changes projects, then update the locally
+stored `active_project_id`. Passing `X-Project-Id` on every project request is still recommended.
+
+Amounts are JSON integers. Timestamps returned by the API are ISO 8601 strings.
+
+## App startup routing
+
+After restoring a token, call `GET /v1/auth/me`.
+
+1. If the request returns `401`, clear the token and show sign-in.
+2. If `subscription.has_access` is false, show the subscription screen.
+3. If `onboarding.status` is `in_progress`, resume the first pending onboarding step.
+4. Otherwise open the dashboard using `active_project_id`.
+
+The response also contains `roles`, `memberships`, `member_id`, and
+`can_pay_for_members`, which should drive menu visibility and payment controls.
+
+## Google sign-in and signup
+
+### API-hosted OAuth flow
+
+Open this URL in the system browser or an auth session:
+
+```text
+GET /v1/auth/google?intent=login&redirect_uri=fundledger://auth
+```
+
+Optional query parameters:
+
+- `intent`: `login` or `signup`
+- `tenant_slug`: use only when the same Google email can belong to multiple organizations
+- `redirect_uri`: the mobile deep link that receives the result
+
+The API redirects back to the app as one of:
+
+```text
+fundledger://auth?ticket=<one-time-ticket>&status=identity
+fundledger://auth?error=<message>
+```
+
+Exchange the ticket:
+
+```http
+POST /v1/auth/google/complete
+Content-Type: application/json
+
+{ "ticket": "<one-time-ticket>" }
+```
+
+An existing user receives a session:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "kind": "session",
+    "token": "eyJ...",
+    "user": { "id": "usr_1", "name": "Nadia", "mobile": "+880..." },
+    "tenant": { "id": "ten_1", "name": "Green Valley", "slug": "green-valley" },
+    "active_project_id": "prj_1",
+    "memberships": []
+  }
+}
+```
+
+An unknown Google email starts signup immediately:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "kind": "signup",
+    "signup_needed": true,
+    "provider": "google",
+    "email": "nadia@gmail.com",
+    "name": "Nadia Rahman",
+    "ticket": "<same-ticket>",
+    "signupFlow": {
+      "next_endpoint": "/v1/auth/google/signup",
+      "onboarding_entrypoint": "organization",
+      "prefill": {
+        "owner_email": "nadia@gmail.com",
+        "owner_name": "Nadia Rahman"
+      }
+    }
+  }
+}
+```
+
+Route `kind: "signup"` directly to the organization screen with the returned name and email
+prefilled. Keep the ticket only in memory; it expires after 30 minutes.
+
+Complete signup:
+
+```http
+POST /v1/auth/google/signup
+Content-Type: application/json
+
+{
+  "ticket": "<one-time-ticket>",
+  "org_name": "Green Valley Society",
+  "owner_name": "Nadia Rahman",
+  "owner_mobile": "+8801711553300",
+  "project_name": "Tower A",
+  "total_shares": 52
+}
+```
+
+`owner_mobile`, `project_name`, and `total_shares` are optional. The response contains a normal
+session token plus `onboarding` and `subscription`; continue with the onboarding flow below.
+
+### Firebase Google token alternative
+
+If the app already uses Firebase Google authentication, send its ID token to:
+
+```http
+POST /v1/auth/login
+Content-Type: application/json
+
+{ "id_token": "<firebase-id-token>" }
+```
+
+For an unknown email, this returns `kind: "signup"` with
+`signupFlow.next_endpoint = "/v1/onboarding/signup"`. Call that endpoint with the same
+`id_token` and the organization fields.
+
+## Phone OTP sign-in
+
+Request an OTP for an existing user:
+
+```http
+POST /v1/auth/otp/request
+Content-Type: application/json
+
+{ "mobile": "+8801711553300" }
+```
+
+Then create a session:
+
+```http
+POST /v1/auth/login
+Content-Type: application/json
+
+{
+  "mobile": "+8801711553300",
+  "otp": "123456",
+  "tenant_slug": "green-valley"
+}
+```
+
+`tenant_slug` is needed only if that identity belongs to more than one tenant. OTP login does
+not create a new account. Users are created when an owner/admin invites them or when a member is
+added.
+
+## Invitation deep links
+
+Adding a member, membership, or invitation creates/links a user and returns both camelCase and
+snake_case aliases for the links:
+
+```json
+{
+  "invitation_link": "fundledger://invite?...",
+  "app_download_link": "https://...",
+  "invitationEmail": { "sent": true, "to": "member@gmail.com" },
+  "signInOptions": [
+    { "method": "google", "label": "Sign in with Google" },
+    { "method": "otp", "label": "Sign in with OTP" }
+  ]
+}
+```
+
+The invite deep link can include:
+
+- `tenant_id`
+- `project_id`
+- `role`
+- `mobile`
+- `email`
+- `invitation_id` or `member_id`
+- `api_url`
+
+On `fundledger://invite`, persist the project context temporarily and show the two sign-in
+options. Google must use the invited email. Phone sign-in must use the invited mobile. After
+login, use the returned `active_project_id` and memberships as the source of truth.
+
+## Owner onboarding
+
+The standard sequence is:
+
+| Step | Endpoint | Main payload |
+| --- | --- | --- |
+| Create organization | `POST /v1/onboarding/signup` | `org_name`, owner identity, optional project fields |
+| Resume state | `GET /v1/onboarding/status` | none |
+| Organization/project | `POST /v1/onboarding/organization` | organization/project fields |
+| Accountant | `POST /v1/onboarding/accounting` | accountant and approval modes |
+| Accounts | `POST /v1/onboarding/accounts` | one or more bank/cash accounts |
+| Shareholders | `POST /v1/onboarding/shareholders` | one or more members |
+| Optional final skip | `POST /v1/onboarding/skip` | `{ "step": "shareholders" }` |
+| Finish | `POST /v1/onboarding/complete` | none |
+
+Example accountant setup:
+
+```json
+{
+  "accountant": {
+    "name": "Rashid Khan",
+    "mobile": "+8801811553300",
+    "email": "rashid@gmail.com"
+  },
+  "approval_flow": {
+    "income": "accountant_only",
+    "expense": "accountant_and_approver"
+  }
+}
+```
+
+Example account setup:
+
+```json
+{
+  "accounts": [
+    { "name": "Main Cash", "type": "cash", "is_default": true, "opening_balance": 10000 },
+    { "name": "City Bank", "type": "bank", "opening_balance": 0 }
+  ]
+}
+```
+
+## Mobile screen endpoint map
+
+| Screen or action | Method and path |
+| --- | --- |
+| Session/bootstrap | `GET /v1/auth/me` |
+| Project picker | `GET /v1/projects`, `POST /v1/auth/switch-project` |
+| Dashboard | `GET /v1/dashboard` |
+| Member list/detail | `GET /v1/members`, `GET /v1/members/:id` |
+| Add/edit/remove member | `POST /v1/members`, `PATCH /v1/members/:id` |
+| Project roles | `GET /v1/memberships`, `POST /v1/memberships`, `PATCH /v1/memberships/:id` |
+| Invite user | `POST /v1/invitations` |
+| My dues/summary | `GET /v1/me/dues`, `GET /v1/me/summary` |
+| Payment schedules | `GET /v1/schedules` |
+| Upload proof/document | `POST /v1/uploads` (`multipart/form-data`, field `file`) |
+| Submit payment | `POST /v1/deposits` |
+| Submit advance | `POST /v1/deposits/advance` |
+| Payment approval queue | `GET /v1/deposits` |
+| Approve/reject payment | `POST /v1/deposits/:id/approve`, `POST /v1/deposits/:id/reject` |
+| My receipts | `GET /v1/me/receipts` |
+| Expenses | `GET /v1/expenses`, `POST /v1/expenses` |
+| Approve/reject expense | `POST /v1/expenses/:id/approve`, `POST /v1/expenses/:id/reject` |
+| Accounts and entries | `GET /v1/accounts`, `GET /v1/accounts/:id/in-out` |
+| Create/adjust account | `POST /v1/accounts`, `POST /v1/accounts/:id/adjust` |
+| Transfer funds | `POST /v1/transfers` |
+| Audit trail | `GET /v1/activity` |
+| Notification feed | `GET /v1/notifications`, `PATCH /v1/notifications/:id/read` |
+| Push token | `POST /v1/notifications/device-token`, `DELETE /v1/notifications/device-token` |
+
+## Important write payloads
+
+Add a member (also creates/links the user and member membership):
+
+```json
+{
+  "name": "Imran Hossain",
+  "mobile": "+8801911553300",
+  "email": "imran@gmail.com",
+  "shares": 2,
+  "address": "Flat B-4",
+  "previous_due_amount": 5000
+}
+```
+
+Remove a member by setting the status to inactive:
+
+```json
+{ "status": "inactive" }
+```
+
+Submit a payment. `schedule_ids` and `account_id` are required:
+
+```json
+{
+  "schedule_ids": ["sch_january", "sch_february"],
+  "member_id": "mem_1",
+  "account_id": "acc_bank_1",
+  "amount": 20000,
+  "method": "bkash",
+  "proof_file_id": "file_1",
+  "reference": "TrxID ABC123",
+  "allocate": "penalty_first"
+}
+```
+
+Submit an expense:
+
+```json
+{
+  "title": "Cement purchase",
+  "amount": 50000,
+  "category": "materials",
+  "vendor": "ABC Traders",
+  "account_id": "acc_bank_1",
+  "doc_file_id": "file_2"
+}
+```
+
+Create an account and transfer funds:
+
+```json
+{
+  "name": "City Bank",
+  "type": "bank",
+  "is_default": false,
+  "opening_balance": 100000
+}
+```
+
+```json
+{
+  "from_account_id": "acc_cash",
+  "to_account_id": "acc_bank",
+  "amount": 25000,
+  "note": "Cash deposit"
+}
+```
+
+## Audit trail UI
+
+Call `GET /v1/activity` with the active project header. It returns the newest 100 events. Each
+event includes the actor, entity, before/after snapshots, and timestamp:
+
+```json
+{
+  "id": "act_1",
+  "action": "member.updated",
+  "entityType": "member",
+  "entityId": "mem_1",
+  "before": { "shares": 2 },
+  "after": { "shares": 3 },
+  "createdAt": "2026-10-03T08:30:00.000Z",
+  "actor": {
+    "id": "usr_1",
+    "name": "Project Owner",
+    "mobile": "+880...",
+    "email": "owner@gmail.com"
+  }
+}
+```
+
+Recommended display format:
+
+```text
+Project Owner updated member Imran Hossain
+3 Oct 2026, 2:30 PM
+```
+
+Important actions include:
+
+- Members: `member.created`, `member.updated`, `member.removed`, `member.reactivated`, `member.bulk_imported`
+- Roles: `invitation.created`, `membership.created`, `membership.updated`, `membership.reactivated`
+- Payments: `deposit.submitted`, `deposit.approved_by_accountant`, `deposit.confirmed`, `deposit.rejected`, `deposit.cancelled`
+- Expenses: `expense.submitted`, `expense.approved`, `expense.rejected`, `expense.disbursed`
+- Banking: `account.created`, `account.adjusted`, `account_transaction.created`, `transfer.created`, `income.recorded`
+
+Use `actor.name` as the primary label and fall back to `actor.mobile`, then `"System"` when
+`actor` is null. Use `before` and `after` only on an event detail screen because their shape
+depends on the entity type.
+
+## Push notifications
+
+After obtaining an FCM token, register it for the signed-in user:
+
+```http
+POST /v1/notifications/device-token
+
+{ "fcm_token": "<token>" }
+```
+
+On logout, call `DELETE /v1/notifications/device-token` before `POST /v1/auth/logout`, then clear
+the local session even if either network call fails.
+
+## Role values
+
+`owner`, `admin`, `member`, `cashier`, `accountant`, `approver`, `auditor`
+
+The API remains the authority for permissions. Mobile role checks should hide unavailable
+actions, but the client must still handle `403` responses.
