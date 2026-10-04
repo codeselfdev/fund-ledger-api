@@ -298,7 +298,7 @@ Example account setup:
 | Project roles | `GET /v1/memberships`, `POST /v1/memberships`, `PATCH /v1/memberships/:id` |
 | Invite user | `POST /v1/invitations` |
 | My dues/summary | `GET /v1/me/dues`, `GET /v1/me/summary` |
-| Payment schedules | `GET /v1/schedules` |
+| Payment schedules | `GET /v1/schedules` (system accounting schedules are hidden by default) |
 | Upload proof/document | `POST /v1/uploads` (`multipart/form-data`, field `file`) |
 | Submit payment | `POST /v1/deposits` |
 | Submit advance | `POST /v1/deposits/advance` |

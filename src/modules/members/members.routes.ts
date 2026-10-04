@@ -226,7 +226,7 @@ async function ensurePreviousInstallmentSchedule(tx: Prisma.TransactionClient, i
     where: {
       tenantId: input.tenantId,
       projectId: input.projectId,
-      name: PREVIOUS_INSTALLMENT_SCHEDULE_NAME
+      purpose: "previous_installment"
     },
     orderBy: { createdAt: "asc" }
   });
@@ -240,6 +240,7 @@ async function ensurePreviousInstallmentSchedule(tx: Prisma.TransactionClient, i
       totalAmount: 0,
       dueDate: new Date(),
       status: "active",
+      purpose: "previous_installment",
       createdById: input.createdById
     }
   });

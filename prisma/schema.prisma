@@ -56,6 +56,11 @@ enum ScheduleStatus {
   closed
 }
 
+enum SchedulePurpose {
+  contribution
+  previous_installment
+}
+
 enum DueStatus {
   upcoming
   due
@@ -355,6 +360,7 @@ model Schedule {
   totalAmount   Int            @map("total_amount")
   dueDate       DateTime       @map("due_date")
   status        ScheduleStatus @default(active)
+  purpose       SchedulePurpose @default(contribution)
   penaltyPolicy Json?          @map("penalty_policy")
   createdById   String         @map("created_by_id")
   createdAt     DateTime       @default(now()) @map("created_at")
@@ -367,6 +373,7 @@ model Schedule {
   depositAllocations DepositAllocation[]
 
   @@index([tenantId, projectId, status])
+  @@index([tenantId, projectId, purpose])
   @@index([tenantId, projectId, recurringScheduleId])
   @@unique([recurringScheduleId, dueDate])
   @@map("schedules")

@@ -738,9 +738,18 @@
     "/v1/schedules": {
       "get": {
         "tags": ["Schedules"],
-        "summary": "List schedules",
+        "summary": "List member-facing schedules",
         "security": [{ "BearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectIdHeader" },
+          {
+            "name": "include_system",
+            "in": "query",
+            "required": false,
+            "description": "Include internal accounting schedules such as imported previous installments",
+            "schema": { "type": "boolean", "default": false }
+          }
+        ],
         "responses": { "200": { "$ref": "#/components/responses/Success" } }
       },
       "post": {

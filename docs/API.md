@@ -130,7 +130,7 @@ Member document files are grouped in storage as: `tenant scoped > project scoped
 
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
-| GET | `/v1/schedules` | any | List schedules with collection percentage |
+| GET | `/v1/schedules` | any | List member-facing schedules with collection percentage |
 | POST | `/v1/schedules` | approver | Create schedule with fixed `unit_amount` and generate equal dues per active member |
 | PATCH | `/v1/schedules/:id` | approver | Edit or close schedule |
 | GET | `/v1/recurring-schedules` | approver, admin | List recurring schedule rules |
@@ -142,6 +142,12 @@ Member document files are grouped in storage as: `tenant scoped > project scoped
 | GET | `/v1/dues` | staff | Staff due list; filter by status |
 
 Required schedule fields: `name`, `unit_amount`, `due_date`. Optional: `status`, `penalty_policy`.
+
+Imported opening dues use an internal schedule with `purpose: "previous_installment"`. It remains in
+the database so dues, settlement calculations, and audit history retain their accounting link, but it
+is excluded from `GET /v1/schedules` and the dashboard schedule count by default. Staff accounting
+tools can request all schedules with `GET /v1/schedules?include_system=true`. System accounting
+schedules cannot be edited through `PATCH /v1/schedules/:id`.
 
 Recurring scheduler cron creates schedules on intended run day, and checks tenant subscription before creating each scheduled item.
 Generated schedule names are dynamic by frequency/date (examples: weekly `1W JAN 26`, monthly `JAN 26`, quarterly `Q1 26`).

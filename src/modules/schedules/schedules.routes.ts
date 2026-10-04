@@ -8,7 +8,7 @@ import { prisma } from "../../core/prisma/client.js";
 import { requireProject, requireRoles } from "../../core/security/auth.middleware.js";
 import { requireProjectContext } from "../../core/security/auth.context.js";
 import { idParamSchema, optionalPenaltyPolicySchema } from "../../core/validation/common.schemas.js";
-import { validateBody, validateParams } from "../../core/validation/validate.js";
+import { validateBody, validateParams, validateQuery } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { notifyProjectMembers } from "../../core/notifications/notification.service.js";
 import { createScheduleWithUnitAmount } from "./schedule-creation.service.js";
@@ -30,10 +30,23 @@ const scheduleUpdateSchema = z.object({
   penalty_policy: optionalPenaltyPolicySchema
 });
 
-router.get("/", requireProject, requireRoles("any"), asyncHandler(async (req, res) => {
+const scheduleQuerySchema = z.object({
+  include_system: z.preprocess((value) => {
+    if (value === "true") return true;
+    if (value === "false") return false;
+    return value;
+  }, z.boolean().optional())
+});
+
+router.get("/", requireProject, requireRoles("any"), validateQuery(scheduleQuerySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
+  const query = req.query as z.infer<typeof scheduleQuerySchema>;
   const schedules = await prisma.schedule.findMany({
-    where: { tenantId: auth.tenantId, projectId: auth.projectId },
+    where: {
+      tenantId: auth.tenantId,
+      projectId: auth.projectId,
+      ...(query.include_system ? {} : { purpose: "contribution" })
+    },
     include: {
       dues: {
         select: { amount: true, paidAmount: true, waivedAmount: true, penaltyDue: true, penaltyPaid: true, status: true }
@@ -109,6 +122,9 @@ router.patch("/:id", requireProject, requireRoles("approver", "admin"), validate
     where: { id, tenantId: auth.tenantId, projectId: auth.projectId }
   });
   if (!before) throw notFound("Schedule not found");
+  if (before.purpose === "previous_installment") {
+    throw badRequest("System accounting schedules cannot be edited");
+  }
   if (before.status === "closed" && body.status && body.status !== "closed") {
     throw badRequest("Closed schedules cannot be reopened");
   }

@@ -33,7 +33,9 @@ router.get("/dashboard", requireProject, requireRoles("staff", "admin", "owner")
       }
     }),
     prisma.expense.count({ where: { tenantId: auth.tenantId, projectId: auth.projectId, status: "pending" } }),
-    prisma.schedule.findMany({ where: { tenantId: auth.tenantId, projectId: auth.projectId } }),
+    prisma.schedule.findMany({
+      where: { tenantId: auth.tenantId, projectId: auth.projectId, purpose: "contribution" }
+    }),
     prisma.due.findMany({ where: { tenantId: auth.tenantId, projectId: auth.projectId } }),
     prisma.account.findMany({ where: { tenantId: auth.tenantId, projectId: auth.projectId } })
   ]);
