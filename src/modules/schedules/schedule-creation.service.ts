@@ -128,13 +128,22 @@ export async function createScheduleWithUnitAmount(input: CreateScheduleWithUnit
     }
 
     const activeMembers = await tx.member.findMany({
-      where: { tenantId: input.tenantId, projectId: input.projectId, status: "active" },
+      where: {
+        tenantId: input.tenantId,
+        projectId: input.projectId,
+        status: "active",
+        shares: { gt: 0 }
+      },
       orderBy: { createdAt: "asc" },
-      select: { id: true }
+      select: { id: true, shares: true }
     });
-    if (activeMembers.length === 0) throw badRequest("At least one active member is required");
+    if (activeMembers.length === 0) throw badRequest("At least one active member with shares is required");
 
-    const totalAmount = input.unitAmount * activeMembers.length;
+    const duesPayload = activeMembers.map((member) => ({
+      memberId: member.id,
+      amount: input.unitAmount * member.shares
+    }));
+    const totalAmount = duesPayload.reduce((sum, due) => sum + due.amount, 0);
     const schedule = await tx.schedule.create({
       data: {
         tenantId: input.tenantId,
@@ -150,13 +159,13 @@ export async function createScheduleWithUnitAmount(input: CreateScheduleWithUnit
       }
     });
 
-    const dues = await Promise.all(activeMembers.map((member) => tx.due.create({
+    const dues = await Promise.all(duesPayload.map((due) => tx.due.create({
       data: {
         tenantId: input.tenantId,
         projectId: input.projectId,
         scheduleId: schedule.id,
-        memberId: member.id,
-        amount: input.unitAmount,
+        memberId: due.memberId,
+        amount: due.amount,
         dueDate: input.dueDate,
         status: dueStatus
       },
