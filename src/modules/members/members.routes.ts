@@ -292,6 +292,102 @@ router.get("/", requireProject, requireRoles("owner", "staff"), validateQuery(me
   })));
 }));
 
+router.get("/due-overview", requireProject, requireRoles("owner", "staff"), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  const [currentSchedule, dues] = await Promise.all([
+    prisma.schedule.findFirst({
+      where: {
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        purpose: "contribution"
+      },
+      orderBy: [
+        { dueDate: "desc" },
+        { createdAt: "desc" }
+      ],
+      select: { id: true, name: true, dueDate: true }
+    }),
+    prisma.due.findMany({
+      where: { tenantId: auth.tenantId, projectId: auth.projectId },
+      select: {
+        scheduleId: true,
+        amount: true,
+        paidAmount: true,
+        waivedAmount: true,
+        penaltyDue: true,
+        penaltyPaid: true,
+        member: {
+          select: {
+            id: true,
+            name: true,
+            mobile: true,
+            shares: true,
+            status: true
+          }
+        }
+      }
+    })
+  ]);
+
+  const memberBalances = new Map<string, {
+    member_id: string;
+    name: string;
+    mobile: string;
+    shares: number;
+    status: MemberStatus;
+    current_schedule_due: number;
+    before_current_schedule_due: number;
+    total_due: number;
+  }>();
+
+  for (const due of dues) {
+    const outstanding = calculateDueBalance(due).total;
+    if (outstanding === 0) continue;
+    const balance = memberBalances.get(due.member.id) ?? {
+      member_id: due.member.id,
+      name: due.member.name,
+      mobile: due.member.mobile,
+      shares: due.member.shares,
+      status: due.member.status,
+      current_schedule_due: 0,
+      before_current_schedule_due: 0,
+      total_due: 0
+    };
+
+    if (due.scheduleId === currentSchedule?.id) {
+      balance.current_schedule_due += outstanding;
+    } else {
+      balance.before_current_schedule_due += outstanding;
+    }
+    balance.total_due += outstanding;
+    memberBalances.set(due.member.id, balance);
+  }
+
+  const members = Array.from(memberBalances.values()).sort((a, b) =>
+    b.total_due - a.total_due || a.name.localeCompare(b.name)
+  );
+  const amounts = members.reduce((totals, member) => ({
+    current_schedule_due: totals.current_schedule_due + member.current_schedule_due,
+    before_current_schedule_due: totals.before_current_schedule_due + member.before_current_schedule_due,
+    total_due: totals.total_due + member.total_due
+  }), {
+    current_schedule_due: 0,
+    before_current_schedule_due: 0,
+    total_due: 0
+  });
+
+  return ok(res, {
+    current_schedule: currentSchedule ? {
+      id: currentSchedule.id,
+      name: currentSchedule.name,
+      due_date: currentSchedule.dueDate
+    } : null,
+    amounts,
+    member_count: members.length,
+    members
+  });
+}));
+
 router.get("/import/csv-format", requireProject, requireRoles("owner", "accountant", "admin"), asyncHandler(async (_req, res) => {
   const csv = [
     "name,mobile,shares,address,email,previous_due_amount",

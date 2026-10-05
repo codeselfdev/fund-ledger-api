@@ -6,6 +6,9 @@ Detailed member exit payloads and responses are available in
 The standalone member settlement reference is
 [`MEMBER_SETTLEMENT_API.md`](./MEMBER_SETTLEMENT_API.md).
 
+The short project logo integration guide is
+[`PROJECT_LOGO_API.md`](./PROJECT_LOGO_API.md).
+
 All responses use:
 
 ```json
@@ -91,6 +94,7 @@ removal are included in the existing `project.updated` audit record.
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
 | GET | `/v1/members` | staff | List members with status and search filters |
+| GET | `/v1/members/due-overview` | owner, staff | Current schedule due, earlier schedule due, total due, and per-member outstanding breakdown |
 | GET | `/v1/member-document-titles` | any | List active member-document title dropdown options |
 | POST | `/v1/member-document-titles` | owner, admin | Create fixed document title option |
 | PATCH | `/v1/member-document-titles/:id` | owner, admin | Update/disable fixed document title option |
@@ -112,6 +116,38 @@ removal are included in the existing `project.updated` audit record.
 | PATCH | `/v1/deposit-delegates/:id` | owner, admin | Toggle an existing on-behalf deposit permission record |
 
 Required member fields: `name`, `mobile`, `shares`. Optional: `address`, `email`, `previous_due_amount`.
+
+`GET /v1/members/due-overview` treats the contribution schedule with the latest due date as the
+current schedule. `before_current_schedule_due` includes every other outstanding due, including
+imported previous installments. All values include unpaid principal and unpaid penalties after
+payments and waivers. Members with a zero balance are omitted from `members`.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "current_schedule": { "id": "schedule_id", "name": "October installment", "due_date": "2026-10-31T00:00:00.000Z" },
+    "amounts": {
+      "current_schedule_due": 125000,
+      "before_current_schedule_due": 35000,
+      "total_due": 160000
+    },
+    "member_count": 2,
+    "members": [
+      {
+        "member_id": "member_id",
+        "name": "Example Member",
+        "mobile": "+8801700000000",
+        "shares": 2,
+        "status": "active",
+        "current_schedule_due": 25000,
+        "before_current_schedule_due": 5000,
+        "total_due": 30000
+      }
+    ]
+  }
+}
+```
 
 CSV import matches members by mobile within the active project. Existing member and user records are
 reused; historical dues, deposits, receipts, and audit data are never deleted. For an existing
