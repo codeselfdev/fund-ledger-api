@@ -20,7 +20,7 @@ type ProjectInvitationLinkInput = {
   tenantId: string;
   projectId: string;
   role: Role;
-  mobile: string;
+  mobile?: string | null;
   email?: string | null;
   invitationId?: string;
   memberId?: string;
@@ -87,7 +87,7 @@ export function buildProjectInvitationLink(req: Request | undefined, input: Proj
     tenant_id: input.tenantId,
     project_id: input.projectId,
     role: input.role,
-    mobile: input.mobile,
+    mobile: input.mobile ?? undefined,
     email: input.email ?? undefined,
     invitation_id: input.invitationId,
     member_id: input.memberId,
@@ -103,8 +103,16 @@ export function buildProjectInvitationSummary(input: {
   inviteeName: string;
   projectName: string;
   role: Role;
+  phoneOtpAvailable?: boolean;
 }) {
-  return `${input.inviteeName} has been added to ${input.projectName} as ${input.role}. They can open the invitation link, download the app if needed, and sign in with Google or phone OTP.`;
+  const signInMethod = input.phoneOtpAvailable === false ? "Google" : "Google or phone OTP";
+  return `${input.inviteeName} has been added to ${input.projectName} as ${input.role}. They can open the invitation link, download the app if needed, and sign in with ${signInMethod}.`;
+}
+
+export function projectSignInOptions(phoneOtpAvailable: boolean) {
+  return phoneOtpAvailable
+    ? PROJECT_SIGN_IN_OPTIONS
+    : PROJECT_SIGN_IN_OPTIONS.filter((option) => option.method === "google");
 }
 
 export async function sendProjectInvitationEmail(input: ProjectInvitationEmailInput): Promise<boolean> {
@@ -114,10 +122,12 @@ export async function sendProjectInvitationEmail(input: ProjectInvitationEmailIn
   const safeInvitationLink = escapeHtml(input.invitationLink);
   const safeDownloadLink = escapeHtml(input.appDownloadLink);
   const safeEmail = input.email ? escapeHtml(input.email) : "";
-  const safeMobile = escapeHtml(input.mobile);
-  const otpLine = input.otpEmailed
-    ? "We also sent a short-lived OTP code to your email. You can request a fresh code from the app anytime."
-    : "You can request a fresh OTP code from the app when signing in with your phone.";
+  const safeMobile = input.mobile ? escapeHtml(input.mobile) : "";
+  const otpLine = input.mobile
+    ? input.otpEmailed
+      ? "We also sent a short-lived OTP code to your email. You can request a fresh code from the app anytime."
+      : "You can request a fresh OTP code from the app when signing in with your phone."
+    : "Sign in with the Google account associated with this invitation.";
 
   const googleText = input.email
     ? `Google: continue with the Google account for ${input.email}.`
@@ -135,7 +145,7 @@ export async function sendProjectInvitationEmail(input: ProjectInvitationEmailIn
       "",
       "Sign in options:",
       googleText,
-      `Phone OTP: use ${input.mobile} and enter the OTP code sent during sign-in.`,
+      ...(input.mobile ? [`Phone OTP: use ${input.mobile} and enter the OTP code sent during sign-in.`] : []),
       otpLine,
       "",
       "After signing in, you can view the project, shares, dues, and payment activity."
@@ -148,7 +158,7 @@ export async function sendProjectInvitationEmail(input: ProjectInvitationEmailIn
       <p>Sign in options:</p>
       <ul>
         <li>Google: ${safeEmail ? `continue with <strong>${safeEmail}</strong>.` : "continue with the Gmail or Google account shared with the project admin."}</li>
-        <li>Phone OTP: use <strong>${safeMobile}</strong> and enter the OTP code sent during sign-in.</li>
+        ${safeMobile ? `<li>Phone OTP: use <strong>${safeMobile}</strong> and enter the OTP code sent during sign-in.</li>` : ""}
       </ul>
       <p>${escapeHtml(otpLine)}</p>
       <p>After signing in, you can view the project, shares, dues, and payment activity.</p>

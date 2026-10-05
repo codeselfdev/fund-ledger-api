@@ -13,9 +13,9 @@ import { validateBody, validateParams } from "../../core/validation/validate.js"
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { issueOtp } from "../auth/auth.service.js";
 import {
-  PROJECT_SIGN_IN_OPTIONS,
   buildProjectInvitationLink,
   buildProjectInvitationSummary,
+  projectSignInOptions,
   resolveAppDownloadLink,
   sendProjectInvitationEmail
 } from "../../core/invitations/project-invitation.service.js";
@@ -35,10 +35,14 @@ const createMembershipSchema = z
     email: z.string().email().optional(),
     role: z.nativeEnum(Role)
   })
-  .refine((v) => v.user_id != null || v.mobile != null, {
-    message: "user_id or mobile is required",
+  .refine((v) => v.user_id != null || v.mobile != null || v.email != null, {
+    message: "user_id, mobile, or email is required",
     path: ["user_id"]
   });
+
+function isSyntheticMobile(mobile: string) {
+  return mobile.startsWith("g:") || mobile.startsWith("e:");
+}
 
 function defaultShareSeedForRole(role: Role) {
   return role === "owner" || role === "admin" || role === "accountant" ? 1 : 0;
@@ -57,7 +61,10 @@ router.get("/", requireProject, requireRoles("owner", "admin"), asyncHandler(asy
     role: membership.role,
     is_active: membership.isActive,
     member_id: membership.memberId,
-    user: membership.user
+    user: {
+      ...membership.user,
+      mobile: isSyntheticMobile(membership.user.mobile) ? null : membership.user.mobile
+    }
   })));
 }));
 
@@ -70,24 +77,44 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
   });
 
   const result = await prisma.$transaction(async (tx) => {
-    let user = body.user_id
-      ? await tx.user.findFirst({ where: { id: body.user_id, tenantId: auth.tenantId, isActive: true } })
-      : await tx.user.findFirst({ where: { mobile: body.mobile!, tenantId: auth.tenantId, isActive: true } });
+    const normalizedEmail = body.email?.trim().toLowerCase();
+    const matchingUsers = body.user_id
+      ? await tx.user.findMany({
+          where: { id: body.user_id, tenantId: auth.tenantId, isActive: true }
+        })
+      : await tx.user.findMany({
+          where: {
+            tenantId: auth.tenantId,
+            isActive: true,
+            OR: [
+              ...(body.mobile ? [{ mobile: body.mobile }] : []),
+              ...(normalizedEmail ? [{ email: { equals: normalizedEmail, mode: "insensitive" as const } }] : [])
+            ]
+          },
+          take: 2
+        });
+    if (matchingUsers.length > 1) {
+      throw conflict("The supplied mobile and email belong to different users");
+    }
+    let user = matchingUsers[0] ?? null;
     let userCreated = false;
 
     if (!user && body.user_id) {
       throw notFound("No active user found for the given identity");
     }
     if (!user) {
+      if (!body.mobile) {
+        throw notFound("No active user was found for this email. Add the member first or provide mobile and name.");
+      }
       if (!body.name) {
-        throw badRequest("name is required when creating a new user by mobile");
+        throw badRequest("name is required when creating a new user");
       }
       user = await tx.user.create({
         data: {
           tenantId: auth.tenantId,
           name: body.name,
           mobile: body.mobile!,
-          email: body.email
+          email: normalizedEmail
         }
       });
       userCreated = true;
@@ -96,7 +123,7 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
         where: { id: user.id },
         data: {
           ...(body.name ? { name: body.name } : {}),
-          ...(body.email ? { email: body.email } : {})
+          ...(normalizedEmail ? { email: normalizedEmail } : {})
         }
       });
     }
@@ -164,12 +191,15 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
     after: result.membership
   });
 
-  const otp = await issueOtp(result.user.mobile, result.user.email);
+  const phoneMobile = isSyntheticMobile(result.user.mobile) ? null : result.user.mobile;
+  const otp = phoneMobile
+    ? await issueOtp(phoneMobile, result.user.email)
+    : { code: null, emailed: false };
   const membershipLink = buildProjectInvitationLink(req, {
     tenantId: auth.tenantId,
     projectId: auth.projectId,
     role: result.membership.role,
-    mobile: result.user.mobile,
+    mobile: phoneMobile,
     email: result.user.email,
     memberId: result.membership.memberId ?? undefined
   });
@@ -184,7 +214,7 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
         tenantId: auth.tenantId,
         projectId: auth.projectId,
         role: result.membership.role,
-        mobile: result.user.mobile,
+        mobile: phoneMobile,
         email: result.user.email,
         memberId: result.membership.memberId ?? undefined,
         invitationLink: membershipLink,
@@ -202,11 +232,11 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
     is_active: result.membership.isActive,
     user_id: result.user.id,
     user_created: result.userCreated,
-    user: { id: result.user.id, name: result.user.name, mobile: result.user.mobile, email: result.user.email },
+    user: { id: result.user.id, name: result.user.name, mobile: phoneMobile, email: result.user.email },
     otp: {
-      sent: true,
+      sent: phoneMobile != null,
       emailed: otp.emailed,
-      ...(process.env.NODE_ENV === "production" ? {} : { dev_code: otp.code })
+      ...(process.env.NODE_ENV === "production" || !otp.code ? {} : { dev_code: otp.code })
     },
     membershipLink,
     membership_link: membershipLink,
@@ -216,11 +246,12 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
       sent: invitationEmailSent,
       to: result.user.email
     },
-    signInOptions: PROJECT_SIGN_IN_OPTIONS,
+    signInOptions: projectSignInOptions(phoneMobile != null),
     onboardingSummary: buildProjectInvitationSummary({
       inviteeName: result.user.name,
       projectName: project.name,
-      role: result.membership.role
+      role: result.membership.role,
+      phoneOtpAvailable: phoneMobile != null
     })
   });
 }));

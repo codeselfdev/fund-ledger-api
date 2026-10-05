@@ -505,6 +505,31 @@
         "responses": { "201": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/Error" } }
       }
     },
+    "/v1/memberships": {
+      "get": {
+        "tags": ["Projects"],
+        "summary": "List project role access",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      },
+      "post": {
+        "tags": ["Projects"],
+        "summary": "Grant role access by user ID, mobile, or email",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MembershipCreate" },
+              "example": { "email": "accountant@gmail.com", "role": "accountant" }
+            }
+          }
+        },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
     "/v1/members": {
       "get": {
         "tags": ["Members"],
@@ -1041,6 +1066,31 @@
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
       }
     },
+    "/v1/accounts/{id}/transfers": {
+      "post": {
+        "tags": ["Transfers"],
+        "summary": "Transfer funds from the selected account",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["to_account_id", "amount"],
+                "properties": {
+                  "to_account_id": { "type": "string" },
+                  "amount": { "type": "integer", "minimum": 1 },
+                  "note": { "type": "string", "maxLength": 500 }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
     "/v1/accounts/{id}/in-out": {
       "get": {
         "tags": ["Accounts"],
@@ -1072,9 +1122,12 @@
     "/v1/dashboard": {
       "get": {
         "tags": ["Dashboard"],
-        "summary": "Role-aware dashboard counts",
+        "summary": "Role-aware dashboard counts and charts",
         "security": [{ "BearerAuth": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ProjectIdHeader" },
+          { "name": "chart_months", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 24, "default": 6 } }
+        ],
         "responses": { "200": { "$ref": "#/components/responses/Success" } }
       }
     },
@@ -1261,6 +1314,22 @@
               "role": "accountant"
             }
           }
+        }
+      },
+      "MembershipCreate": {
+        "type": "object",
+        "required": ["role"],
+        "anyOf": [
+          { "required": ["user_id"] },
+          { "required": ["mobile"] },
+          { "required": ["email"] }
+        ],
+        "properties": {
+          "user_id": { "type": "string" },
+          "name": { "type": "string", "minLength": 2 },
+          "mobile": { "type": "string", "minLength": 6 },
+          "email": { "type": "string", "format": "email" },
+          "role": { "$ref": "#/components/schemas/Role" }
         }
       },
       "MemberCreate": {

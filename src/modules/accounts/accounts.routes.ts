@@ -9,6 +9,7 @@ import { requireProjectContext } from "../../core/security/auth.context.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams } from "../../core/validation/validate.js";
 import { writeAccountTransactionAudit, writeAudit } from "../../core/audit/audit.service.js";
+import { createAccountTransfer } from "../transfers/transfer.service.js";
 
 const router = Router();
 
@@ -23,6 +24,12 @@ const adjustAccountSchema = z.object({
   direction: z.enum(["money_in", "money_out"]),
   amount: z.number().int().positive(),
   reason: z.string().min(3)
+});
+
+const accountTransferSchema = z.object({
+  to_account_id: z.string().min(1),
+  amount: z.number().int().positive(),
+  note: z.string().max(500).optional()
 });
 
 async function ensureOpeningBalanceIncomeBackfill(input: {
@@ -256,6 +263,22 @@ router.post("/:id/adjust", requireProject, requireRoles("accountant", "admin"), 
   });
 
   return ok(res, result.account);
+}));
+
+router.post("/:id/transfers", requireProject, requireRoles("accountant", "admin"), validateParams(idParamSchema), validateBody(accountTransferSchema), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  const { id } = req.params as z.infer<typeof idParamSchema>;
+  const body = req.body as z.infer<typeof accountTransferSchema>;
+  const transfer = await createAccountTransfer({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    fromAccountId: id,
+    toAccountId: body.to_account_id,
+    amount: body.amount,
+    note: body.note
+  });
+  return created(res, transfer);
 }));
 
 router.get("/:id/transactions", requireProject, requireRoles("staff"), validateParams(idParamSchema), asyncHandler(async (req, res) => {

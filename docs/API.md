@@ -59,7 +59,7 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | POST | `/v1/projects` | owner | Create project with share cap and optional penalty policy |
 | POST | `/v1/invitations` | owner, approver, admin | Invite or grant project role by mobile, create/link the user and member, issue OTP, and email app/invitation instructions when email exists |
 | GET | `/v1/memberships` | owner, admin | List project role memberships and linked users |
-| POST | `/v1/memberships` | owner, admin | Add or reactivate a project role by `user_id` or mobile; creates a user when mobile is new and `name` is supplied |
+| POST | `/v1/memberships` | owner, admin | Add or reactivate a project role by `user_id`, mobile, or email; creates a user when mobile is new and `name` is supplied |
 | PATCH | `/v1/memberships/:id` | owner, admin | Change a project role or activate/deactivate the membership |
 | GET | `/v1/auth/google` | public | Start Google OAuth. Query: `intent` (`login` or `signup`), `redirect_uri`, optional `tenant_slug`. Google returns to `/v1/auth/google/callback`. |
 | GET | `/v1/auth/google/callback` | public | Google redirect target. Issues a short-lived identity `ticket` (includes ID token) and redirects to the app. |
@@ -205,14 +205,18 @@ Notifications are created after submission, approval, rejection, and disbursemen
 | POST | `/v1/incomes` | accountant/approver/admin | Record manual income. Role is enforced by onboarding income approval flow |
 | GET | `/v1/accounts` | any | Account balances and total |
 | POST | `/v1/accounts/:id/adjust` | accountant, admin | Post an audited manual `money_in` or `money_out` balance adjustment with a reason |
+| POST | `/v1/accounts/:id/transfers` | accountant, admin | Transfer from the selected account to another project account with paired ledger rows |
 | GET | `/v1/accounts/:id/transactions` | staff | Movement history for one account |
 | GET | `/v1/accounts/:id/in-out` | staff | List account cashflow entries as `in`/`out` with amount and title |
 | GET | `/v1/accounts/:id/entries` | staff | Alias of in/out cashflow endpoint for client compatibility |
 | POST | `/v1/transfers` | accountant | Move funds between accounts with paired ledger rows |
-| GET | `/v1/dashboard` | staff | Role-aware dashboard counters |
+| GET | `/v1/dashboard` | staff | Role-aware counters plus receivable and income-vs-expense chart data; optional `chart_months` (1-24, default 6) |
 | GET | `/v1/ledger` | accountant, auditor | Ledger entries; filter by date, account, direction |
 
 Required transfer fields: `from_account_id`, `to_account_id`, `amount`. Optional: `note`.
+For an account-detail screen, use `POST /v1/accounts/:id/transfers` and omit `from_account_id`
+from the body because `:id` is the source account. Both transfer endpoints use the same atomic balance,
+paired ledger, and audit implementation.
 
 ## Activity, Notifications & Penalties
 

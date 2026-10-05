@@ -295,7 +295,7 @@ Example account setup:
 | Resend member invitation | `POST /v1/members/:id/invitation/resend` |
 | Member exit balance | `GET /v1/members/:id/settlement`, `POST /v1/members/:id/settle` |
 | Remove/transfer member | `POST /v1/members/:id/remove`, `POST /v1/members/:id/transfer` |
-| Project roles | `GET /v1/memberships`, `POST /v1/memberships`, `PATCH /v1/memberships/:id` |
+| Project roles | `GET /v1/memberships`, `POST /v1/memberships` (email or mobile), `PATCH /v1/memberships/:id` |
 | Invite user | `POST /v1/invitations` |
 | My dues/summary | `GET /v1/me/dues`, `GET /v1/me/summary` |
 | Payment schedules | `GET /v1/schedules` (system accounting schedules are hidden by default) |
@@ -309,7 +309,7 @@ Example account setup:
 | Approve/reject expense | `POST /v1/expenses/:id/approve`, `POST /v1/expenses/:id/reject` |
 | Accounts and entries | `GET /v1/accounts`, `GET /v1/accounts/:id/in-out` |
 | Create/adjust account | `POST /v1/accounts`, `POST /v1/accounts/:id/adjust` |
-| Transfer funds | `POST /v1/transfers` |
+| Transfer funds | `POST /v1/transfers`, or `POST /v1/accounts/:id/transfers` from account detail |
 | Audit trail | `GET /v1/activity` |
 | Notification feed | `GET /v1/notifications`, `PATCH /v1/notifications/:id/read` |
 | Push token | `POST /v1/notifications/device-token`, `DELETE /v1/notifications/device-token` |
@@ -468,6 +468,8 @@ Create an account and transfer funds:
 }
 ```
 
+For the general transfer action, call `POST /v1/transfers`:
+
 ```json
 {
   "from_account_id": "acc_cash",
@@ -476,6 +478,61 @@ Create an account and transfer funds:
   "note": "Cash deposit"
 }
 ```
+
+From an account detail screen, call `POST /v1/accounts/{source_account_id}/transfers`:
+
+```json
+{
+  "to_account_id": "acc_bank",
+  "amount": 25000,
+  "note": "Cash deposit"
+}
+```
+
+Grant role access by an existing user's email, mobile, or user ID:
+
+```json
+{
+  "email": "accountant@gmail.com",
+  "role": "accountant"
+}
+```
+
+When mobile identifies a new user, also send `name`. Email-only lookup grants access to an existing
+Google user; an unknown email must first be added as a member or supplied with name and mobile.
+
+## Dashboard charts
+
+`GET /v1/dashboard?chart_months=6` includes two mobile-ready datasets under `charts`:
+
+```json
+{
+  "charts": {
+    "receivable": {
+      "goal": 150000,
+      "achieved": 90000,
+      "remaining": 60000,
+      "achieved_percent": 60,
+      "series": [
+        { "key": "achieved", "label": "Achieved", "value": 90000 },
+        { "key": "remaining", "label": "Remaining", "value": 60000 }
+      ]
+    },
+    "income_vs_expense": {
+      "period_months": 6,
+      "income_total": 210000,
+      "expense_total": 125000,
+      "net": 85000,
+      "series": [
+        { "period": "2026-10", "label": "Oct", "income": 50000, "expense": 30000 }
+      ]
+    }
+  }
+}
+```
+
+Income and expense chart values represent `money_in` and `money_out` cash movement. Account-to-account
+transfers are excluded so they do not inflate either side.
 
 ## Audit trail UI
 
