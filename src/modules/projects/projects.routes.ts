@@ -34,8 +34,14 @@ const createProjectSchema = z.object({
 const updateProjectSchema = z.object({
   name: z.string().min(2).optional(),
   total_shares: z.number().int().positive().optional(),
+  logo_file_id: z.string().min(1).nullable().optional(),
   penalty_policy: optionalPenaltyPolicySchema
-}).refine((value) => value.name !== undefined || value.total_shares !== undefined || value.penalty_policy !== undefined, {
+}).refine((value) => (
+  value.name !== undefined
+  || value.total_shares !== undefined
+  || value.logo_file_id !== undefined
+  || value.penalty_policy !== undefined
+), {
   message: "At least one field is required"
 });
 
@@ -46,6 +52,10 @@ const invitationSchema = z.object({
   role: z.nativeEnum(Role),
   project_id: z.string().optional()
 });
+
+function logoUrl(logoFileId: string | null) {
+  return logoFileId ? `/v1/uploads/${logoFileId}/view` : null;
+}
 
 projectsRouter.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
@@ -63,6 +73,8 @@ projectsRouter.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
     project_id: membership.projectId,
     name: membership.project.name,
     total_shares: membership.project.totalShares,
+    logo_file_id: membership.project.logoFileId,
+    logo_url: logoUrl(membership.project.logoFileId),
     role: membership.role,
     member_id: membership.memberId,
     is_active: membership.project.isActive,
@@ -140,7 +152,57 @@ projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validat
   return created(res, {
     project_id: result.project.id,
     name: result.project.name,
-    total_shares: result.project.totalShares
+    total_shares: result.project.totalShares,
+    logo_file_id: result.project.logoFileId,
+    logo_url: logoUrl(result.project.logoFileId)
+  });
+}));
+
+projectsRouter.get("/:id", validateParams(idParamSchema), asyncHandler(async (req, res) => {
+  const auth = requireAuthContext(req);
+  const { id } = req.params as z.infer<typeof idParamSchema>;
+
+  const access = await prisma.projectMembership.findMany({
+    where: {
+      tenantId: auth.tenantId,
+      projectId: id,
+      userId: auth.userId,
+      isActive: true
+    }
+  });
+  if (access.length === 0) throw forbidden();
+
+  const project = await prisma.project.findFirst({
+    where: { id, tenantId: auth.tenantId }
+  });
+  if (!project) throw notFound("Project not found");
+
+  const activeShares = await prisma.member.aggregate({
+    where: {
+      tenantId: auth.tenantId,
+      projectId: id,
+      status: "active"
+    },
+    _sum: { shares: true }
+  });
+  const assignedShares = activeShares._sum.shares ?? 0;
+  const roles = Array.from(new Set(access.map((membership) => membership.role)));
+  const primaryAccess = access.find((membership) => membership.role !== "member") ?? access[0];
+
+  return ok(res, {
+    project_id: project.id,
+    name: project.name,
+    total_shares: project.totalShares,
+    assigned_shares: assignedShares,
+    remaining_shares: Math.max(0, project.totalShares - assignedShares),
+    penalty_policy: project.penaltyPolicy,
+    is_active: project.isActive,
+    role: primaryAccess.role,
+    roles,
+    member_id: access.find((membership) => membership.memberId)?.memberId ?? null,
+    logo_file_id: project.logoFileId,
+    logo_url: logoUrl(project.logoFileId),
+    can_edit: roles.includes("owner") || roles.includes("admin")
   });
 }));
 
@@ -184,11 +246,29 @@ projectsRouter.patch("/:id", validateParams(idParamSchema), validateBody(updateP
     }
   }
 
+  if (body.logo_file_id) {
+    const logoUpload = await prisma.upload.findFirst({
+      where: {
+        id: body.logo_file_id,
+        tenantId: auth.tenantId,
+        projectId: id,
+        mimeType: { startsWith: "image/" }
+      },
+      select: { id: true }
+    });
+    if (!logoUpload) {
+      throw badRequest("Choose an image uploaded for this project", {
+        logo: "The selected project logo is invalid"
+      });
+    }
+  }
+
   const project = await prisma.project.update({
     where: { id },
     data: {
       name: body.name,
       totalShares: body.total_shares,
+      logoFileId: body.logo_file_id,
       penaltyPolicy: body.penalty_policy
     }
   });
@@ -208,6 +288,8 @@ projectsRouter.patch("/:id", validateParams(idParamSchema), validateBody(updateP
     project_id: project.id,
     name: project.name,
     total_shares: project.totalShares,
+    logo_file_id: project.logoFileId,
+    logo_url: logoUrl(project.logoFileId),
     penalty_policy: project.penaltyPolicy
   });
 }));

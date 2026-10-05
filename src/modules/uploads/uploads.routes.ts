@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { nanoid } from "nanoid";
 import { asyncHandler } from "../../core/http/async-handler.js";
-import { ApiError, badRequest, notFound } from "../../core/http/api-error.js";
+import { ApiError, badRequest, forbidden, notFound } from "../../core/http/api-error.js";
 import { created } from "../../core/http/response.js";
 import { prisma } from "../../core/prisma/client.js";
 import { requireProject, requireRoles } from "../../core/security/auth.middleware.js";
@@ -25,6 +25,13 @@ function sanitizeFilename(value: string) {
 router.post("/", requireProject, requireRoles("any"), upload.single("file"), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   if (!req.file) throw badRequest("file is required");
+  const purpose = typeof req.body.purpose === "string" ? req.body.purpose : undefined;
+
+  if (purpose === "project_logo") {
+    const canManageProject = auth.roles.includes("owner") || auth.roles.includes("admin");
+    if (!canManageProject) throw forbidden("Only project admins can upload a project logo");
+    if (!req.file.mimetype.startsWith("image/")) throw badRequest("Project logo must be an image");
+  }
 
   const storageKey = `${auth.tenantId}/${auth.projectId}/${nanoid()}-${sanitizeFilename(req.file.originalname)}`;
   await storeObject({
@@ -46,7 +53,7 @@ router.post("/", requireProject, requireRoles("any"), upload.single("file"), asy
         mimeType: req.file.mimetype,
         size: req.file.size,
         storageKey,
-        purpose: typeof req.body.purpose === "string" ? req.body.purpose : undefined
+        purpose
       }
     });
   } catch (error) {

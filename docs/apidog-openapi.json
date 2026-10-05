@@ -495,6 +495,41 @@
         "responses": { "201": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/Error" } }
       }
     },
+    "/v1/projects/{id}": {
+      "get": {
+        "tags": ["Projects"],
+        "summary": "Get project details, share allocation, logo, and caller permissions",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/Error" }, "404": { "$ref": "#/components/responses/Error" } }
+      },
+      "patch": {
+        "tags": ["Projects"],
+        "summary": "Update project details or logo",
+        "description": "Owner/admin only. Upload an image with purpose=project_logo, then assign its file_id as logo_file_id. Send null to remove the logo.",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "minProperties": 1,
+                "properties": {
+                  "name": { "type": "string", "minLength": 2 },
+                  "total_shares": { "type": "integer", "minimum": 1 },
+                  "penalty_policy": { "$ref": "#/components/schemas/PenaltyPolicy" },
+                  "logo_file_id": { "type": "string", "nullable": true }
+                }
+              },
+              "example": { "logo_file_id": "clogo123" }
+            }
+          }
+        },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" }, "403": { "$ref": "#/components/responses/Error" } }
+      }
+    },
     "/v1/invitations": {
       "post": {
         "tags": ["Projects"],
@@ -942,7 +977,7 @@
     "/v1/uploads": {
       "post": {
         "tags": ["Uploads"],
-        "summary": "Upload proof or invoice file",
+        "summary": "Upload proof, invoice, or project logo file",
         "security": [{ "BearerAuth": [] }],
         "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
         "requestBody": {
@@ -954,7 +989,7 @@
                 "required": ["file"],
                 "properties": {
                   "file": { "type": "string", "format": "binary" },
-                  "purpose": { "type": "string", "example": "deposit_proof" }
+                  "purpose": { "type": "string", "example": "project_logo", "description": "project_logo requires owner/admin and an image file" }
                 }
               }
             }

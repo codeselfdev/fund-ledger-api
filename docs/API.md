@@ -56,7 +56,9 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | GET | `/v1/tenants/current` | any | Current tenant details |
 | PATCH | `/v1/tenants/current` | owner | Update tenant branding, contact, locale, currency |
 | GET | `/v1/projects` | any | Projects accessible to caller |
+| GET | `/v1/projects/:id` | member | Project details, share allocation, logo, role, and edit permission |
 | POST | `/v1/projects` | owner | Create project with share cap and optional penalty policy |
+| PATCH | `/v1/projects/:id` | owner, admin | Update name, share cap, penalty policy, or `logo_file_id`; send `null` to remove the logo |
 | POST | `/v1/invitations` | owner, approver, admin | Invite or grant project role by mobile, create/link the user and member, issue OTP, and email app/invitation instructions when email exists |
 | GET | `/v1/memberships` | owner, admin | List project role memberships and linked users |
 | POST | `/v1/memberships` | owner, admin | Add or reactivate a project role by `user_id`, mobile, or email; creates a user when mobile is new and `name` is supplied |
@@ -73,6 +75,16 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | GET | `/v1/subscription` | any | Current tenant subscription status for mobile gating |
 | POST | `/v1/subscription/renew` | owner, admin | Renew subscription for 1 year |
 | POST | `/v1/subscription/trial` | owner, admin | Start/reset custom trial period (`trial_days`) |
+
+Project logos use the normal authenticated upload flow:
+
+1. Upload an image with `POST /v1/uploads` as multipart form data using `purpose=project_logo`.
+2. Send the returned file ID to `PATCH /v1/projects/:id` as `{ "logo_file_id": "..." }`.
+3. Read `logo_url` from project list/detail responses and request it with the normal bearer token and project header.
+
+Only owner/admin users can upload or assign a project logo. The selected upload must be an image
+from the same tenant and project. Send `{ "logo_file_id": null }` to remove it. Logo assignment and
+removal are included in the existing `project.updated` audit record.
 
 ## Members & Shares
 
@@ -163,7 +175,7 @@ Generated schedule names are dynamic by frequency/date (examples: weekly `1W JAN
 | POST | `/v1/deposits/:id/approve` | accountant, approver | Accountant step: move to `pending_approver`; approver step: final confirmation, receipt, ledger posting |
 | POST | `/v1/deposits/:id/confirm` | approver | Attempt 2: confirm, issue receipt, post ledger entry |
 | POST | `/v1/deposits/:id/reject` | accountant, approver | Reject pending deposit with reason |
-| POST | `/v1/uploads` | any | Multipart upload for proof or invoice, returns `file_id` |
+| POST | `/v1/uploads` | any | Multipart upload for proof or invoice, returns `file_id`; `purpose=project_logo` requires owner/admin and an image |
 | GET | `/v1/uploads/:id/view` | any | View/download uploaded attachment by `file_id` |
 
 Required deposit fields: `schedule_ids` (array), `member_id`, `account_id`, `amount`, `method`.
