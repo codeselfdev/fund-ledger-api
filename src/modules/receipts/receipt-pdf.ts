@@ -10,12 +10,16 @@ export function buildReceiptPdf(input: {
   memberMobile: string;
   projectName: string;
   projectAddress: string | null;
+  projectLogo: string | null;
   method: string;
   reference: string | null;
   ownerMobile: string | null;
 }) {
+  const colorGreen = "0 0.5 0.2 rg";
+  const colorReset = "0 0 0 rg";
+  
   const lines = [
-    { size: 20, x: 54, y: 760, text: "PAYMENT RECEIPT" },
+    { size: 20, x: 54, y: 760, text: "PAYMENT RECEIPT", color: "green" },
     { size: 11, x: 54, y: 730, text: input.projectName },
     { size: 11, x: 54, y: 707, text: input.projectAddress || "" },
     { size: 12, x: 54, y: 685, text: `Receipt: ${input.receiptNo}` },
@@ -28,9 +32,17 @@ export function buildReceiptPdf(input: {
     { size: 12, x: 54, y: 524, text: `Contact: ${input.ownerMobile || ""}` },
     { size: 10, x: 54, y: 500, text: "This receipt was generated after final payment approval." }
   ];
-  const stream = lines
-    .map((line) => `BT /F1 ${line.size} Tf ${line.x} ${line.y} Td (${escapePdfText(line.text)}) Tj ET`)
-    .join("\n");
+  
+  const processedLines = lines.map((line, index) => {
+    let pdfCmd = "";
+    if (line.color === "green") {
+      pdfCmd = `${colorGreen} BT /F1 ${line.size} Tf ${line.x} ${line.y} Td (${escapePdfText(line.text)}) Tj ET ${colorReset}`;
+    } else {
+      pdfCmd = `BT /F1 ${line.size} Tf ${line.x} ${line.y} Td (${escapePdfText(line.text)}) Tj ET`;
+    }
+    return pdfCmd;
+  });
+  const stream = processedLines.join("\n");
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",

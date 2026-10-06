@@ -70,6 +70,10 @@ router.get("/receipts/:id/pdf", requireProject, requireRoles("any"), validatePar
   });
   const ownerMobile = projectMemberships.length > 0 ? projectMemberships[0].user.mobile : null;
   
+  const projectLogo = receipt.project.logoFileId 
+    ? `/v1/uploads/${receipt.project.logoFileId}/view` 
+    : null;
+
   const pdf = buildReceiptPdf({
     receiptNo: receipt.receiptNo,
     amount: receipt.amount,
@@ -78,6 +82,7 @@ router.get("/receipts/:id/pdf", requireProject, requireRoles("any"), validatePar
     memberMobile: receipt.member.mobile,
     projectName: receipt.project.name,
     projectAddress: receipt.project.address,
+    projectLogo: projectLogo,
     method: receipt.deposit.method,
     reference: receipt.deposit.reference,
     ownerMobile: ownerMobile
