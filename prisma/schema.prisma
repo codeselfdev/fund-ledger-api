@@ -206,9 +206,34 @@ model Project {
   stockMovements      StockMovement[]
   purchases           Purchase[]
   sales               Sale[]
+  whatsappConnection  WhatsAppConnection?
 
   @@index([tenantId])
   @@map("projects")
+}
+
+model WhatsAppConnection {
+  id                   String   @id @default(cuid())
+  tenantId             String   @map("tenant_id")
+  projectId            String   @unique @map("project_id")
+  wabaId                String   @map("waba_id")
+  phoneNumberId         String   @map("phone_number_id")
+  displayPhoneNumber    String?  @map("display_phone_number")
+  verifiedName          String?  @map("verified_name")
+  graphApiVersion       String   @default("v22.0") @map("graph_api_version")
+  encryptedAccessToken String   @map("encrypted_access_token")
+  groupId               String?  @map("group_id")
+  groupName             String?  @map("group_name")
+  isActive              Boolean  @default(true) @map("is_active")
+  lastVerifiedAt        DateTime? @map("last_verified_at")
+  createdById           String   @map("created_by_id")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, projectId])
+  @@map("whatsapp_connections")
 }
 
 model OnboardingProgress {

@@ -12,8 +12,40 @@ import { validateBody, validateParams, validateQuery } from "../../core/validati
 import { writeAccountTransactionAudit, writeAudit } from "../../core/audit/audit.service.js";
 import { getRoleEmails, notifyProjectMembers } from "../../core/notifications/notification.service.js";
 import { sendDecisionEmail } from "../../core/mail/mailer.service.js";
+import { sendWhatsAppGroupMessage } from "../../core/whatsapp/whatsapp.service.js";
 
 const router = Router();
+
+async function announcePaidExpense(input: {
+  tenantId: string;
+  projectId: string;
+  actorUserId: string;
+  expense: { id: string; title: string; amount: number; category: ExpenseCategory; categoryDefId: string | null };
+}) {
+  const category = input.expense.categoryDefId
+    ? await prisma.expenseCategoryDef.findFirst({
+        where: { id: input.expense.categoryDefId, tenantId: input.tenantId, projectId: input.projectId },
+        select: { name: true }
+      })
+    : null;
+  const expenseHead = category?.name ?? input.expense.category.charAt(0).toUpperCase() + input.expense.category.slice(1);
+  const message = `Expense posted: ${input.expense.title}. Amount: BDT ${input.expense.amount.toLocaleString("en-US")}. Head: ${expenseHead}.`;
+  try {
+    await notifyProjectMembers({
+      tenantId: input.tenantId,
+      projectId: input.projectId,
+      actorUserId: input.actorUserId,
+      type: "expense.posted",
+      title: "Expense posted",
+      body: message,
+      entityType: "expense",
+      entityId: input.expense.id
+    });
+  } catch (error) {
+    console.error("[notifications] failed to announce posted expense", error);
+  }
+  await sendWhatsAppGroupMessage({ tenantId: input.tenantId, projectId: input.projectId, message });
+}
 
 async function emailExpenseDecision(input: {
   tenantId: string;
@@ -161,6 +193,48 @@ router.get("/", requireProject, requireRoles("staff"), validateQuery(expenseQuer
   return ok(res, expenses);
 }));
 
+router.get("/by-category", requireProject, requireRoles("owner", "staff"), validateQuery(expenseQuerySchema), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  const query = req.query as z.infer<typeof expenseQuerySchema>;
+  const expenses = await prisma.expense.findMany({
+    where: {
+      tenantId: auth.tenantId,
+      projectId: auth.projectId,
+      ...(query.status ? { status: query.status } : {})
+    },
+    include: { categoryDef: { select: { id: true, name: true } } },
+    orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }]
+  });
+
+  const grouped = new Map<string, {
+    category_id: string | null;
+    category_key: string;
+    category_name: string;
+    total_amount: number;
+    expense_count: number;
+    items: Array<typeof expenses[number] & { occurred_at: Date }>;
+  }>();
+  for (const expense of expenses) {
+    const categoryKey = expense.categoryDef?.id ?? expense.category;
+    const categoryName = expense.categoryDef?.name
+      ?? expense.category.charAt(0).toUpperCase() + expense.category.slice(1);
+    const group = grouped.get(categoryKey) ?? {
+      category_id: expense.categoryDef?.id ?? null,
+      category_key: categoryKey,
+      category_name: categoryName,
+      total_amount: 0,
+      expense_count: 0,
+      items: []
+    };
+    group.total_amount += expense.amount;
+    group.expense_count += 1;
+    group.items.push({ ...expense, occurred_at: expense.paidAt ?? expense.createdAt });
+    grouped.set(categoryKey, group);
+  }
+
+  return ok(res, Array.from(grouped.values()).sort((a, b) => b.total_amount - a.total_amount));
+}));
+
 router.post("/:id/approve", requireProject, requireRoles("accountant", "approver", "admin"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
@@ -248,6 +322,12 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
     body: `${result.expense.title} was disbursed on approval.`,
     entityType: "expense",
     entityId: id
+  });
+  await announcePaidExpense({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    expense: result.expense
   });
 
   await emailExpenseDecision({
@@ -404,6 +484,12 @@ router.post("/:id/disburse", requireProject, requireRoles("accountant"), validat
     body: `${result.expense.title} was disbursed.`,
     entityType: "expense",
     entityId: id
+  });
+  await announcePaidExpense({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    expense: result.expense
   });
 
   return ok(res, result.expense);

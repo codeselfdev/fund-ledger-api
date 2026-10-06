@@ -14,9 +14,40 @@ import { getRoleEmails, notifyProjectMembers } from "../../core/notifications/no
 import { sendDecisionEmail } from "../../core/mail/mailer.service.js";
 import { canUserPayOnBehalf } from "../../core/security/deposit-delegate.service.js";
 import { calculateDueBalance } from "../members/member-settlement.service.js";
+import { sendWhatsAppGroupMessage } from "../../core/whatsapp/whatsapp.service.js";
 
 const router = Router();
 const MEMBER_RECEIPT_REQUIRED_MESSAGE = "Please upload a receipt before submitting this payment";
+
+async function announceConfirmedPayment(input: {
+  tenantId: string;
+  projectId: string;
+  actorUserId: string;
+  memberId: string;
+  amount: number;
+  receiptId: string;
+}) {
+  const member = await prisma.member.findFirst({
+    where: { id: input.memberId, tenantId: input.tenantId, projectId: input.projectId },
+    select: { name: true }
+  });
+  const message = `${member?.name ?? "A member"} payment of BDT ${input.amount.toLocaleString("en-US")} was approved and posted.`;
+  try {
+    await notifyProjectMembers({
+      tenantId: input.tenantId,
+      projectId: input.projectId,
+      actorUserId: input.actorUserId,
+      type: "payment.posted",
+      title: "Payment posted",
+      body: message,
+      entityType: "receipt",
+      entityId: input.receiptId
+    });
+  } catch (error) {
+    console.error("[notifications] failed to announce posted payment", error);
+  }
+  await sendWhatsAppGroupMessage({ tenantId: input.tenantId, projectId: input.projectId, message });
+}
 
 const depositBodySchema = z.object({
   schedule_ids: z.array(z.string().min(1)).min(1),
@@ -680,6 +711,14 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
     entityType: "receipt",
     entityId: result.receipt.id
   });
+  await announceConfirmedPayment({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    memberId: before.memberId,
+    amount: result.receipt.amount,
+    receiptId: result.receipt.id
+  });
 
   await emailDepositDecision({
     tenantId: auth.tenantId,
@@ -748,6 +787,14 @@ router.post("/:id/confirm", requireProject, requireRoles("approver", "admin"), v
     body: `Receipt ${result.receiptNo} was issued for your payment.`,
     entityType: "receipt",
     entityId: result.receipt.id
+  });
+  await announceConfirmedPayment({
+    tenantId: auth.tenantId,
+    projectId: auth.projectId,
+    actorUserId: auth.userId,
+    memberId: before.memberId,
+    amount: result.receipt.amount,
+    receiptId: result.receipt.id
   });
 
   await emailDepositDecision({

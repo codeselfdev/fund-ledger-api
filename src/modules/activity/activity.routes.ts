@@ -11,6 +11,7 @@ import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams } from "../../core/validation/validate.js";
 import { notifyProjectMembers } from "../../core/notifications/notification.service.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
+import { sendWhatsAppGroupMessage } from "../../core/whatsapp/whatsapp.service.js";
 
 const router = Router();
 const notificationDeviceTokenSchema = z.object({
@@ -21,6 +22,7 @@ const notificationBroadcastSchema = z.object({
   body: z.string().min(2).max(1000),
   roles: z.array(z.nativeEnum(Role)).max(6).optional(),
   member_ids: z.array(z.string().min(1)).max(500).optional(),
+  send_whatsapp: z.boolean().default(false),
   type: z.string().min(2).max(80).default("announcement.manual")
 }).refine((value) => !(value.roles && value.member_ids), {
   message: "Use either roles or member_ids, not both"
@@ -115,6 +117,13 @@ router.post("/notifications/broadcast", requireProject, requireRoles("owner", "a
     roles: body.roles,
     memberIds: body.member_ids
   });
+  const whatsapp = body.send_whatsapp
+    ? await sendWhatsAppGroupMessage({
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        message: `*${body.title.trim()}*\n${body.body.trim()}`
+      })
+    : { sent: false, skipped: "disabled" as const };
 
   await writeAudit({
     tenantId: auth.tenantId,
@@ -127,13 +136,15 @@ router.post("/notifications/broadcast", requireProject, requireRoles("owner", "a
       title: body.title.trim(),
       target_roles: body.roles ?? [],
       target_member_ids: body.member_ids ?? [],
-      recipient_count: result.count
+      recipient_count: result.count,
+      whatsapp
     }
   });
 
   return ok(res, {
     sent: true,
-    recipient_count: result.count
+    recipient_count: result.count,
+    whatsapp
   });
 }));
 

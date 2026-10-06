@@ -29,6 +29,7 @@ import { tenantsRouter } from "./modules/tenants/tenants.routes.js";
 import { transfersRouter } from "./modules/transfers/transfers.routes.js";
 import { uploadsRouter } from "./modules/uploads/uploads.routes.js";
 import { onboardingRouter } from "./modules/onboarding/onboarding.routes.js";
+import { whatsappRouter } from "./modules/integrations/whatsapp.routes.js";
 
 export function registerRoutes(app: Express) {
   app.use("/v1/tenants", tenantsRouter);
@@ -62,5 +63,6 @@ export function registerRoutes(app: Express) {
   app.use("/v1/transfers", transfersRouter);
   app.use("/v1", dashboardRouter);
   app.use("/v1", activityRouter);
+  app.use("/v1", whatsappRouter);
   app.use("/v1", penaltiesRouter);
 }

@@ -12,6 +12,7 @@ import { validateBody, validateParams, validateQuery } from "../../core/validati
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { notifyProjectMembers } from "../../core/notifications/notification.service.js";
 import { createScheduleWithUnitAmount } from "./schedule-creation.service.js";
+import { sendWhatsAppGroupMessage } from "../../core/whatsapp/whatsapp.service.js";
 
 const router = Router();
 
@@ -94,16 +95,24 @@ router.post("/", requireProject, requireRoles("approver", "admin"), validateBody
     }
   });
 
-  await notifyProjectMembers({
+  try {
+    await notifyProjectMembers({
+      tenantId: auth.tenantId,
+      projectId: auth.projectId,
+      actorUserId: auth.userId,
+      type: "schedule.created",
+      title: "New dues created",
+      body: `${result.schedule.name} is now available for payment.`,
+      entityType: "schedule",
+      entityId: result.schedule.id
+    });
+  } catch (error) {
+    console.error("[notifications] failed to announce payment schedule", error);
+  }
+  await sendWhatsAppGroupMessage({
     tenantId: auth.tenantId,
     projectId: auth.projectId,
-    actorUserId: auth.userId,
-    roles: ["member"],
-    type: "schedule.created",
-    title: "New dues created",
-    body: `${result.schedule.name} is now available for payment.`,
-    entityType: "schedule",
-    entityId: result.schedule.id
+    message: `New payment schedule: ${result.schedule.name}\nAmount per share: BDT ${body.unit_amount.toLocaleString("en-US")}\nDue: ${result.schedule.dueDate.toISOString().slice(0, 10)}`
   });
 
   return created(res, {

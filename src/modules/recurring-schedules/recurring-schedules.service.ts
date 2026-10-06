@@ -3,6 +3,8 @@ import { prisma } from "../../core/prisma/client.js";
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
 import { createScheduleWithUnitAmount } from "../schedules/schedule-creation.service.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
+import { notifyProjectMembers } from "../../core/notifications/notification.service.js";
+import { sendWhatsAppGroupMessage } from "../../core/whatsapp/whatsapp.service.js";
 
 const MAX_ITERATIONS = 1000;
 
@@ -163,6 +165,27 @@ async function processRecurringSchedule(config: {
             dues_created: created.duesCreated,
             auto_applied_total: created.autoAppliedTotal
           }
+        });
+
+        const message = `${created.schedule.name} started. Amount per share: BDT ${config.unitAmount.toLocaleString("en-US")}. Due: ${runDate.toISOString().slice(0, 10)}.`;
+        try {
+          await notifyProjectMembers({
+            tenantId: config.tenantId,
+            projectId: config.projectId,
+            actorUserId: config.createdById,
+            type: "recurring_schedule.started",
+            title: "Recurring payment schedule started",
+            body: message,
+            entityType: "schedule",
+            entityId: created.schedule.id
+          });
+        } catch (error) {
+          console.error("[notifications] failed to announce recurring schedule", error);
+        }
+        await sendWhatsAppGroupMessage({
+          tenantId: config.tenantId,
+          projectId: config.projectId,
+          message
         });
 
         runResult = "created";

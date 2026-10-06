@@ -9,6 +9,9 @@ The standalone member settlement reference is
 The short project logo integration guide is
 [`PROJECT_LOGO_API.md`](./PROJECT_LOGO_API.md).
 
+Notices, WhatsApp, receipt history, and expense grouping are summarized in
+[`NOTICE_RECEIPT_EXPENSE_API.md`](./NOTICE_RECEIPT_EXPENSE_API.md).
+
 All responses use:
 
 ```json
@@ -228,8 +231,13 @@ When a new schedule is created, any confirmed advance deposits for a member are 
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
 | GET | `/v1/me/receipts` | member | Member payment history |
-| GET | `/v1/receipts/:id` | self, staff | Receipt detail |
-| GET | `/v1/receipts/:id/pdf` | self, staff | Receipt PDF placeholder response |
+| GET | `/v1/members/:id/receipts` | owner, staff | Approved payment receipts for a member profile, newest first |
+| GET | `/v1/receipts/:id` | self, owner, staff | Receipt detail |
+| GET | `/v1/receipts/:id/pdf` | self, owner, staff | Download the generated payment receipt as `application/pdf` |
+
+The member receipt list returns the normal receipt object with its confirmed deposit. The PDF route
+uses `Content-Disposition: attachment` and requires the same bearer token and `X-Project-Id` header
+as the JSON APIs.
 
 ## Expenses
 
@@ -237,11 +245,17 @@ When a new schedule is created, any confirmed advance deposits for a member are 
 | --- | --- | --- | --- |
 | POST | `/v1/expenses` | accountant | Initiate expense in `pending` state |
 | GET | `/v1/expenses` | staff | List/filter expenses |
+| GET | `/v1/expenses/by-category` | owner, staff | Group expenses by custom/legacy expense category with totals and time-ordered breakdown items |
 | POST | `/v1/expenses/:id/approve` | accountant/approver/admin | Approve and immediately disburse. Permission follows onboarding expense approval flow |
 | POST | `/v1/expenses/:id/reject` | accountant/approver/admin | Reject pending expense with reason. Permission follows onboarding expense approval flow |
 | POST | `/v1/expenses/:id/disburse` | accountant | Legacy/manual disburse for expenses already in `approved` state |
 
 Required expense fields: `title`, `amount`, `account_id`, plus either `category` or `category_def_id`. Optional: `vendor`, `vendor_id`, `doc_file_id`.
+
+`GET /v1/expenses/by-category` accepts the same optional `status` filter as the normal expense list.
+Each group contains `category_id`, `category_key`, `category_name`, `total_amount`, `expense_count`,
+and `items`. Every item includes `occurred_at`, using the payment time when paid and creation time
+otherwise.
 
 Notifications are created after submission, approval, rejection, and disbursement.
 
@@ -276,10 +290,43 @@ paired ledger, and audit implementation.
 | POST | `/v1/notifications/device-token` | any | Register or refresh current user FCM token (tenant scoped) |
 | DELETE | `/v1/notifications/device-token` | any | Remove current user FCM token (logout/device unlink) |
 | POST | `/v1/notifications/broadcast` | owner, admin, accountant | Send tenant+project scoped in-app + FCM broadcast by role/member targeting |
+| GET | `/v1/integrations/whatsapp` | owner, admin | Read project WhatsApp Business connection and mapped group status |
+| PUT | `/v1/integrations/whatsapp` | owner, admin | Verify and securely store a WhatsApp Business Platform connection |
+| PUT | `/v1/integrations/whatsapp/group` | owner, admin | Verify and map an eligible Groups API group to the project |
+| DELETE | `/v1/integrations/whatsapp` | owner, admin | Disconnect WhatsApp and remove stored credentials/group mapping |
 | GET | `/v1/penalty-policy` | any | Effective policy for project or schedule |
 | PUT | `/v1/penalty-policy?scope=client\|project` | owner | Set client or project policy |
 | GET | `/v1/dues/:id/penalty` | self, staff | Penalty breakdown for one due |
 | POST | `/v1/dues/:id/penalty/waive` | approver | Waive accrued penalty with reason |
+
+Register a device with `{ "fcm_token": "..." }`. A manual notice accepts `title`, `body`, either
+`roles` or `member_ids`, and optional `send_whatsapp` (default `false`). Its response includes the
+in-app/device `recipient_count` and WhatsApp delivery result.
+
+Connect WhatsApp with:
+
+```json
+{
+  "waba_id": "123456789",
+  "phone_number_id": "987654321",
+  "access_token": "permanent-system-user-token",
+  "graph_api_version": "v22.0"
+}
+```
+
+Then map the announcement group with `{ "group_id": "...", "group_name": "Project notices" }`.
+This integration uses Meta's official WhatsApp Business Platform Groups API. The account and group
+must be eligible for that API; a normal consumer WhatsApp group or invite link is not a group ID.
+Set `WHATSAPP_CREDENTIALS_KEY` in production so stored access tokens are encrypted independently of
+the JWT signing secret.
+
+Automatic in-app/device notices are sent when a manual or recurring payment schedule starts, when a
+payment receives final confirmation, and when an expense is approved and posted. When WhatsApp is
+enabled, the same events also reach the mapped group. Delivery failures do not roll back the
+accounting transaction and are returned or logged for operational follow-up.
+
+WhatsApp is currently off by default. Set `WHATSAPP_ENABLED=true` on the API and
+`EXPO_PUBLIC_WHATSAPP_ENABLED=true` in the mobile build when the integration should be exposed.
 
 ## Enum Reference
 

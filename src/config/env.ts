@@ -30,6 +30,10 @@ function parseTrustProxy(value: string | undefined): boolean | number {
   return 1;
 }
 
+function enabled(value: string | undefined): boolean {
+  return value?.trim().toLowerCase() === "true";
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? 4000),
@@ -57,6 +61,9 @@ export const env = {
     user: optional("SMTP_USER"),
     pass: optional("SMTP_PASS"),
     from: optional("MAIL_FROM") ?? "fundnesta@appnesta.com"
+  },
+  whatsapp: {
+    enabled: enabled(process.env.WHATSAPP_ENABLED)
   },
   app: {
     inviteUrl: optional("APP_INVITE_URL"),
