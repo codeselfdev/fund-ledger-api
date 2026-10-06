@@ -62,6 +62,14 @@ router.get("/receipts/:id/pdf", requireProject, requireRoles("any"), validatePar
   });
   if (!receipt) throw notFound("Receipt not found");
   if (!isSelfOrRole(auth, receipt.memberId, [...STAFF_ROLES, "owner"])) throw forbidden();
+  
+  // Fetch project memberships to find the owner's mobile
+  const projectMemberships = await prisma.projectMembership.findMany({
+    where: { tenantId: auth.tenantId, projectId: receipt.projectId, role: "owner" },
+    include: { user: true }
+  });
+  const ownerMobile = projectMemberships.length > 0 ? projectMemberships[0].user.mobile : null;
+  
   const pdf = buildReceiptPdf({
     receiptNo: receipt.receiptNo,
     amount: receipt.amount,
@@ -69,8 +77,10 @@ router.get("/receipts/:id/pdf", requireProject, requireRoles("any"), validatePar
     memberName: receipt.member.name,
     memberMobile: receipt.member.mobile,
     projectName: receipt.project.name,
+    projectAddress: receipt.project.address,
     method: receipt.deposit.method,
-    reference: receipt.deposit.reference
+    reference: receipt.deposit.reference,
+    ownerMobile: ownerMobile
   });
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${receipt.receiptNo}.pdf"`);

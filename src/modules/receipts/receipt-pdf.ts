@@ -9,12 +9,15 @@ export function buildReceiptPdf(input: {
   memberName: string;
   memberMobile: string;
   projectName: string;
+  projectAddress: string | null;
   method: string;
   reference: string | null;
+  ownerMobile: string | null;
 }) {
   const lines = [
     { size: 20, x: 54, y: 760, text: "PAYMENT RECEIPT" },
     { size: 11, x: 54, y: 730, text: input.projectName },
+    { size: 11, x: 54, y: 707, text: input.projectAddress || "" },
     { size: 12, x: 54, y: 685, text: `Receipt: ${input.receiptNo}` },
     { size: 12, x: 54, y: 662, text: `Member: ${input.memberName}` },
     { size: 12, x: 54, y: 639, text: `Mobile: ${input.memberMobile}` },
@@ -22,6 +25,7 @@ export function buildReceiptPdf(input: {
     { size: 12, x: 54, y: 593, text: `Method: ${input.method}` },
     { size: 12, x: 54, y: 570, text: `Date: ${input.issuedAt.toISOString().slice(0, 10)}` },
     ...(input.reference ? [{ size: 12, x: 54, y: 547, text: `Reference: ${input.reference}` }] : []),
+    { size: 12, x: 54, y: 524, text: `Contact: ${input.ownerMobile || ""}` },
     { size: 10, x: 54, y: 500, text: "This receipt was generated after final payment approval." }
   ];
   const stream = lines

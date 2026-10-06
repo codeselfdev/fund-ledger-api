@@ -179,6 +179,7 @@ model Project {
   name          String
   totalShares   Int      @map("total_shares")
   logoFileId    String?  @map("logo_file_id")
+  address       String?  @map("address")
   penaltyPolicy Json?    @map("penalty_policy")
   isActive      Boolean  @default(true) @map("is_active")
   createdAt     DateTime @default(now()) @map("created_at")

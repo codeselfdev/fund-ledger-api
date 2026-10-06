@@ -28,19 +28,22 @@ const invitationsRouter = Router();
 const createProjectSchema = z.object({
   name: z.string().min(2),
   total_shares: z.number().int().positive(),
-  penalty_policy: optionalPenaltyPolicySchema
+  penalty_policy: optionalPenaltyPolicySchema,
+  address: z.string().optional()
 });
 
 const updateProjectSchema = z.object({
   name: z.string().min(2).optional(),
   total_shares: z.number().int().positive().optional(),
   logo_file_id: z.string().min(1).nullable().optional(),
-  penalty_policy: optionalPenaltyPolicySchema
+  penalty_policy: optionalPenaltyPolicySchema,
+  address: z.string().optional()
 }).refine((value) => (
   value.name !== undefined
   || value.total_shares !== undefined
   || value.logo_file_id !== undefined
   || value.penalty_policy !== undefined
+  || value.address !== undefined
 ), {
   message: "At least one field is required"
 });
@@ -96,7 +99,8 @@ projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validat
         tenantId: auth.tenantId,
         name: body.name,
         totalShares: body.total_shares,
-        penaltyPolicy: body.penalty_policy
+        penaltyPolicy: body.penalty_policy,
+        address: body.address
       }
     });
 
@@ -269,7 +273,8 @@ projectsRouter.patch("/:id", validateParams(idParamSchema), validateBody(updateP
       name: body.name,
       totalShares: body.total_shares,
       logoFileId: body.logo_file_id,
-      penaltyPolicy: body.penalty_policy
+      penaltyPolicy: body.penalty_policy,
+      address: body.address
     }
   });
 
