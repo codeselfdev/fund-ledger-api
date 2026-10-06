@@ -107,7 +107,7 @@ async function getExpenseApprovalFlow(tenantId: string) {
   return progress?.expenseApprovalFlow ?? "accountant_and_approver";
 }
 
-router.post("/", requireProject, requireRoles("accountant"), validateBody(expenseBodySchema), asyncHandler(async (req, res) => {
+router.post("/", requireProject, validateBody(expenseBodySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const body = req.body as z.infer<typeof expenseBodySchema>;
   const approvalFlow = await getExpenseApprovalFlow(auth.tenantId);
@@ -135,6 +135,9 @@ router.post("/", requireProject, requireRoles("accountant"), validateBody(expens
   });
   if (!account) throw notFound("Account not found");
 
+  const isOwnerOrAdmin = auth.roles.includes("owner") || auth.roles.includes("admin");
+  const status = isOwnerOrAdmin ? "approved" : "pending";
+
   const expense = await prisma.expense.create({
     data: {
       tenantId: auth.tenantId,
@@ -147,7 +150,7 @@ router.post("/", requireProject, requireRoles("accountant"), validateBody(expens
       vendorId: body.vendor_id,
       accountId: account.id,
       docFileId: body.doc_file_id,
-      status: "pending",
+      status,
       createdById: auth.userId
     }
   });
@@ -156,25 +159,41 @@ router.post("/", requireProject, requireRoles("accountant"), validateBody(expens
     tenantId: auth.tenantId,
     projectId: auth.projectId,
     actorUserId: auth.userId,
-    action: "expense.submitted",
+    action: isOwnerOrAdmin ? "expense.posted" : "expense.submitted",
     entityType: "expense",
     entityId: expense.id,
     after: expense
   });
 
-  await notifyProjectMembers({
-    tenantId: auth.tenantId,
-    projectId: auth.projectId,
-    actorUserId: auth.userId,
-    roles: approvalFlow === "accountant_only" ? ["accountant", "admin"] : ["approver"],
-    type: "expense.submitted",
-    title: approvalFlow === "accountant_only" ? "Expense awaiting accountant verification" : "Expense awaiting approval",
-    body: approvalFlow === "accountant_only"
-      ? `${expense.title} is pending accountant verification.`
-      : `${expense.title} is pending approval.`,
-    entityType: "expense",
-    entityId: expense.id
-  });
+  if (isOwnerOrAdmin) {
+    // Auto-approved by owner/admin - notify project members
+    await notifyProjectMembers({
+      tenantId: auth.tenantId,
+      projectId: auth.projectId,
+      actorUserId: auth.userId,
+      roles: ["accountant", "approver"],
+      type: "expense.posted",
+      title: "Expense posted (auto-approved)",
+      body: `${expense.title} was posted and automatically approved. Amount: BDT ${expense.amount.toLocaleString("en-US")}.`,
+      entityType: "expense",
+      entityId: expense.id
+    });
+  } else {
+    // Regular accountant flow - send for approval
+    await notifyProjectMembers({
+      tenantId: auth.tenantId,
+      projectId: auth.projectId,
+      actorUserId: auth.userId,
+      roles: approvalFlow === "accountant_only" ? ["accountant", "admin"] : ["approver"],
+      type: "expense.submitted",
+      title: approvalFlow === "accountant_only" ? "Expense awaiting accountant verification" : "Expense awaiting approval",
+      body: approvalFlow === "accountant_only"
+        ? `${expense.title} is pending accountant verification.`
+        : `${expense.title} is pending approval.`,
+      entityType: "expense",
+      entityId: expense.id
+    });
+  }
 
   return created(res, expense);
 }));
