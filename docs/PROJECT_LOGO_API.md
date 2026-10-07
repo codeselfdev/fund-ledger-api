@@ -23,13 +23,16 @@ Response:
   "ok": true,
   "data": {
     "file_id": "upload_123",
-    "storage_key": "tenant/project/...-logo.png",
-    "view_url": "/v1/uploads/upload_123/view"
+    "storage_key": "tenant/project/project_logo/...-logo.png",
+    "view_url": "/v1/uploads/upload_123/view",
+    "public_url": "https://pub-example.r2.dev/tenant/project/project_logo/...-logo.png"
   }
 }
 ```
 
 Only an owner/admin can upload a project logo. The file must have an `image/*` MIME type.
+`public_url` is returned for project logos when `R2_PUBLIC_URL` is configured. Payment proofs and
+member documents continue to use authenticated view endpoints.
 
 ## 2. Set or Remove Logo
 

@@ -197,7 +197,7 @@ router.post("/members/:id/documents", requireProject, requireRoles("any"), valid
   const title = titles.find((item) => item.id === body.title_id && item.is_active);
   if (!title) throw badRequest("Invalid title_id");
 
-  const storageKey = `${auth.tenantId}/${auth.projectId}/member/${memberId}/${nanoid()}-${sanitizeFilename(req.file.originalname)}`;
+  const storageKey = `${auth.tenantId}/${auth.projectId}/member_document/${memberId}-${title.id}-${nanoid()}-${sanitizeFilename(req.file.originalname)}`;
   await storeObject({
     storageKey,
     buffer: req.file.buffer,

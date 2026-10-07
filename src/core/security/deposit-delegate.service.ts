@@ -5,6 +5,7 @@ type DepositDelegatePermission = {
   id: string;
   project_id: string;
   user_id: string;
+  beneficiary_member_id: string | null;
   is_active: boolean;
   created_by_id: string | null;
   created_at: string;
@@ -32,6 +33,8 @@ function parsePermissions(contact: unknown): DepositDelegatePermission[] {
       id: typeof item.id === "string" ? item.id : nanoid(),
       project_id: typeof item.project_id === "string" ? item.project_id : "",
       user_id: typeof item.user_id === "string" ? item.user_id : "",
+      // Existing permissions without a beneficiary remain visible as project-wide grants.
+      beneficiary_member_id: typeof item.beneficiary_member_id === "string" ? item.beneficiary_member_id : null,
       is_active: item.is_active !== false,
       created_by_id: typeof item.created_by_id === "string" ? item.created_by_id : null,
       created_at: typeof item.created_at === "string" ? item.created_at : new Date().toISOString(),
@@ -52,9 +55,16 @@ export function listDepositDelegatePermissions(contact: unknown, projectId: stri
   return parsePermissions(contact).filter((permission) => permission.project_id === projectId);
 }
 
-export function canUserPayOnBehalf(contact: unknown, projectId: string, userId: string) {
+export function hasDelegatedPayerAccess(contact: unknown, projectId: string, userId: string) {
   return listDepositDelegatePermissions(contact, projectId).some(
     (permission) => permission.user_id === userId && permission.is_active
+  );
+}
+
+export function canUserPayOnBehalf(contact: unknown, projectId: string, userId: string, memberId: string) {
+  return listDepositDelegatePermissions(contact, projectId).some(
+    (permission) => permission.user_id === userId && permission.is_active
+      && (permission.beneficiary_member_id === memberId || permission.beneficiary_member_id === null)
   );
 }
 
@@ -62,6 +72,7 @@ export function upsertDepositDelegatePermission(input: {
   contact: unknown;
   projectId: string;
   userId: string;
+  beneficiaryMemberId: string | null;
   actorUserId: string;
   isActive: boolean;
 }) {
@@ -69,6 +80,7 @@ export function upsertDepositDelegatePermission(input: {
   const now = new Date().toISOString();
   const existing = current.find((permission) => (
     permission.project_id === input.projectId && permission.user_id === input.userId
+    && permission.beneficiary_member_id === input.beneficiaryMemberId
   ));
 
   let updatedPermission: DepositDelegatePermission;
@@ -87,12 +99,22 @@ export function upsertDepositDelegatePermission(input: {
       id: nanoid(),
       project_id: input.projectId,
       user_id: input.userId,
+      beneficiary_member_id: input.beneficiaryMemberId,
       is_active: input.isActive,
       created_by_id: input.actorUserId,
       created_at: now,
       updated_at: now
     };
     next = [...current, updatedPermission];
+  }
+
+  if (input.isActive && input.beneficiaryMemberId) {
+    next = next.map((permission) => (
+      permission.project_id === input.projectId && permission.user_id === input.userId
+      && permission.beneficiary_member_id === null && permission.is_active
+        ? { ...permission, is_active: false, updated_at: now }
+        : permission
+    ));
   }
 
   return {

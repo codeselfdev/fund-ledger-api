@@ -296,8 +296,11 @@ For R2, configure:
 - `R2_SECRET_ACCESS_KEY`
 - `R2_BUCKET`
 - `R2_ENDPOINT` (optional; defaults to `https://<account_id>.r2.cloudflarestorage.com`)
+- `R2_PUBLIC_URL` (optional public bucket URL; returned only for project-logo uploads)
 
 `/v1/uploads/*` and member document upload/view APIs use the same storage backend.
+New objects are stored as `tenant_id/project_id/purpose/unique-file-name`. Existing database keys
+remain valid and require no migration.
 
 ## Roles
 

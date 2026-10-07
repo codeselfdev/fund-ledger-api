@@ -94,12 +94,18 @@ async function canSubmitForMember(auth: {
   if (auth.roles.includes("member") && auth.memberId === memberId) return true;
   if (!auth.roles.includes("member")) return false;
 
+  const beneficiary = await prisma.member.findFirst({
+    where: { id: memberId, tenantId: auth.tenantId, projectId: auth.projectId, status: "active" },
+    select: { id: true }
+  });
+  if (!beneficiary) return false;
+
   const tenant = await prisma.tenant.findUnique({
     where: { id: auth.tenantId },
     select: { contact: true }
   });
   if (!tenant) return false;
-  return canUserPayOnBehalf(tenant.contact, auth.projectId, auth.userId);
+  return canUserPayOnBehalf(tenant.contact, auth.projectId, auth.userId, memberId);
 }
 
 async function emailDepositDecision(input: {

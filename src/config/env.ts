@@ -49,7 +49,8 @@ export const env = {
     endpoint: optional("R2_ENDPOINT"),
     accessKeyId: optional("R2_ACCESS_KEY_ID"),
     secretAccessKey: optional("R2_SECRET_ACCESS_KEY"),
-    bucket: optional("R2_BUCKET")
+    bucket: optional("R2_BUCKET"),
+    publicUrl: optional("R2_PUBLIC_URL")
   },
   provisioningApiKeys: (process.env.PROVISIONING_API_KEYS ?? "")
     .split(",")

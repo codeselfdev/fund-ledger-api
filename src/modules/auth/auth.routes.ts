@@ -13,7 +13,7 @@ import { writeAudit } from "../../core/audit/audit.service.js";
 import { buildGoogleAuthorizationUrl, handleGoogleOAuthCallback, resolveGoogleAuthTicket, sendOAuthResult, signupWithGoogleTicket } from "./google-oauth.service.js";
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
 import { summarizeOnboardingForClient } from "../../core/onboarding/onboarding.service.js";
-import { canUserPayOnBehalf } from "../../core/security/deposit-delegate.service.js";
+import { hasDelegatedPayerAccess } from "../../core/security/deposit-delegate.service.js";
 
 const router = Router();
 
@@ -230,7 +230,7 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
   ]);
   const canPayForMembersByRole = auth.roles.includes("admin") || auth.roles.includes("accountant") || auth.roles.includes("cashier");
   const canPayForMembers = canPayForMembersByRole || (
-    auth.projectId ? canUserPayOnBehalf(user.tenant.contact, auth.projectId, auth.userId) : false
+    auth.projectId ? hasDelegatedPayerAccess(user.tenant.contact, auth.projectId, auth.userId) : false
   );
   const onboardingProject = user.memberships.find((membership) => membership.projectId === auth.projectId)?.project
     ?? user.memberships[0]?.project

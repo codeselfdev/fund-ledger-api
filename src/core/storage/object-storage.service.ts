@@ -91,6 +91,13 @@ function getStorageMode() {
   throw new Error(`Unsupported UPLOAD_STORAGE value: ${env.uploadStorage}`);
 }
 
+export function publicObjectUrl(storageKey: string) {
+  if (getStorageMode() !== "r2" || !env.uploadR2.publicUrl) return null;
+  const baseUrl = env.uploadR2.publicUrl.replace(/\/+$/, "");
+  const encodedKey = storageKey.split("/").map(encodeURIComponent).join("/");
+  return `${baseUrl}/${encodedKey}`;
+}
+
 async function streamToBuffer(body: unknown) {
   if (!body) return Buffer.alloc(0);
   if (Buffer.isBuffer(body)) return body;

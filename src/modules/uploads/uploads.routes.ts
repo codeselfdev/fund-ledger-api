@@ -10,7 +10,7 @@ import { requireProjectContext } from "../../core/security/auth.context.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateParams } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
-import { deleteObject, readObject, StorageObjectNotFoundError, storeObject } from "../../core/storage/object-storage.service.js";
+import { deleteObject, publicObjectUrl, readObject, StorageObjectNotFoundError, storeObject } from "../../core/storage/object-storage.service.js";
 
 const router = Router();
 const upload = multer({
@@ -20,6 +20,15 @@ const upload = multer({
 
 function sanitizeFilename(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function purposeFolder(value: string | undefined) {
+  const folder = (value ?? "general")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return folder || "general";
 }
 
 router.post("/", requireProject, requireRoles("any"), upload.single("file"), asyncHandler(async (req, res) => {
@@ -33,7 +42,7 @@ router.post("/", requireProject, requireRoles("any"), upload.single("file"), asy
     if (!req.file.mimetype.startsWith("image/")) throw badRequest("Project logo must be an image");
   }
 
-  const storageKey = `${auth.tenantId}/${auth.projectId}/${nanoid()}-${sanitizeFilename(req.file.originalname)}`;
+  const storageKey = `${auth.tenantId}/${auth.projectId}/${purposeFolder(purpose)}/${nanoid()}-${sanitizeFilename(req.file.originalname)}`;
   await storeObject({
     storageKey,
     buffer: req.file.buffer,
@@ -74,7 +83,8 @@ router.post("/", requireProject, requireRoles("any"), upload.single("file"), asy
   return created(res, {
     file_id: record.id,
     storage_key: record.storageKey,
-    view_url: `/v1/uploads/${record.id}/view`
+    view_url: `/v1/uploads/${record.id}/view`,
+    public_url: purpose === "project_logo" ? publicObjectUrl(record.storageKey) : null
   });
 }));
 
