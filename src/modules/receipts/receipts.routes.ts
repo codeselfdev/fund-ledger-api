@@ -10,6 +10,7 @@ import { STAFF_ROLES } from "../../core/security/roles.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateParams } from "../../core/validation/validate.js";
 import { buildReceiptPdf } from "./receipt-pdf.js";
+import { readObject, StorageObjectNotFoundError } from "../../core/storage/object-storage.service.js";
 
 const router = Router();
 
@@ -63,29 +64,49 @@ router.get("/receipts/:id/pdf", requireProject, requireRoles("any"), validatePar
   if (!receipt) throw notFound("Receipt not found");
   if (!isSelfOrRole(auth, receipt.memberId, [...STAFF_ROLES, "owner"])) throw forbidden();
   
-  // Fetch project memberships to find the owner's mobile
-  const projectMemberships = await prisma.projectMembership.findMany({
+  const ownerMembership = await prisma.projectMembership.findFirst({
     where: { tenantId: auth.tenantId, projectId: receipt.projectId, role: "owner" },
     include: { user: true }
   });
-  const ownerMobile = projectMemberships.length > 0 ? projectMemberships[0].user.mobile : null;
-  
-  const projectLogo = receipt.project.logoFileId 
-    ? `/v1/uploads/${receipt.project.logoFileId}/view` 
-    : null;
 
-  const pdf = buildReceiptPdf({
+  let projectLogo: Buffer | null = null;
+  let projectLogoMimeType: string | null = null;
+  if (receipt.project.logoFileId) {
+    const logoRecord = await prisma.upload.findFirst({
+      where: {
+        id: receipt.project.logoFileId,
+        tenantId: auth.tenantId,
+        projectId: receipt.projectId
+      }
+    });
+    if (logoRecord) {
+      try {
+        const logoObject = await readObject(logoRecord.storageKey);
+        projectLogo = logoObject.buffer;
+        projectLogoMimeType = (logoObject.contentType ?? logoRecord.mimeType).split(";", 1)[0].toLowerCase();
+      } catch (error) {
+        if (!(error instanceof StorageObjectNotFoundError)) {
+          console.error("[receipt-pdf] failed to read project logo", error);
+        }
+      }
+    }
+  }
+
+  const pdf = await buildReceiptPdf({
     receiptNo: receipt.receiptNo,
     amount: receipt.amount,
     issuedAt: receipt.issuedAt,
     memberName: receipt.member.name,
     memberMobile: receipt.member.mobile,
+    memberAddress: receipt.member.address,
     projectName: receipt.project.name,
     projectAddress: receipt.project.address,
-    projectLogo: projectLogo,
-    method: receipt.deposit.method,
+    projectLogo,
+    projectLogoMimeType,
+    method: receipt.method,
     reference: receipt.deposit.reference,
-    ownerMobile: ownerMobile
+    ownerMobile: ownerMembership?.user.mobile ?? null,
+    paymentPurpose: receipt.deposit.allocate === "advance" ? "Advance member contribution" : "Member contribution"
   });
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${receipt.receiptNo}.pdf"`);

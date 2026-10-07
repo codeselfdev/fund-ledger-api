@@ -540,6 +540,7 @@ model Receipt {
   memberId  String   @map("member_id")
   receiptNo String   @map("receipt_no")
   amount    Int
+  method    PaymentMethod
   issuedAt  DateTime @default(now()) @map("issued_at")
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

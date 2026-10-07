@@ -235,7 +235,8 @@ async function finalizeDepositConfirmation(input: {
         depositId: input.depositId,
         memberId: input.before.memberId,
         receiptNo,
-        amount: input.before.amount
+        amount: input.before.amount,
+        method: deposit.method
       }
     });
 
@@ -316,7 +317,8 @@ async function finalizeAdvanceDepositConfirmation(input: {
         depositId: input.depositId,
         memberId: input.before.memberId,
         receiptNo,
-        amount: input.before.amount
+        amount: input.before.amount,
+        method: deposit.method
       }
     });
 

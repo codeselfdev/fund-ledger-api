@@ -75,6 +75,7 @@ projectsRouter.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
   return ok(res, memberships.map((membership) => ({
     project_id: membership.projectId,
     name: membership.project.name,
+    address: membership.project.address,
     total_shares: membership.project.totalShares,
     logo_file_id: membership.project.logoFileId,
     logo_url: logoUrl(membership.project.logoFileId),
@@ -156,6 +157,7 @@ projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validat
   return created(res, {
     project_id: result.project.id,
     name: result.project.name,
+    address: result.project.address,
     total_shares: result.project.totalShares,
     logo_file_id: result.project.logoFileId,
     logo_url: logoUrl(result.project.logoFileId)
@@ -196,6 +198,7 @@ projectsRouter.get("/:id", validateParams(idParamSchema), asyncHandler(async (re
   return ok(res, {
     project_id: project.id,
     name: project.name,
+    address: project.address,
     total_shares: project.totalShares,
     assigned_shares: assignedShares,
     remaining_shares: Math.max(0, project.totalShares - assignedShares),
@@ -292,6 +295,7 @@ projectsRouter.patch("/:id", validateParams(idParamSchema), validateBody(updateP
   return ok(res, {
     project_id: project.id,
     name: project.name,
+    address: project.address,
     total_shares: project.totalShares,
     logo_file_id: project.logoFileId,
     logo_url: logoUrl(project.logoFileId),

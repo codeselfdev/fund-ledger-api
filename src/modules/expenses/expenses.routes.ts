@@ -136,45 +136,86 @@ router.post("/", requireProject, validateBody(expenseBodySchema), asyncHandler(a
   if (!account) throw notFound("Account not found");
 
   const isOwnerOrAdmin = auth.roles.includes("owner") || auth.roles.includes("admin");
-  const status = isOwnerOrAdmin ? "approved" : "pending";
+  const isAccountant = !isOwnerOrAdmin && auth.roles.includes("accountant");
+  const status: ExpenseStatus = isOwnerOrAdmin ? "paid" : isAccountant ? "approved" : "pending";
 
-  const expense = await prisma.expense.create({
-    data: {
-      tenantId: auth.tenantId,
-      projectId: auth.projectId,
-      title: body.title,
-      amount: body.amount,
-      category: categoryEnum,
-      categoryDefId: body.category_def_id,
-      vendor: vendorName ?? undefined,
-      vendorId: body.vendor_id,
-      accountId: account.id,
-      docFileId: body.doc_file_id,
-      status,
-      createdById: auth.userId
+  const result = await prisma.$transaction(async (tx) => {
+    let updatedAccount = null;
+    if (isOwnerOrAdmin) {
+      const debit = await tx.account.updateMany({
+        where: { id: account.id, tenantId: auth.tenantId, projectId: auth.projectId, balance: { gte: body.amount } },
+        data: { balance: { decrement: body.amount } }
+      });
+      if (debit.count !== 1) throw badRequest("Source account has insufficient balance");
+      updatedAccount = await tx.account.findUniqueOrThrow({ where: { id: account.id } });
     }
+    const expense = await tx.expense.create({
+      data: {
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        title: body.title,
+        amount: body.amount,
+        category: categoryEnum,
+        categoryDefId: body.category_def_id,
+        vendor: vendorName ?? undefined,
+        vendorId: body.vendor_id,
+        accountId: account.id,
+        docFileId: body.doc_file_id,
+        status,
+        createdById: auth.userId,
+        approvedById: status === "pending" ? null : auth.userId,
+        ...(isOwnerOrAdmin ? { disbursedById: auth.userId, paidAccountId: account.id, paidAt: new Date() } : {})
+      }
+    });
+    const accountTransaction = updatedAccount ? await tx.accountTransaction.create({
+      data: {
+        tenantId: auth.tenantId,
+        projectId: auth.projectId,
+        accountId: account.id,
+        direction: "money_out",
+        amount: body.amount,
+        referenceType: "expense",
+        referenceId: expense.id,
+        description: expense.title,
+        balanceAfter: updatedAccount.balance,
+        createdById: auth.userId
+      }
+    }) : null;
+    return { expense, accountTransaction, balanceBefore: updatedAccount ? updatedAccount.balance + body.amount : null };
   });
+  const { expense } = result;
 
   await writeAudit({
     tenantId: auth.tenantId,
     projectId: auth.projectId,
     actorUserId: auth.userId,
-    action: isOwnerOrAdmin ? "expense.posted" : "expense.submitted",
+    action: isOwnerOrAdmin ? "expense.posted" : isAccountant ? "expense.approved" : "expense.submitted",
     entityType: "expense",
     entityId: expense.id,
     after: expense
   });
 
+  if (result.accountTransaction) {
+    await writeAccountTransactionAudit({
+      tenantId: auth.tenantId,
+      projectId: auth.projectId,
+      actorUserId: auth.userId,
+      transaction: result.accountTransaction,
+      balanceBefore: result.balanceBefore ?? account.balance
+    });
+  }
+
   if (isOwnerOrAdmin) {
-    // Auto-approved by owner/admin - notify project members
+    await announcePaidExpense({ tenantId: auth.tenantId, projectId: auth.projectId, actorUserId: auth.userId, expense });
+  } else if (isAccountant) {
     await notifyProjectMembers({
       tenantId: auth.tenantId,
       projectId: auth.projectId,
       actorUserId: auth.userId,
-      roles: ["accountant", "approver"],
-      type: "expense.posted",
-      title: "Expense posted (auto-approved)",
-      body: `${expense.title} was posted and automatically approved. Amount: BDT ${expense.amount.toLocaleString("en-US")}.`,
+      roles: ["owner", "admin"],
+      type: "expense.approved",
+      title: "Expense ready for disbursement",
+      body: `${expense.title} was posted by an accountant and is ready for admin disbursement.`,
       entityType: "expense",
       entityId: expense.id
     });
@@ -278,6 +319,16 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
   if (account.balance < before.amount) throw badRequest("Source account has insufficient balance");
 
   const result = await prisma.$transaction(async (tx) => {
+    const claim = await tx.expense.updateMany({
+      where: { id, tenantId: auth.tenantId, projectId: auth.projectId, status: "pending" },
+      data: { status: "paid" }
+    });
+    if (claim.count !== 1) throw badRequest("Expense is no longer pending");
+    const debit = await tx.account.updateMany({
+      where: { id: account.id, tenantId: auth.tenantId, projectId: auth.projectId, balance: { gte: before.amount } },
+      data: { balance: { decrement: before.amount } }
+    });
+    if (debit.count !== 1) throw badRequest("Source account has insufficient balance");
     const paidExpense = await tx.expense.update({
       where: { id },
       data: {
@@ -289,10 +340,7 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
       }
     });
 
-    const updatedAccount = await tx.account.update({
-      where: { id: account.id },
-      data: { balance: { decrement: before.amount } }
-    });
+    const updatedAccount = await tx.account.findUniqueOrThrow({ where: { id: account.id } });
 
     const accountTransaction = await tx.accountTransaction.create({
       data: {
@@ -328,7 +376,7 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
     projectId: auth.projectId,
     actorUserId: auth.userId,
     transaction: result.accountTransaction,
-    balanceBefore: account.balance
+    balanceBefore: result.accountTransaction.balanceAfter + before.amount
   });
 
   await notifyProjectMembers({
@@ -422,7 +470,7 @@ router.post("/:id/reject", requireProject, requireRoles("accountant", "approver"
   return ok(res, expense);
 }));
 
-router.post("/:id/disburse", requireProject, requireRoles("accountant"), validateParams(idParamSchema), validateBody(disburseSchema), asyncHandler(async (req, res) => {
+router.post("/:id/disburse", requireProject, requireRoles("accountant", "admin", "owner"), validateParams(idParamSchema), validateBody(disburseSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
   const body = req.body as z.infer<typeof disburseSchema>;
@@ -430,6 +478,9 @@ router.post("/:id/disburse", requireProject, requireRoles("accountant"), validat
   const before = await prisma.expense.findFirst({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId } });
   if (!before) throw notFound("Expense not found");
   if (before.status !== "approved") throw badRequest("Expense is not approved");
+  if (before.approvedById === before.createdById && !auth.roles.includes("admin") && !auth.roles.includes("owner")) {
+    throw forbidden("Only an admin can disburse an accountant-posted expense");
+  }
 
   const sourceAccountId = body.account_id ?? before.accountId;
   if (!sourceAccountId) throw badRequest("account_id is required (expense has no target account set)");
@@ -441,6 +492,16 @@ router.post("/:id/disburse", requireProject, requireRoles("accountant"), validat
   if (account.balance < before.amount) throw badRequest("Source account has insufficient balance");
 
   const result = await prisma.$transaction(async (tx) => {
+    const claim = await tx.expense.updateMany({
+      where: { id, tenantId: auth.tenantId, projectId: auth.projectId, status: "approved" },
+      data: { status: "paid" }
+    });
+    if (claim.count !== 1) throw badRequest("Expense has already been disbursed");
+    const debit = await tx.account.updateMany({
+      where: { id: account.id, tenantId: auth.tenantId, projectId: auth.projectId, balance: { gte: before.amount } },
+      data: { balance: { decrement: before.amount } }
+    });
+    if (debit.count !== 1) throw badRequest("Source account has insufficient balance");
     const paidExpense = await tx.expense.update({
       where: { id },
       data: {
@@ -451,10 +512,7 @@ router.post("/:id/disburse", requireProject, requireRoles("accountant"), validat
       }
     });
 
-    const updatedAccount = await tx.account.update({
-      where: { id: account.id },
-      data: { balance: { decrement: before.amount } }
-    });
+    const updatedAccount = await tx.account.findUniqueOrThrow({ where: { id: account.id } });
 
     const accountTransaction = await tx.accountTransaction.create({
       data: {
@@ -490,7 +548,7 @@ router.post("/:id/disburse", requireProject, requireRoles("accountant"), validat
     projectId: auth.projectId,
     actorUserId: auth.userId,
     transaction: result.accountTransaction,
-    balanceBefore: account.balance
+    balanceBefore: result.accountTransaction.balanceAfter + before.amount
   });
 
   await notifyProjectMembers({
