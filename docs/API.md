@@ -328,6 +328,27 @@ accounting transaction and are returned or logged for operational follow-up.
 WhatsApp is currently off by default. Set `WHATSAPP_ENABLED=true` on the API and
 `EXPO_PUBLIC_WHATSAPP_ENABLED=true` in the mobile build when the integration should be exposed.
 
+## Polls & Events
+
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| GET | `/v1/polls/active` | any | Active polls with the current user's vote |
+| GET | `/v1/polls?status=active\|expired\|closed\|all` | any | Poll history; admins also receive vote counts |
+| POST | `/v1/polls` | owner, admin | Publish a poll with 2-10 options and an expiry |
+| POST | `/v1/polls/:id/vote` | any | Submit or change the current user's vote |
+| GET | `/v1/polls/:id/analytics` | owner, admin | Participation, option totals, and voter breakdown |
+| POST | `/v1/polls/:id/close` | owner, admin | Close voting before expiry |
+| GET | `/v1/events/upcoming` | any | Next 10 non-cancelled events |
+| GET | `/v1/events?scope=upcoming\|past\|all` | any | Event history |
+| POST | `/v1/events` | owner, admin | Announce an event |
+| PATCH | `/v1/events/:id` | owner, admin | Update event details and reset reminders when time changes |
+| POST | `/v1/events/:id/cancel` | owner, admin | Cancel an event and notify project users |
+
+Poll creation requires `title`, `options`, and ISO-8601 `expires_at`; `description` is optional.
+Event creation requires `title`, `place`, `agenda`, and ISO-8601 `starts_at`. Active, unvoted poll
+members receive an in-app/device reminder every two hours. Event reminders are sent to every active
+project user one hour and ten minutes before the start time.
+
 ## Enum Reference
 
 - `deposit.status`: `submitted`, `pending_accountant`, `pending_approver`, `confirmed`, `rejected`

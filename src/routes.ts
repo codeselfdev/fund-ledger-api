@@ -30,6 +30,7 @@ import { transfersRouter } from "./modules/transfers/transfers.routes.js";
 import { uploadsRouter } from "./modules/uploads/uploads.routes.js";
 import { onboardingRouter } from "./modules/onboarding/onboarding.routes.js";
 import { whatsappRouter } from "./modules/integrations/whatsapp.routes.js";
+import { eventsRouter, pollsRouter } from "./modules/community/community.routes.js";
 
 export function registerRoutes(app: Express) {
   app.use("/v1/tenants", tenantsRouter);
@@ -65,4 +66,6 @@ export function registerRoutes(app: Express) {
   app.use("/v1", activityRouter);
   app.use("/v1", whatsappRouter);
   app.use("/v1", penaltiesRouter);
+  app.use("/v1/polls", pollsRouter);
+  app.use("/v1/events", eventsRouter);
 }

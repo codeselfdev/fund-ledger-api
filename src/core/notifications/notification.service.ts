@@ -13,6 +13,7 @@ type NotificationInput = {
   entityId?: string;
   roles?: Role[];
   memberIds?: string[];
+  userIds?: string[];
 };
 
 export async function getRoleEmails(tenantId: string, projectId: string, roles: Role[]): Promise<string[]> {
@@ -35,8 +36,10 @@ export async function notifyProjectMembers(input: NotificationInput) {
           tenantId: input.tenantId,
           projectId: input.projectId,
           isActive: true,
+          user: { isActive: true },
           ...(input.roles?.length ? { role: { in: input.roles } } : {}),
-          ...(input.memberIds?.length ? { memberId: { in: input.memberIds } } : {})
+          ...(input.memberIds?.length ? { memberId: { in: input.memberIds } } : {}),
+          ...(input.userIds?.length ? { userId: { in: input.userIds } } : {})
         },
         select: { userId: true }
       })
