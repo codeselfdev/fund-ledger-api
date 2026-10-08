@@ -1,4 +1,4 @@
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { env } from "../../config/env.js";
@@ -85,10 +85,34 @@ function getR2Client() {
   return cachedR2Client;
 }
 
-function getStorageMode() {
+export function getStorageMode() {
   if (env.uploadStorage === "local") return "local";
   if (env.uploadStorage === "r2") return "r2";
   throw new Error(`Unsupported UPLOAD_STORAGE value: ${env.uploadStorage}`);
+}
+
+export function getObjectStorageDiagnostics() {
+  const mode = getStorageMode();
+  if (mode === "local") {
+    return { mode, configured: true, bucket: null } as const;
+  }
+  try {
+    const config = getR2Config();
+    return { mode, configured: true, bucket: config.bucket } as const;
+  } catch {
+    return { mode, configured: false, bucket: env.uploadR2.bucket ?? null } as const;
+  }
+}
+
+export async function verifyObjectStorage() {
+  const mode = getStorageMode();
+  if (mode === "local") {
+    await mkdir(localUploadRoot, { recursive: true });
+    return getObjectStorageDiagnostics();
+  }
+  const config = getR2Config();
+  await getR2Client().send(new HeadBucketCommand({ Bucket: config.bucket }));
+  return getObjectStorageDiagnostics();
 }
 
 export function publicObjectUrl(storageKey: string) {

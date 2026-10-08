@@ -287,7 +287,9 @@ The API stores an FCM token against the authenticated tenant user via:
 
 ## Object Storage (Local or Cloudflare R2)
 
-Set `UPLOAD_STORAGE=local` (default) or `UPLOAD_STORAGE=r2`.
+Set `UPLOAD_STORAGE=local` or `UPLOAD_STORAGE=r2`. When it is empty, the API automatically selects
+R2 if the endpoint/account, access key, secret key, and bucket are all configured; otherwise it uses
+local storage. The selected provider is visible at `GET /health` and in upload responses.
 
 For R2, configure:
 
@@ -299,8 +301,19 @@ For R2, configure:
 - `R2_PUBLIC_URL` (optional public bucket URL; returned only for project-logo uploads)
 
 `/v1/uploads/*` and member document upload/view APIs use the same storage backend.
-New objects are stored as `tenant_id/project_id/purpose/unique-file-name`. Existing database keys
-remain valid and require no migration.
+New objects are stored as `tenant_id/project_id/purpose/unique-file-name`.
+
+After changing an existing deployment from local storage to R2, migrate files from the mounted local
+upload volume once from the running API container:
+
+```bash
+npm run storage:migrate-local-to-r2:prod
+```
+
+The command uploads only files still present in `UPLOAD_LOCAL_DIR`. Legacy keys are normalized to
+`tenant_id/project_id/purpose/file` and the upload record is updated after the R2 write succeeds. It
+reports how many objects were migrated or missing. A new upload response also contains
+`storage_provider`, which must be `r2` in an R2 deployment.
 
 ## Roles
 

@@ -34,6 +34,18 @@ function enabled(value: string | undefined): boolean {
   return value?.trim().toLowerCase() === "true";
 }
 
+function resolveUploadStorage() {
+  const explicit = optional("UPLOAD_STORAGE")?.toLowerCase();
+  if (explicit) return explicit;
+  const hasCompleteR2Config = Boolean(
+    (optional("R2_ENDPOINT") || optional("R2_ACCOUNT_ID"))
+    && optional("R2_ACCESS_KEY_ID")
+    && optional("R2_SECRET_ACCESS_KEY")
+    && optional("R2_BUCKET")
+  );
+  return hasCompleteR2Config ? "r2" : "local";
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? 4000),
@@ -42,7 +54,7 @@ export const env = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "7d",
   corsOrigin: process.env.CORS_ORIGIN ?? "*",
   trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
-  uploadStorage: (process.env.UPLOAD_STORAGE ?? "local").toLowerCase(),
+  uploadStorage: resolveUploadStorage(),
   uploadLocalDir: process.env.UPLOAD_LOCAL_DIR ?? "storage/uploads",
   uploadR2: {
     accountId: optional("R2_ACCOUNT_ID"),

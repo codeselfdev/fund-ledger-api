@@ -12,7 +12,9 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "create:super-admin": "tsx src/scripts/create-super-admin.ts",
-    "create:super-admin:prod": "node dist/scripts/create-super-admin.js"
+    "create:super-admin:prod": "node dist/scripts/create-super-admin.js",
+    "storage:migrate-local-to-r2": "tsx src/scripts/migrate-local-uploads-to-r2.ts",
+    "storage:migrate-local-to-r2:prod": "node dist/scripts/migrate-local-uploads-to-r2.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",

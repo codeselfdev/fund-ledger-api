@@ -24,6 +24,7 @@ Response:
   "data": {
     "file_id": "upload_123",
     "storage_key": "tenant/project/project_logo/...-logo.png",
+    "storage_provider": "r2",
     "view_url": "/v1/uploads/upload_123/view",
     "public_url": "https://pub-example.r2.dev/tenant/project/project_logo/...-logo.png"
   }
@@ -33,6 +34,26 @@ Response:
 Only an owner/admin can upload a project logo. The file must have an `image/*` MIME type.
 `public_url` is returned for project logos when `R2_PUBLIC_URL` is configured. Payment proofs and
 member documents continue to use authenticated view endpoints.
+
+Confirm the deployed API selected R2:
+
+```http
+GET /health
+```
+
+```json
+{
+  "ok": true,
+  "data": {
+    "status": "ok",
+    "storage": { "mode": "r2", "configured": true, "bucket": "fund-ledger" }
+  }
+}
+```
+
+If the logo was uploaded while the API reported `local`, set the R2 environment values, redeploy,
+then run `npm run storage:migrate-local-to-r2:prod` once inside the API container. Alternatively,
+upload the logo again after `/health` reports `r2`.
 
 ## 2. Set or Remove Logo
 

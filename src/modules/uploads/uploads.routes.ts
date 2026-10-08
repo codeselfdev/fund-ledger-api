@@ -10,7 +10,7 @@ import { requireProjectContext } from "../../core/security/auth.context.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateParams } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
-import { deleteObject, publicObjectUrl, readObject, StorageObjectNotFoundError, storeObject } from "../../core/storage/object-storage.service.js";
+import { deleteObject, getStorageMode, publicObjectUrl, readObject, StorageObjectNotFoundError, storeObject } from "../../core/storage/object-storage.service.js";
 
 const router = Router();
 const upload = multer({
@@ -47,7 +47,8 @@ router.post("/", requireProject, requireRoles("any"), upload.single("file"), asy
     storageKey,
     buffer: req.file.buffer,
     contentType: req.file.mimetype
-  }).catch(() => {
+  }).catch((error) => {
+    console.error("[uploads] storage write failed", { provider: getStorageMode(), storageKey, error });
     throw new ApiError(500, "STORAGE_WRITE_FAILED", "Failed to store attachment");
   });
 
@@ -83,6 +84,7 @@ router.post("/", requireProject, requireRoles("any"), upload.single("file"), asy
   return created(res, {
     file_id: record.id,
     storage_key: record.storageKey,
+    storage_provider: getStorageMode(),
     view_url: `/v1/uploads/${record.id}/view`,
     public_url: purpose === "project_logo" ? publicObjectUrl(record.storageKey) : null
   });

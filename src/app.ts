@@ -7,6 +7,7 @@ import { env, isProduction } from "./config/env.js";
 import { errorHandler } from "./core/http/error-handler.js";
 import { notFoundHandler } from "./core/http/not-found.js";
 import { registerRoutes } from "./routes.js";
+import { getObjectStorageDiagnostics } from "./core/storage/object-storage.service.js";
 
 export function createApp() {
   const app = express();
@@ -28,7 +29,7 @@ export function createApp() {
   }));
 
   app.get("/health", (_req, res) => {
-    res.json({ ok: true, data: { status: "ok" } });
+    res.json({ ok: true, data: { status: "ok", storage: getObjectStorageDiagnostics() } });
   });
 
   registerRoutes(app);

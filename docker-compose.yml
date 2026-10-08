@@ -36,7 +36,8 @@ services:
       JWT_EXPIRES_IN: 7d
       PROVISIONING_API_KEYS: replace-with-secret-key-from-billing-backend
       CORS_ORIGIN: http://localhost:3000
-      UPLOAD_STORAGE: ${UPLOAD_STORAGE:-local}
+      # Empty means: select R2 when complete R2 credentials are present, otherwise local storage.
+      UPLOAD_STORAGE: ${UPLOAD_STORAGE:-}
       UPLOAD_LOCAL_DIR: ${UPLOAD_LOCAL_DIR:-storage/uploads}
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
       R2_ENDPOINT: ${R2_ENDPOINT:-}
