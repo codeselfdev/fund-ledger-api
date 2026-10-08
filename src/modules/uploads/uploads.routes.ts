@@ -101,6 +101,12 @@ router.get("/:id/view", requireProject, requireRoles("any"), validateParams(idPa
   });
   if (!record) throw notFound("Attachment not found");
 
+  if (record.purpose?.startsWith("member_photo:") || record.purpose?.startsWith("member_document:")) {
+    const memberId = record.purpose.split(":")[1];
+    const staff = auth.roles.some(role => ["owner", "admin", "accountant", "approver", "auditor", "cashier"].includes(role));
+    if (!staff && auth.memberId !== memberId) throw forbidden();
+  }
+
   let fileBuffer: Buffer;
   let contentType: string | undefined;
   try {

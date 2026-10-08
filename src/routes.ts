@@ -16,6 +16,7 @@ import { inventoryRouter } from "./modules/inventory/inventory.routes.js";
 import { purchasesRouter } from "./modules/purchases/purchases.routes.js";
 import { salesRouter } from "./modules/sales/sales.routes.js";
 import { vendorsRouter } from "./modules/vendors/vendors.routes.js";
+import { memberProfileRouter } from "./modules/members/member-profile.routes.js";
 import { membersRouter } from "./modules/members/members.routes.js";
 import { memberDocumentsRouter } from "./modules/member-documents/member-documents.routes.js";
 import { membershipsRouter } from "./modules/memberships/memberships.routes.js";
@@ -42,6 +43,7 @@ export function registerRoutes(app: Express) {
   app.use(requireActiveSubscription);
   app.use("/v1/projects", projectsRouter);
   app.use("/v1/invitations", invitationsRouter);
+  app.use("/v1/members", memberProfileRouter);
   app.use("/v1/members", membersRouter);
   app.use("/v1", depositDelegatesRouter);
   app.use("/v1", memberDocumentsRouter);

@@ -27,9 +27,10 @@ router.get("/me/receipts", requireProject, requireRoles("member"), asyncHandler(
   return ok(res, receipts);
 }));
 
-router.get("/members/:id/receipts", requireProject, requireRoles("owner", "staff"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
+router.get("/members/:id/receipts", requireProject, requireRoles("any"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
+  if (!isSelfOrRole(auth, id, [...STAFF_ROLES, "owner"])) throw forbidden();
   const receipts = await prisma.receipt.findMany({
     where: { tenantId: auth.tenantId, projectId: auth.projectId, memberId: id },
     include: { deposit: true },

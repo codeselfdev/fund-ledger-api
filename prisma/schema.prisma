@@ -320,6 +320,7 @@ model Member {
   mobile    String
   email     String?
   address   String?
+  profile   Json?
   shares    Int
   status    MemberStatus @default(active)
   createdAt DateTime     @default(now()) @map("created_at")
