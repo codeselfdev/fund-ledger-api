@@ -19,6 +19,8 @@ Create requires title (2–120 characters), body (2–2000), and expires_at (ISO
 
 Patch accepts a nonempty subset of title, body, expiry, and image ID. Set image_file_id to null to remove an image. Omit unchanged expiry when editing an expired notice. Changed expiry must be in the future. Deleted notices cannot be edited. Editing updates existing notification text without resending push or WhatsApp messages.
 
+Delete is idempotent. It retains the notice as deleted admin history, removes it from all dashboards, and removes its related user inbox notifications. Audit history is retained and records before/after values for edits and the first deletion.
+
 Upload JPEG/PNG images with purpose notice_image. Owner/admin access, content signatures, project ownership, and size strictly below 2,000,000 bytes are validated. Mobile resizes/compresses images before upload.
 
 Lists return at most 200 newest records. Responses include id, title, body, expires_at, image_file_id, image_url, status (active/expired/deleted), deleted_at, created_at, and updated_at.
