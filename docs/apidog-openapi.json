@@ -1270,7 +1270,7 @@
     },
     "/v1/members/{id}/follow-up": {
       "get": {
-        "tags": ["Payment Follow-ups"], "summary": "Get a member follow-up detail",
+        "tags": ["Payment Follow-ups"], "summary": "Get a member follow-up detail", "description": "Roles: owner, admin, accountant, auditor. Returns follow-up data for the selected member within the active project.",
         "security": [{ "BearerAuth": [] }],
         "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }, { "name": "cursor", "in": "query", "schema": { "type": "string" } }],
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
@@ -1278,7 +1278,7 @@
     },
     "/v1/members/{id}/call-logs": {
       "post": {
-        "tags": ["Payment Follow-ups"], "summary": "Log a member call and commitment",
+        "tags": ["Payment Follow-ups"], "summary": "Log a member call and commitment", "description": "Roles: owner, admin, accountant. Creates an audited call log and optional payment commitment for the selected member.",
         "security": [{ "BearerAuth": [] }], "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CallLogCreate" } } } },
         "responses": { "201": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }

@@ -2,7 +2,7 @@
 
 Deploy migration `20261010090000_add_payment_followups` before releasing the API or mobile app. The API container runs `prisma migrate deploy` at startup.
 
-All endpoints require authentication and `X-Project-Id`. Read access is limited to owner, admin and auditor. Write access is limited to owner and admin. Members cannot read reliability or other members' follow-up data.
+All endpoints require authentication and `X-Project-Id`. Queue and ranking read access is limited to owner, admin and auditor. Member detail read access also includes accountant. Call logs may be added by owner, admin and accountant. Reminders and manual commitment resolution remain owner/admin-only. Members cannot read reliability or other members' follow-up data.
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
@@ -12,6 +12,10 @@ All endpoints require authentication and `X-Project-Id`. Read access is limited 
 | POST | `/v1/members/:id/call-logs` | Log a call and optionally create a commitment |
 | POST | `/v1/commitments/:id/resolve` | Manually resolve an open commitment without changing accounting |
 | POST | `/v1/members/:id/reminders` | Send the once-per-Dhaka-day payment push |
+
+## Member photos
+
+Queue, ranking and detail responses include `member.profile.photo_file_id` (string or null). Only this profile field is exposed in follow-up summaries. Use the existing authenticated `GET /v1/members/:id/photo` endpoint with `X-Project-Id` to load the photo; a changed file ID can be used to refresh the image cache. This response addition requires no database migration.
 
 ## Log a commitment
 

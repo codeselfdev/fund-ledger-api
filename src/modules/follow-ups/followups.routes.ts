@@ -19,6 +19,8 @@ import { commitmentPayload, getFollowupList, getMemberFollowup, getReliabilityRa
 const router = Router();
 const readRoles = requireRoles("owner", "admin", "auditor");
 const writeRoles = requireRoles("owner", "admin");
+const memberReadRoles = requireRoles("owner", "admin", "accountant", "auditor");
+const callLogRoles = requireRoles("owner", "admin", "accountant");
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 
 router.get("/follow-ups", requireProject, readRoles, validateQuery(followupsQuerySchema), asyncHandler(async (req, res) => {
@@ -33,7 +35,7 @@ router.get("/follow-ups/reliability", requireProject, readRoles, validateQuery(r
   return ok(res, await getReliabilityRanking({ tenantId: auth.tenantId, projectId: auth.projectId }, tier));
 }));
 
-router.get("/members/:id/follow-up", requireProject, readRoles, validateParams(idParamSchema), validateQuery(timelineQuerySchema), asyncHandler(async (req, res) => {
+router.get("/members/:id/follow-up", requireProject, memberReadRoles, validateParams(idParamSchema), validateQuery(timelineQuerySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
   const cursor = Number((req.query as z.infer<typeof timelineQuerySchema>).cursor ?? 0);
@@ -42,7 +44,7 @@ router.get("/members/:id/follow-up", requireProject, readRoles, validateParams(i
   return ok(res, detail);
 }));
 
-router.post("/members/:id/call-logs", requireProject, writeRoles, validateParams(idParamSchema), validateBody(callLogSchema), asyncHandler(async (req, res) => {
+router.post("/members/:id/call-logs", requireProject, callLogRoles, validateParams(idParamSchema), validateBody(callLogSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id: memberId } = req.params as z.infer<typeof idParamSchema>;
   const body = req.body as z.infer<typeof callLogSchema>;

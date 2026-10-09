@@ -357,8 +357,8 @@ Owner/admin can log member calls, payment commitments, manual commitment outcome
 | --- | --- | --- |
 | GET | `/v1/follow-ups?tab=need\|upcoming\|settled` | owner, admin, auditor |
 | GET | `/v1/follow-ups/reliability?tier=all\|reliable\|watch\|at_risk` | owner, admin, auditor |
-| GET | `/v1/members/:id/follow-up` | owner, admin, auditor |
-| POST | `/v1/members/:id/call-logs` | owner, admin |
+| GET | `/v1/members/:id/follow-up` | owner, admin, accountant, auditor |
+| POST | `/v1/members/:id/call-logs` | owner, admin, accountant |
 | POST | `/v1/commitments/:id/resolve` | owner, admin |
 | POST | `/v1/members/:id/reminders` | owner, admin |
 

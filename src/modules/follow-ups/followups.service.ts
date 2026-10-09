@@ -25,8 +25,13 @@ export function commitmentPayload(commitment: PaymentCommitment, now = new Date(
   };
 }
 
-function memberPayload(member: { id: string; name: string; mobile: string; shares: number }) {
-  return { id: member.id, name: member.name, mobile: member.mobile, shares: member.shares };
+function memberPayload(member: { id: string; name: string; mobile: string; shares: number; profile: Prisma.JsonValue | null }) {
+  const profile = member.profile && typeof member.profile === "object" && !Array.isArray(member.profile) ? member.profile : null;
+  const photoId = profile?.photo_file_id;
+  return {
+    id: member.id, name: member.name, mobile: member.mobile, shares: member.shares,
+    profile: { photo_file_id: typeof photoId === "string" && photoId ? photoId : null }
+  };
 }
 
 export async function resolveCommitmentsForDeposit(
@@ -89,7 +94,7 @@ async function projectSnapshot(scope: Scope, now = new Date()) {
   const [members, commitments, dues, reminders] = await Promise.all([
     prisma.member.findMany({
       where: { ...scope, status: "active" },
-      select: { id: true, name: true, mobile: true, shares: true },
+      select: { id: true, name: true, mobile: true, shares: true, profile: true },
       orderBy: { name: "asc" }
     }),
     prisma.paymentCommitment.findMany({ where: scope, orderBy: { createdAt: "desc" } }),
@@ -232,7 +237,7 @@ export async function getMemberFollowup(scope: Scope, memberId: string, cursor =
     })
   ]);
   const timeline = [
-    ...commitments.map(item => ({ id: item.id, kind: "commitment" as const, created_at: item.createdAt, commitment: commitmentPayload(item, now) })),
+    ...commitments.map(item => ({ id: item.id, kind: "commitment" as const, created_at: item.createdAt, created_by_name: callLogs.find(log => log.commitment?.id === item.id)?.createdBy.name, commitment: commitmentPayload(item, now) })),
     ...callLogs.filter(item => !item.commitment).map(item => ({ id: item.id, kind: "call_log" as const, created_at: item.calledAt, summary: item.summary, outcome: item.outcome, created_by_name: item.createdBy.name })),
     ...reminders.map(item => ({ id: item.id, kind: "reminder" as const, created_at: item.sentAt, created_by_name: item.sentBy.name }))
   ].sort((a, b) => b.created_at.getTime() - a.created_at.getTime());

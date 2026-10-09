@@ -592,7 +592,7 @@ the local session even if either network call fails.
 
 ## Payment follow-ups
 
-Show Follow-ups only for `owner`, `admin`, and `auditor`; only owner/admin may render Log call, Remind, and Mark as paid actions. Use `GET /v1/follow-ups?tab=need` for the navigation badge and never enable Remind from the device date. The server-provided `reminder.available` is authoritative and should be refreshed when the app returns to the foreground.
+Show the Follow-ups queue and ranking only for `owner`, `admin`, and `auditor`. Add a member Follow-up button for `owner`, `admin`, `accountant`, and `auditor`. Owner/admin/accountant may render Log call on member details; Remind and Mark as paid remain owner/admin-only. Use `GET /v1/follow-ups?tab=need` for the navigation badge and never enable Remind from the device date. The server-provided `reminder.available` is authoritative and should be refreshed when the app returns to the foreground.
 
 After a call log, manual resolution, or reminder, invalidate the follow-up list, member detail, reliability ranking, and badge count. A reminder response with `delivered_count: 0` should show “Member has no app account — call instead”. A `409 REMINDER_ALREADY_SENT_TODAY` keeps the button disabled.
 
