@@ -349,6 +349,21 @@ Event creation requires `title`, `place`, `agenda`, and ISO-8601 `starts_at`. Ac
 members receive an in-app/device reminder every two hours. Event reminders are sent to every active
 project user one hour and ten minutes before the start time.
 
+## Payment follow-ups
+
+Owner/admin can log member calls, payment commitments, manual commitment outcomes, and one payment reminder per member per Dhaka day. Auditors have read-only access to the queue and reliability ranking.
+
+| Method | Path | Role |
+| --- | --- | --- |
+| GET | `/v1/follow-ups?tab=need\|upcoming\|settled` | owner, admin, auditor |
+| GET | `/v1/follow-ups/reliability?tier=all\|reliable\|watch\|at_risk` | owner, admin, auditor |
+| GET | `/v1/members/:id/follow-up` | owner, admin, auditor |
+| POST | `/v1/members/:id/call-logs` | owner, admin |
+| POST | `/v1/commitments/:id/resolve` | owner, admin |
+| POST | `/v1/members/:id/reminders` | owner, admin |
+
+See `docs/PAYMENT_FOLLOWUPS_API.md` for payloads, errors, automatic deposit resolution, Dhaka date rules, and scoring.
+
 ## Enum Reference
 
 - `deposit.status`: `submitted`, `pending_accountant`, `pending_approver`, `confirmed`, `rejected`

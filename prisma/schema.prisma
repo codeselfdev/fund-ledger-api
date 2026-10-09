@@ -151,6 +151,22 @@ enum StockMovementType {
   adjustment_decrease
 }
 
+enum CommitmentStatus {
+  pending
+  kept
+  kept_late
+  broken
+  rescheduled
+  cancelled
+}
+
+enum CallOutcome {
+  committed
+  no_answer
+  claims_paid
+  dispute
+}
+
 model Tenant {
   id            String     @id @default(cuid())
   name          String
@@ -211,6 +227,9 @@ model Project {
   purchases           Purchase[]
   sales               Sale[]
   whatsappConnection  WhatsAppConnection?
+  memberCallLogs      MemberCallLog[]
+  paymentCommitments  PaymentCommitment[]
+  memberReminders     MemberReminder[]
 
   @@index([tenantId])
   @@map("projects")
@@ -286,6 +305,10 @@ model User {
   pollVotes          PollVote[]          @relation("PollVoter")
   createdNotices     ProjectNotice[]     @relation("ProjectNoticeCreator")
   createdEvents      ProjectEvent[]      @relation("ProjectEventCreator")
+  createdCallLogs    MemberCallLog[]      @relation("MemberCallLogCreator")
+  createdCommitments PaymentCommitment[]  @relation("PaymentCommitmentCreator")
+  resolvedCommitments PaymentCommitment[] @relation("PaymentCommitmentResolver")
+  sentReminders      MemberReminder[]     @relation("MemberReminderSender")
 
   @@unique([tenantId, mobile])
   @@index([tenantId])
@@ -335,6 +358,9 @@ model Member {
   dues        Due[]
   deposits    Deposit[]
   receipts    Receipt[]
+  callLogs    MemberCallLog[]
+  commitments PaymentCommitment[]
+  reminders   MemberReminder[]
 
   @@unique([tenantId, projectId, mobile])
   @@index([tenantId, projectId])
@@ -453,6 +479,7 @@ model Due {
   penaltyPaid Int       @default(0) @map("penalty_paid")
   status      DueStatus @default(due)
   dueDate     DateTime  @map("due_date")
+  paidAt      DateTime? @map("paid_at")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
@@ -515,6 +542,7 @@ model Deposit {
   account     Account?            @relation(fields: [accountId], references: [id])
   receipt     Receipt?
   allocations DepositAllocation[]
+  resolvedCommitments PaymentCommitment[] @relation("CommitmentResolvedDeposit")
 
   @@index([tenantId, projectId, status])
   @@index([tenantId, projectId, memberId])
@@ -877,6 +905,80 @@ model Notification {
 
   @@index([tenantId, projectId, recipientUserId, readAt])
   @@map("notifications")
+}
+
+model MemberCallLog {
+  id          String      @id @default(cuid())
+  tenantId    String      @map("tenant_id")
+  projectId   String      @map("project_id")
+  memberId    String      @map("member_id")
+  outcome     CallOutcome
+  summary     String?
+  calledAt    DateTime    @default(now()) @map("called_at")
+  createdById String      @map("created_by_id")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  project    Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  member     Member             @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  createdBy  User               @relation("MemberCallLogCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  commitment PaymentCommitment?
+
+  @@index([tenantId, projectId, memberId, calledAt])
+  @@map("member_call_logs")
+}
+
+model PaymentCommitment {
+  id                  String           @id @default(cuid())
+  tenantId            String           @map("tenant_id")
+  projectId           String           @map("project_id")
+  memberId            String           @map("member_id")
+  callLogId           String?          @unique @map("call_log_id")
+  amount              Int
+  promisedDate        DateTime         @db.Date @map("promised_date")
+  summary             String
+  status              CommitmentStatus @default(pending)
+  outstandingAtCreate Int              @map("outstanding_at_create")
+  supersededById      String?          @map("superseded_by_id")
+  resolvedAt          DateTime?        @map("resolved_at")
+  resolvedById        String?          @map("resolved_by_id")
+  resolvedDepositId   String?          @map("resolved_deposit_id")
+  resolveReason       String?          @map("resolve_reason")
+  createdById         String           @map("created_by_id")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  project         Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  member          Member              @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  callLog         MemberCallLog?      @relation(fields: [callLogId], references: [id], onDelete: SetNull)
+  createdBy       User                @relation("PaymentCommitmentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  resolvedBy      User?               @relation("PaymentCommitmentResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedDeposit Deposit?            @relation("CommitmentResolvedDeposit", fields: [resolvedDepositId], references: [id], onDelete: SetNull)
+  supersededBy    PaymentCommitment?  @relation("CommitmentSupersession", fields: [supersededById], references: [id], onDelete: SetNull)
+  supersedes      PaymentCommitment[] @relation("CommitmentSupersession")
+
+  @@index([tenantId, projectId, status, promisedDate])
+  @@index([tenantId, projectId, memberId, createdAt])
+  @@map("payment_commitments")
+}
+
+model MemberReminder {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  projectId      String   @map("project_id")
+  memberId       String   @map("member_id")
+  reminderDate   DateTime @db.Date @map("reminder_date")
+  outstanding    Int
+  deliveredCount Int      @map("delivered_count")
+  sentById       String   @map("sent_by_id")
+  sentAt         DateTime @default(now()) @map("sent_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  sentBy  User    @relation("MemberReminderSender", fields: [sentById], references: [id], onDelete: Restrict)
+
+  @@unique([projectId, memberId, reminderDate])
+  @@index([tenantId, projectId, memberId, sentAt])
+  @@map("member_reminders")
 }
 
 model Poll {

@@ -33,6 +33,7 @@ import { onboardingRouter } from "./modules/onboarding/onboarding.routes.js";
 import { whatsappRouter } from "./modules/integrations/whatsapp.routes.js";
 import { noticesRouter } from "./modules/community/notices.routes.js";
 import { eventsRouter, pollsRouter } from "./modules/community/community.routes.js";
+import { followupsRouter } from "./modules/follow-ups/followups.routes.js";
 
 export function registerRoutes(app: Express) {
   app.use("/v1/tenants", tenantsRouter);
@@ -72,4 +73,5 @@ export function registerRoutes(app: Express) {
   app.use("/v1/polls", pollsRouter);
   app.use("/v1/events", eventsRouter);
   app.use("/v1/notices", noticesRouter);
+  app.use("/v1", followupsRouter);
 }

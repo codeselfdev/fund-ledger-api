@@ -236,7 +236,8 @@ export async function settleMemberBalance(input: {
             data: {
               penaltyPaid: due.penaltyPaid,
               paidAmount: due.paidAmount,
-              status: afterBalance.total === 0 ? "paid" : "partial"
+              status: afterBalance.total === 0 ? "paid" : "partial",
+              paidAt: afterBalance.total === 0 ? new Date() : due.paidAt
             }
           });
           const allocation = await tx.depositAllocation.upsert({
@@ -302,7 +303,8 @@ export async function settleMemberBalance(input: {
           data: {
             waivedAmount: { increment: balance.principal },
             penaltyDue: due.penaltyPaid,
-            status: "waived"
+            status: "waived",
+            paidAt: new Date()
           }
         });
         writeOffs.push({

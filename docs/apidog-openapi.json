@@ -34,7 +34,8 @@
     { "name": "Dashboard" },
     { "name": "Activity" },
     { "name": "Notifications" },
-    { "name": "Penalties" }
+    { "name": "Penalties" },
+    { "name": "Payment Follow-ups" }
   ],
   "paths": {
     "/health": {
@@ -1250,6 +1251,53 @@
         "requestBody": { "$ref": "#/components/requestBodies/Reason" },
         "responses": { "200": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
       }
+    },
+    "/v1/follow-ups": {
+      "get": {
+        "tags": ["Payment Follow-ups"], "summary": "List payment follow-ups",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "name": "tab", "in": "query", "schema": { "type": "string", "enum": ["need", "upcoming", "settled"] } }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "403": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/follow-ups/reliability": {
+      "get": {
+        "tags": ["Payment Follow-ups"], "summary": "Rank member payment reliability",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "name": "tier", "in": "query", "schema": { "type": "string", "enum": ["all", "reliable", "watch", "at_risk"] } }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" } }
+      }
+    },
+    "/v1/members/{id}/follow-up": {
+      "get": {
+        "tags": ["Payment Follow-ups"], "summary": "Get a member follow-up detail",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }, { "name": "cursor", "in": "query", "schema": { "type": "string" } }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/members/{id}/call-logs": {
+      "post": {
+        "tags": ["Payment Follow-ups"], "summary": "Log a member call and commitment",
+        "security": [{ "BearerAuth": [] }], "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CallLogCreate" } } } },
+        "responses": { "201": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/commitments/{id}/resolve": {
+      "post": {
+        "tags": ["Payment Follow-ups"], "summary": "Manually resolve a commitment",
+        "security": [{ "BearerAuth": [] }], "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CommitmentResolve" } } } },
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/v1/members/{id}/reminders": {
+      "post": {
+        "tags": ["Payment Follow-ups"], "summary": "Send today's payment reminder",
+        "security": [{ "BearerAuth": [] }], "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }, { "$ref": "#/components/parameters/IdPath" }],
+        "responses": { "200": { "$ref": "#/components/responses/Success" }, "409": { "$ref": "#/components/responses/Error" }, "422": { "$ref": "#/components/responses/Error" } }
+      }
     }
   },
   "components": {
@@ -1459,6 +1507,18 @@
             "example": { "account_id": "acc_citybank" }
           }
         }
+      },
+      "CallLogCreate": {
+        "type": "object", "required": ["outcome"],
+        "properties": {
+          "outcome": { "type": "string", "enum": ["committed", "no_answer", "claims_paid", "dispute"] },
+          "summary": { "type": "string", "maxLength": 500 },
+          "commitment": { "type": "object", "required": ["promised_date", "amount"], "properties": { "promised_date": { "type": "string", "format": "date" }, "amount": { "type": "integer", "minimum": 1 } } }
+        }
+      },
+      "CommitmentResolve": {
+        "type": "object", "required": ["status", "reason"],
+        "properties": { "status": { "type": "string", "enum": ["kept", "kept_late", "cancelled"] }, "reason": { "type": "string", "minLength": 3, "maxLength": 500 } }
       },
       "TransferCreate": {
         "required": true,

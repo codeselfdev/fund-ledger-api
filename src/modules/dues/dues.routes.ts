@@ -13,6 +13,7 @@ import { validateBody, validateParams, validateQuery } from "../../core/validati
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { notifyProjectMembers } from "../../core/notifications/notification.service.js";
 import { calculateDueBalance } from "../members/member-settlement.service.js";
+import { getMemberOutstanding } from "./outstanding.service.js";
 
 const router = Router();
 
@@ -48,10 +49,11 @@ router.get("/me/summary", requireProject, requireRoles("member"), asyncHandler(a
   const auth = requireProjectContext(req);
   const memberId = requireMember(auth);
 
-  const [member, dues, deposits] = await Promise.all([
+  const [member, dues, deposits, outstanding] = await Promise.all([
     prisma.member.findFirstOrThrow({ where: { id: memberId, tenantId: auth.tenantId, projectId: auth.projectId } }),
     prisma.due.findMany({ where: { tenantId: auth.tenantId, projectId: auth.projectId, memberId } }),
-    prisma.deposit.findMany({ where: { tenantId: auth.tenantId, projectId: auth.projectId, memberId } })
+    prisma.deposit.findMany({ where: { tenantId: auth.tenantId, projectId: auth.projectId, memberId } }),
+    getMemberOutstanding(auth.tenantId, auth.projectId, memberId)
   ]);
 
   const verifiedContribution = deposits
@@ -60,8 +62,6 @@ router.get("/me/summary", requireProject, requireRoles("member"), asyncHandler(a
   const pending = deposits
     .filter((deposit) => deposit.status === "pending_accountant" || deposit.status === "pending_approver")
     .reduce((sum, deposit) => sum + deposit.amount, 0);
-  const outstanding = dues.reduce((sum, due) =>
-    sum + calculateDueBalance(due).total, 0);
   const penaltyDue = dues.reduce((sum, due) => sum + Math.max(0, due.penaltyDue - due.penaltyPaid), 0);
   const project = await prisma.project.findFirstOrThrow({ where: { id: auth.projectId, tenantId: auth.tenantId } });
 
@@ -121,6 +121,7 @@ router.post("/dues/:id/penalty/waive", requireProject, requireRoles("approver"),
   if (due.penaltyDue <= due.penaltyPaid) throw badRequest("No outstanding penalty to waive");
 
   const before = due;
+  const fullySettled = due.paidAmount + due.waivedAmount >= due.amount;
   const updated = await prisma.$transaction(async (tx) => {
     await tx.duePenaltyEntry.updateMany({
       where: { tenantId: auth.tenantId, projectId: auth.projectId, dueId: id, waivedAt: null },
@@ -131,7 +132,8 @@ router.post("/dues/:id/penalty/waive", requireProject, requireRoles("approver"),
       where: { id },
       data: {
         penaltyDue: due.penaltyPaid,
-        status: due.paidAmount + due.waivedAmount >= due.amount ? "paid" : due.status
+        status: fullySettled ? "paid" : due.status,
+        paidAt: fullySettled ? (due.paidAt ?? new Date()) : due.paidAt
       }
     });
   });

@@ -86,7 +86,8 @@ async function applyAdvanceToNewDues(tx: Prisma.TransactionClient, input: {
         where: { id: due.id },
         data: {
           paidAmount: { increment: appliedForDue },
-          status: dueRemaining <= 0 ? "paid" : "partial"
+          status: dueRemaining <= 0 ? "paid" : "partial",
+          paidAt: dueRemaining <= 0 ? new Date() : null
         }
       });
     }

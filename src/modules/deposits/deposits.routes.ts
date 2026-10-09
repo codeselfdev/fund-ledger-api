@@ -15,6 +15,7 @@ import { sendDecisionEmail } from "../../core/mail/mailer.service.js";
 import { canUserPayOnBehalf } from "../../core/security/deposit-delegate.service.js";
 import { calculateDueBalance } from "../members/member-settlement.service.js";
 import { sendWhatsAppGroupMessage } from "../../core/whatsapp/whatsapp.service.js";
+import { resolveCommitmentsForDeposit } from "../follow-ups/followups.service.js";
 
 const router = Router();
 const MEMBER_RECEIPT_REQUIRED_MESSAGE = "Please upload a receipt before submitting this payment";
@@ -252,7 +253,9 @@ async function finalizeDepositConfirmation(input: {
         data: {
           paidAmount: allocation.paidAmount,
           penaltyPaid: allocation.penaltyPaid,
-          status: allocation.status
+          status: allocation.status,
+          // Submission time is the member-controlled payment time; approval delay must not count as late.
+          paidAt: allocation.status === "paid" ? (due.paidAt ?? deposit.createdAt) : due.paidAt
         }
       });
 
@@ -282,7 +285,9 @@ async function finalizeDepositConfirmation(input: {
       }
     });
 
-    return { deposit, receipt, accountTransaction };
+    const resolvedCommitment = await resolveCommitmentsForDeposit(tx, deposit, input.auth.userId);
+
+    return { deposit, receipt, accountTransaction, resolvedCommitment };
   });
 
   return { ...result, receiptNo, accountBalanceBefore: account.balance };
@@ -348,7 +353,9 @@ async function finalizeAdvanceDepositConfirmation(input: {
       }
     });
 
-    return { deposit, receipt, accountTransaction };
+    const resolvedCommitment = await resolveCommitmentsForDeposit(tx, deposit, input.auth.userId);
+
+    return { deposit, receipt, accountTransaction, resolvedCommitment };
   });
 
   return { ...result, receiptNo, accountBalanceBefore: account.balance };
