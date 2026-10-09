@@ -96,7 +96,7 @@ async function getExpenseApprovalFlow(tenantId: string) {
   return progress?.expenseApprovalFlow ?? "accountant_and_approver";
 }
 
-router.post("/", requireProject, validateBody(expenseBodySchema), asyncHandler(async (req, res) => {
+router.post("/", requireProject, requireRoles("owner", "staff", "cashier"), validateBody(expenseBodySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const body = req.body as z.infer<typeof expenseBodySchema>;
   const approvalFlow = await getExpenseApprovalFlow(auth.tenantId);
@@ -232,7 +232,7 @@ router.post("/", requireProject, validateBody(expenseBodySchema), asyncHandler(a
   return created(res, expense);
 }));
 
-router.get("/", requireProject, requireRoles("staff"), validateQuery(expenseQuerySchema), asyncHandler(async (req, res) => {
+router.get("/", requireProject, requireRoles("staff", "member"), validateQuery(expenseQuerySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const query = req.query as z.infer<typeof expenseQuerySchema>;
   const expenses = await prisma.expense.findMany({
@@ -246,7 +246,7 @@ router.get("/", requireProject, requireRoles("staff"), validateQuery(expenseQuer
   return ok(res, expenses);
 }));
 
-router.get("/by-category", requireProject, requireRoles("owner", "staff"), validateQuery(expenseQuerySchema), asyncHandler(async (req, res) => {
+router.get("/by-category", requireProject, requireRoles("owner", "staff", "member"), validateQuery(expenseQuerySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const query = req.query as z.infer<typeof expenseQuerySchema>;
   const expenses = await prisma.expense.findMany({

@@ -8,7 +8,7 @@ import { created, ok } from "../../core/http/response.js";
 import { prisma } from "../../core/prisma/client.js";
 import { requireProject, requireRoles } from "../../core/security/auth.middleware.js";
 import { isSelfOrRole, requireProjectContext } from "../../core/security/auth.context.js";
-import { STAFF_ROLES } from "../../core/security/roles.js";
+import { hasAnyRole, STAFF_ROLES } from "../../core/security/roles.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams, validateQuery } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
@@ -246,14 +246,15 @@ async function ensurePreviousInstallmentSchedule(tx: Prisma.TransactionClient, i
   });
 }
 
-router.get("/", requireProject, requireRoles("owner", "staff"), validateQuery(memberQuerySchema), asyncHandler(async (req, res) => {
+router.get("/", requireProject, requireRoles("owner", "staff", "member"), validateQuery(memberQuerySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const query = req.query as z.infer<typeof memberQuerySchema>;
+  const directoryOnly = !hasAnyRole(auth.roles, ["owner", "staff"]);
   const members = await prisma.member.findMany({
     where: {
       tenantId: auth.tenantId,
       projectId: auth.projectId,
-      status: query.status ?? "active",
+      status: directoryOnly ? "active" : query.status ?? "active",
       ...(query.search ? {
         OR: [
           { name: { contains: query.search, mode: "insensitive" } },
@@ -287,7 +288,22 @@ router.get("/", requireProject, requireRoles("owner", "staff"), validateQuery(me
   }));
 
   return ok(res, members.map((member) => ({
-    ...member,
+    ...(directoryOnly ? {
+      id: member.id,
+      tenantId: member.tenantId,
+      projectId: member.projectId,
+      userId: null,
+      name: member.name,
+      mobile: member.mobile,
+      email: null,
+      address: null,
+      shares: member.shares,
+      status: member.status,
+      createdAt: member.createdAt,
+      updatedAt: member.updatedAt,
+      profile: member.profile && typeof member.profile === "object" && !Array.isArray(member.profile)
+        ? { photo_file_id: member.profile.photo_file_id } : null
+    } : member),
     due_amount: dueByMember.get(member.id) ?? 0
   })));
 }));
@@ -1254,11 +1270,11 @@ router.patch("/:id", requireProject, requireRoles("owner", "accountant", "admin"
       updated = await tx.member.update({ where: { id }, data: { userId } });
     } else if (userId && (body.name !== undefined || body.mobile !== undefined || body.email !== undefined)) {
       await tx.user.update({
-        where: { id: userId },
+        where: { id: userId, tenantId: auth.tenantId },
         data: {
-          name: updated.name,
-          mobile: updated.mobile,
-          email: updated.email
+          name: body.name,
+          mobile: body.mobile,
+          email: body.email
         }
       });
     }

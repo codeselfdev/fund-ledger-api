@@ -21,12 +21,12 @@ import { calculateDueBalance } from "./member-settlement.service.js";
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const readers = ["owner", "admin", "accountant", "approver", "auditor", "cashier"] as const;
-async function memberFor(req: Parameters<typeof requireProjectContext>[0], edit = false) {
+async function memberFor(req: Parameters<typeof requireProjectContext>[0], edit = false, directoryPhoto = false) {
   const auth = requireProjectContext(req);
   const id = String(req.params.id);
   if (edit) assertProfileEditAllowed(auth, id);
-  else if (!isSelfOrRole(auth, id, [...readers])) throw forbidden();
-  const member = await prisma.member.findFirst({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId } });
+  else if (!isSelfOrRole(auth, id, [...readers]) && !(directoryPhoto && auth.roles.includes("member"))) throw forbidden();
+  const member = await prisma.member.findFirst({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId, ...(directoryPhoto && !isSelfOrRole(auth, id, [...readers]) ? { status: "active" } : {}) } });
   if (!member) throw notFound("Member not found");
   return { auth, member };
 }
@@ -57,8 +57,8 @@ router.patch("/:id/profile", requireProject, requireRoles("any"), validateParams
       name, mobile, email, address,
       profile: { ...profile, ...fields } as Prisma.InputJsonValue
     } });
-    if (current.userId && (name !== undefined || mobile !== undefined)) {
-      await tx.user.update({ where: { id: current.userId }, data: { name, mobile } });
+    if (current.userId && (name !== undefined || mobile !== undefined || email !== undefined)) {
+      await tx.user.update({ where: { id: current.userId, tenantId: auth.tenantId }, data: { name, mobile, email } });
     }
     return updated;
   });
@@ -96,7 +96,7 @@ router.post("/:id/photo", requireProject, requireRoles("any"), validateParams(id
 }));
 
 router.get("/:id/photo", requireProject, requireRoles("any"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
-  const { auth, member } = await memberFor(req);
+  const { auth, member } = await memberFor(req, false, true);
   const photoId = (member.profile as Record<string, unknown> | null)?.photo_file_id;
   if (typeof photoId !== "string") throw notFound("Member photo not found");
   const record = await prisma.upload.findFirst({ where: { id: photoId, tenantId: auth.tenantId, projectId: auth.projectId, purpose: `member_photo:${member.id}` } });

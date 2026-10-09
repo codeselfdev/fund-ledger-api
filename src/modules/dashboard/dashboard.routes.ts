@@ -118,7 +118,7 @@ router.get("/dashboard", requireProject, requireRoles("staff", "admin", "owner")
   });
 }));
 
-router.get("/ledger", requireProject, requireRoles("staff"), validateQuery(ledgerQuerySchema), asyncHandler(async (req, res) => {
+router.get("/ledger", requireProject, requireRoles("staff", "member"), validateQuery(ledgerQuerySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const query = req.query as z.infer<typeof ledgerQuerySchema>;
   const transactions = await prisma.accountTransaction.findMany({
