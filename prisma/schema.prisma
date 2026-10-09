@@ -201,6 +201,7 @@ model Project {
   notifications      Notification[]
   activity           Activity[]
   polls              Poll[]
+  notices            ProjectNotice[]
   events             ProjectEvent[]
   vendors            Vendor[]
   expenseCategoryDefs ExpenseCategoryDef[]
@@ -283,6 +284,7 @@ model User {
   activity           Activity[]
   createdPolls       Poll[]              @relation("PollCreator")
   pollVotes          PollVote[]          @relation("PollVoter")
+  createdNotices     ProjectNotice[]     @relation("ProjectNoticeCreator")
   createdEvents      ProjectEvent[]      @relation("ProjectEventCreator")
 
   @@unique([tenantId, mobile])
@@ -975,4 +977,22 @@ model Activity {
 
   @@index([tenantId, projectId, createdAt])
   @@map("activity")
+}
+
+model ProjectNotice {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  projectId   String   @map("project_id")
+  title       String
+  body        String
+  imageFileId String?  @map("image_file_id")
+  expiresAt   DateTime @map("expires_at")
+  deletedAt   DateTime? @map("deleted_at")
+  createdById String   @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy   User @relation("ProjectNoticeCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  @@index([tenantId, projectId, expiresAt, deletedAt])
+  @@map("project_notices")
 }

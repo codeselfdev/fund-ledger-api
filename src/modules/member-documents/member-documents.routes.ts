@@ -1,3 +1,4 @@
+import { assertImageUploadSize } from "../../core/storage/upload-image-policy.js";
 import { Router } from "express";
 import multer from "multer";
 import { nanoid } from "nanoid";
@@ -180,6 +181,7 @@ router.post("/members/:id/documents", requireProject, requireRoles("any"), valid
   const body = memberDocumentUploadSchema.parse(req.body);
   if (!hasMemberDocumentAccess(auth, memberId)) throw forbidden();
   if (!req.file) throw badRequest("file is required");
+  assertImageUploadSize(req.file);
 
   const [member, tenant] = await Promise.all([
     prisma.member.findFirst({

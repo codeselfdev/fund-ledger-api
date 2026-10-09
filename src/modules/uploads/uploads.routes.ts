@@ -1,3 +1,4 @@
+import { assertImageUploadSize } from "../../core/storage/upload-image-policy.js";
 import { Router } from "express";
 import multer from "multer";
 import { nanoid } from "nanoid";
@@ -34,7 +35,17 @@ function purposeFolder(value: string | undefined) {
 router.post("/", requireProject, requireRoles("any"), upload.single("file"), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   if (!req.file) throw badRequest("file is required");
+  assertImageUploadSize(req.file);
   const purpose = typeof req.body.purpose === "string" ? req.body.purpose : undefined;
+
+  if (purpose === "notice_image" && !auth.roles.some(role => role === "owner" || role === "admin")) throw forbidden("Only admins can upload notice images");
+  if (purpose === "notice_image") {
+    const jpeg = req.file.buffer[0] === 0xff && req.file.buffer[1] === 0xd8 && req.file.buffer[2] === 0xff;
+    const png = req.file.buffer.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
+    if (!jpeg && !png) throw badRequest("Notice image must be a JPG or PNG");
+    req.file.mimetype = jpeg ? "image/jpeg" : "image/png";
+    assertImageUploadSize(req.file);
+  }
 
   if (purpose === "project_logo") {
     const canManageProject = auth.roles.includes("owner") || auth.roles.includes("admin");
@@ -103,6 +114,10 @@ router.get("/:id/view", requireProject, requireRoles("any"), validateParams(idPa
   });
   if (!record) throw notFound("Attachment not found");
 
+  if (record.purpose === "notice_image" && !auth.roles.some(role => role === "owner" || role === "admin")) {
+    const notice = await prisma.projectNotice.findFirst({ where: { tenantId: auth.tenantId, projectId: auth.projectId, imageFileId: record.id, deletedAt: null, expiresAt: { gt: new Date() } } });
+    if (!notice) throw forbidden("Notice image is no longer available");
+  }
   if (record.purpose?.startsWith("member_photo:") || record.purpose?.startsWith("member_document:")) {
     const memberId = record.purpose.split(":")[1];
     const staff = auth.roles.some(role => ["owner", "admin", "accountant", "approver", "auditor", "cashier"].includes(role));

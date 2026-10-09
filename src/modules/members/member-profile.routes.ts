@@ -1,3 +1,4 @@
+import { assertImageUploadSize } from "../../core/storage/upload-image-policy.js";
 import { Router } from "express";
 import multer from "multer";
 import { nanoid } from "nanoid";
@@ -72,6 +73,7 @@ router.post("/:id/photo", requireProject, requireRoles("any"), validateParams(id
   const { auth, member } = await memberFor(req, true);
   const file = req.file;
   if (!file) throw badRequest("Choose a photo");
+  assertImageUploadSize({ ...file, mimetype: "image/jpeg" });
   const jpeg = file.buffer[0] === 0xff && file.buffer[1] === 0xd8 && file.buffer[2] === 0xff;
   const png = file.buffer.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
   if (!jpeg && !png) throw badRequest("Photo must be a JPG or PNG image");

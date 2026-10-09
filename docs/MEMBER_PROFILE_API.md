@@ -10,7 +10,7 @@ All endpoints require bearer authentication and an active project (`X-Project-Id
 - `GET /v1/members/:id/dues` returns assigned schedules, penalties and outstanding amounts.
 - `GET /v1/members/:id/payments` returns confirmed, pending and rejected payment submissions.
 - `PATCH /v1/members/:id/profile` updates contact/profile fields.
-- `POST /v1/members/:id/photo` accepts multipart `file`, JPG or PNG, up to 5 MB.
+- `POST /v1/members/:id/photo` accepts multipart `file`, JPG or PNG, strictly below 2 MB (2,000,000 bytes). The app resizes photos to at most 1,600 pixels on the longest side and compresses them before upload. The API rejects oversized images before writing to R2.
 - `GET /v1/members/:id/photo` returns the authorized member photo.
 - `GET /v1/members/:id/receipts` allows authorized staff or the member themselves to view approved receipts.
 - Existing member-document endpoints provide document upload and viewing.
