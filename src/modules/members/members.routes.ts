@@ -253,7 +253,7 @@ router.get("/", requireProject, requireRoles("owner", "staff"), validateQuery(me
     where: {
       tenantId: auth.tenantId,
       projectId: auth.projectId,
-      ...(query.status ? { status: query.status } : {}),
+      status: query.status ?? "active",
       ...(query.search ? {
         OR: [
           { name: { contains: query.search, mode: "insensitive" } },
