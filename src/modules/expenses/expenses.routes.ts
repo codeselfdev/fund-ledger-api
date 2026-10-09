@@ -14,6 +14,8 @@ import { getRoleEmails, notifyProjectMembers } from "../../core/notifications/no
 import { sendDecisionEmail } from "../../core/mail/mailer.service.js";
 import { sendWhatsAppGroupMessage } from "../../core/whatsapp/whatsapp.service.js";
 
+import { expenseBodySchema, toExpenseDate } from "./expense-input.js";
+
 const router = Router();
 
 async function announcePaidExpense(input: {
@@ -73,19 +75,6 @@ async function emailExpenseDecision(input: {
   }
 }
 
-const expenseBodySchema = z.object({
-  title: z.string().min(2),
-  amount: z.number().int().positive(),
-  category: z.nativeEnum(ExpenseCategory).optional(),
-  category_def_id: z.string().min(1).optional(),
-  vendor: z.string().optional(),
-  vendor_id: z.string().min(1).optional(),
-  account_id: z.string().min(1),
-  doc_file_id: z.string().optional()
-}).refine((v) => v.category != null || v.category_def_id != null, {
-  message: "category or category_def_id is required",
-  path: ["category"]
-});
 
 const expenseQuerySchema = z.object({
   status: z.nativeEnum(ExpenseStatus).optional()
@@ -113,12 +102,14 @@ router.post("/", requireProject, validateBody(expenseBodySchema), asyncHandler(a
   const approvalFlow = await getExpenseApprovalFlow(auth.tenantId);
 
   let vendorName = body.vendor ?? null;
+  let vendorPhone = body.vendor_phone ?? null;
   if (body.vendor_id) {
     const v = await prisma.vendor.findFirst({
       where: { id: body.vendor_id, tenantId: auth.tenantId, projectId: auth.projectId }
     });
     if (!v) throw notFound("Vendor not found");
     vendorName = v.name;
+    vendorPhone = body.vendor_phone !== undefined ? body.vendor_phone : v.phone;
   }
 
   let categoryEnum: ExpenseCategory = body.category ?? ExpenseCategory.services;
@@ -159,6 +150,8 @@ router.post("/", requireProject, validateBody(expenseBodySchema), asyncHandler(a
         categoryDefId: body.category_def_id,
         vendor: vendorName ?? undefined,
         vendorId: body.vendor_id,
+        vendorPhone,
+        expenseDate: toExpenseDate(body.expense_date),
         accountId: account.id,
         docFileId: body.doc_file_id,
         status,
@@ -248,7 +241,7 @@ router.get("/", requireProject, requireRoles("staff"), validateQuery(expenseQuer
       projectId: auth.projectId,
       ...(query.status ? { status: query.status } : {})
     },
-    orderBy: { createdAt: "desc" }
+    orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }]
   });
   return ok(res, expenses);
 }));
@@ -263,7 +256,7 @@ router.get("/by-category", requireProject, requireRoles("owner", "staff"), valid
       ...(query.status ? { status: query.status } : {})
     },
     include: { categoryDef: { select: { id: true, name: true } } },
-    orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }]
+    orderBy: [{ expenseDate: "desc" }, { paidAt: "desc" }, { createdAt: "desc" }]
   });
 
   const grouped = new Map<string, {
@@ -288,7 +281,7 @@ router.get("/by-category", requireProject, requireRoles("owner", "staff"), valid
     };
     group.total_amount += expense.amount;
     group.expense_count += 1;
-    group.items.push({ ...expense, occurred_at: expense.paidAt ?? expense.createdAt });
+    group.items.push({ ...expense, occurred_at: expense.expenseDate ?? expense.paidAt ?? expense.createdAt });
     grouped.set(categoryKey, group);
   }
 

@@ -598,6 +598,8 @@ model Expense {
   categoryDefId String?         @map("category_def_id")
   vendor        String?
   vendorId      String?         @map("vendor_id")
+  vendorPhone   String?         @map("vendor_phone")
+  expenseDate   DateTime?       @db.Date @map("expense_date")
   accountId     String?         @map("account_id")
   docFileId     String?         @map("doc_file_id")
   status        ExpenseStatus   @default(pending)

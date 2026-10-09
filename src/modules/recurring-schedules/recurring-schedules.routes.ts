@@ -47,10 +47,13 @@ router.get("/", requireProject, requireRoles("approver", "admin"), asyncHandler(
     orderBy: { createdAt: "desc" }
   });
 
+  const forecast = await prisma.member.aggregate({ where: { tenantId: auth.tenantId, projectId: auth.projectId, status: "active", shares: { gt: 0 } }, _sum: { shares: true }, _count: { id: true } });
   return ok(res, items.map((item) => ({
     id: item.id,
     name: item.name,
     unit_amount: item.unitAmount,
+    estimated_total: item.unitAmount * (forecast._sum.shares ?? 0),
+    estimated_dues: forecast._count.id,
     frequency: item.frequency,
     starts_on: item.startsOn,
     next_run_at: item.nextRunAt,

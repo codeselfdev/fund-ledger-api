@@ -446,6 +446,8 @@ submitting this payment`. Do not display internal request-property names as vali
 
 Submit an expense:
 
+`expense_date` accepts a calendar date (`YYYY-MM-DD`) on or before today in Asia/Dhaka. It defaults to the current Dhaka date for older clients. `vendor_phone` is optional; an existing vendor's saved phone is used when it is omitted, while explicit `null` leaves the expense contact blank without editing the vendor directory. The returned `expenseDate` and `vendorPhone` preserve these values. Expense grouping uses the business date; `createdAt` and `paidAt` continue to record when the expense was posted and disbursed.
+
 ```json
 {
   "title": "Cement purchase",
@@ -604,3 +606,11 @@ See `docs/PAYMENT_FOLLOWUPS_API.md` for the complete endpoint contract.
 
 The API remains the authority for permissions. Mobile role checks should hide unavailable
 actions, but the client must still handle `403` responses.
+
+### Schedule collection and member summary
+
+`GET /v1/schedules` retains its existing fields and adds `collection`: `total` (principal after waivers plus penalties), `collected` (confirmed principal and penalty payments), `remaining`, `pending`, `waived`, `paid_count`, `dues_count`, and `collected_percent`. Pending deposits in either approval stage are forecast against their selected dues in due-date order, capped at outstanding balances across requests; they never count as collected. Draft and closed schedules remain distinguishable by `status`.
+
+`GET /v1/schedules/:id/member-summary` is restricted to staff and management in the selected tenant/project. It returns `{ schedule, collection, items }`; each item includes member identity, shares and photo reference, the due with `outstanding`, `pending_amount`, `pending_deposit_ids`, and exclusive `payment_state` (`unpaid`, `pending`, `paid`). Settled balances including waivers have state `paid`; the UI labels them Settled where appropriate. Pending figures are estimates until confirmation, using the same oldest-due-first policy as deposits.
+
+`GET /v1/recurring-schedules` adds `estimated_total` (rule unit amount times active member shares) and `estimated_dues` (active members with shares). These are forecasts; future membership changes can alter generated dues. Existing schedule PATCH, recurring-rule PATCH, deposit and member-reminder endpoints continue to handle mutations. No new schema migration is needed for schedule summaries.

@@ -14,6 +14,8 @@ import { notifyProjectMembers } from "../../core/notifications/notification.serv
 import { createScheduleWithUnitAmount } from "./schedule-creation.service.js";
 import { sendWhatsAppGroupMessage } from "../../core/whatsapp/whatsapp.service.js";
 
+import { scheduleCollectionData, summarizeSchedule, dueRemaining } from "./schedule-summary.service.js";
+
 const router = Router();
 
 const scheduleBodySchema = z.object({
@@ -42,7 +44,7 @@ const scheduleQuerySchema = z.object({
 router.get("/", requireProject, requireRoles("any"), validateQuery(scheduleQuerySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const query = req.query as z.infer<typeof scheduleQuerySchema>;
-  const schedules = await prisma.schedule.findMany({
+  const [schedules, collection] = await Promise.all([prisma.schedule.findMany({
     where: {
       tenantId: auth.tenantId,
       projectId: auth.projectId,
@@ -54,16 +56,40 @@ router.get("/", requireProject, requireRoles("any"), validateQuery(scheduleQuery
       }
     },
     orderBy: { createdAt: "desc" }
-  });
+  }), scheduleCollectionData(auth.tenantId, auth.projectId)]);
 
   return ok(res, schedules.map((schedule) => {
     const totalPaid = schedule.dues.reduce((sum, due) => sum + due.paidAmount + due.penaltyPaid, 0);
     const totalDue = schedule.dues.reduce((sum, due) => sum + due.amount - due.waivedAmount + due.penaltyDue, 0);
     return {
       ...schedule,
+      collection: summarizeSchedule(schedule.dues, collection.dues.filter(d => d.scheduleId === schedule.id).reduce((sum, d) => sum + (collection.pending.get(d.id)?.amount ?? 0), 0)),
       collected_percent: totalDue === 0 ? 0 : Math.round((totalPaid / totalDue) * 100)
     };
   }));
+}));
+
+router.get("/:id/member-summary", requireProject, requireRoles("staff"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  const { id } = req.params as z.infer<typeof idParamSchema>;
+  const schedule = await prisma.schedule.findFirst({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId, purpose: "contribution" } });
+  if (!schedule) throw notFound("Schedule not found");
+  const [collection, members] = await Promise.all([
+    scheduleCollectionData(auth.tenantId, auth.projectId),
+    prisma.member.findMany({ where: { tenantId: auth.tenantId, projectId: auth.projectId, dues: { some: { scheduleId: id } } },
+      select: { id: true, name: true, mobile: true, shares: true, status: true, profile: true }, orderBy: { createdAt: "desc" } })
+  ]);
+  const dues = collection.dues.filter(d => d.scheduleId === id);
+  const items = members.flatMap(member => {
+    const due = dues.find(d => d.memberId === member.id);
+    if (!due) return [];
+    const pending = collection.pending.get(due.id);
+    const outstanding = dueRemaining(due);
+    const photo = member.profile && typeof member.profile === "object" && !Array.isArray(member.profile) ? member.profile.photo_file_id : null;
+    return [{ member: { ...member, profile: typeof photo === "string" ? { photo_file_id: photo } : null }, due: { ...due, outstanding }, pending_amount: pending?.amount ?? 0,
+      pending_deposit_ids: pending?.depositIds ?? [], payment_state: outstanding === 0 ? "paid" : pending?.amount ? "pending" : "unpaid" }];
+  });
+  return ok(res, { schedule, collection: summarizeSchedule(dues, items.reduce((sum, row) => sum + row.pending_amount, 0)), items });
 }));
 
 router.post("/", requireProject, requireRoles("approver", "admin"), validateBody(scheduleBodySchema), asyncHandler(async (req, res) => {
