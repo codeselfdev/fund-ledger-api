@@ -44,7 +44,7 @@ async function resolveSeedShares(
   return currentlyAssigned + desiredShares <= project.totalShares ? desiredShares : 0;
 }
 
-export async function ensureUserProjectMember(
+export async function ensureUserProjectMemberRecord(
   tx: Prisma.TransactionClient,
   input: EnsureUserProjectMemberInput
 ) {
@@ -104,6 +104,15 @@ export async function ensureUserProjectMember(
     });
   }
 
+  return { memberId: member.id, shares: member.shares };
+}
+
+export async function ensureUserProjectMember(
+  tx: Prisma.TransactionClient,
+  input: EnsureUserProjectMemberInput
+) {
+  const member = await ensureUserProjectMemberRecord(tx, input);
+
   await tx.projectMembership.upsert({
     where: {
       projectId_userId_role: {
@@ -113,7 +122,7 @@ export async function ensureUserProjectMember(
       }
     },
     update: {
-      memberId: member.id,
+      memberId: member.memberId,
       isActive: true
     },
     create: {
@@ -121,7 +130,7 @@ export async function ensureUserProjectMember(
       projectId: input.projectId,
       userId: input.user.id,
       role: "member",
-      memberId: member.id
+      memberId: member.memberId
     }
   });
 
@@ -132,8 +141,8 @@ export async function ensureUserProjectMember(
       userId: input.user.id,
       memberId: null
     },
-    data: { memberId: member.id }
+    data: { memberId: member.memberId }
   });
 
-  return { memberId: member.id, shares: member.shares };
+  return member;
 }

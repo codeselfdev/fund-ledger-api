@@ -42,6 +42,8 @@ const googleCompleteSchema = z.object({
 });
 
 const googleSignupSchema = z.object({
+  project_type: z.enum(["fund_shares", "accounting", "billing"]).default("fund_shares"),
+  owner_is_member: z.boolean().default(false),
   ticket: z.string().min(8),
   org_name: z.string().min(2).max(120),
   owner_name: z.string().min(2).max(120).optional(),
@@ -77,7 +79,9 @@ router.post("/google/signup", validateBody(googleSignupSchema), asyncHandler(asy
     ownerName: body.owner_name,
     ownerMobile: body.owner_mobile,
     projectName: body.project_name,
-    totalShares: body.total_shares
+    totalShares: body.total_shares,
+    projectType: body.project_type,
+    ownerIsMember: body.owner_is_member
   });
   return ok(res, payload);
 }));
@@ -248,6 +252,7 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
     memberships: user.memberships.map((membership) => ({
       project_id: membership.projectId,
       project_name: membership.project.name,
+      project_type: membership.project.projectType,
       role: membership.role,
       member_id: membership.memberId
     })),

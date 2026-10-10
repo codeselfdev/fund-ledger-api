@@ -7,7 +7,7 @@ import { created, ok } from "../../core/http/response.js";
 import { prisma } from "../../core/prisma/client.js";
 import { requireProject, requireRoles } from "../../core/security/auth.middleware.js";
 import { requireProjectContext } from "../../core/security/auth.context.js";
-import { ensureUserProjectMember } from "../../core/security/member-link.service.js";
+import { ensureUserProjectMember, ensureUserProjectMemberRecord } from "../../core/security/member-link.service.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
@@ -23,6 +23,7 @@ import {
 const router = Router();
 
 const updateMembershipSchema = z.object({
+  also_member: z.literal(true).optional(),
   role: z.nativeEnum(Role).optional(),
   is_active: z.boolean().optional()
 });
@@ -33,7 +34,8 @@ const createMembershipSchema = z
     mobile: z.string().min(6).optional(),
     name: z.string().min(2).optional(),
     email: z.string().email().optional(),
-    role: z.nativeEnum(Role)
+    role: z.nativeEnum(Role),
+    also_member: z.boolean().default(false)
   })
   .refine((v) => v.user_id != null || v.mobile != null || v.email != null, {
     message: "user_id, mobile, or email is required",
@@ -42,10 +44,6 @@ const createMembershipSchema = z
 
 function isSyntheticMobile(mobile: string) {
   return mobile.startsWith("g:") || mobile.startsWith("e:");
-}
-
-function defaultShareSeedForRole(role: Role) {
-  return role === "owner" || role === "admin" || role === "accountant" ? 1 : 0;
 }
 
 router.get("/", requireProject, requireRoles("owner", "admin"), asyncHandler(async (req, res) => {
@@ -135,22 +133,24 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
       throw conflict("This user already has that role on the project");
     }
 
-    const ensured = await ensureUserProjectMember(tx, {
-      tenantId: auth.tenantId,
-      projectId: auth.projectId,
-      user: {
-        id: user.id,
-        name: user.name,
-        mobile: user.mobile,
-        email: user.email
-      },
-      defaultShares: defaultShareSeedForRole(body.role)
-    });
+    const ensured = body.role === "member" || body.also_member
+      ? await ensureUserProjectMember(tx, {
+          tenantId: auth.tenantId,
+          projectId: auth.projectId,
+          user: {
+            id: user.id,
+            name: user.name,
+            mobile: user.mobile,
+            email: user.email
+          },
+          defaultShares: 0
+        })
+      : null;
 
     if (existing) {
       const membership = await tx.projectMembership.update({
         where: { id: existing.id },
-        data: { isActive: true, memberId: ensured.memberId }
+        data: { isActive: true, memberId: ensured?.memberId ?? null }
       });
       return { user, membership, userCreated, reactivated: true, before: existing };
     }
@@ -172,7 +172,7 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
         tenantId: auth.tenantId,
         projectId: auth.projectId,
         userId: user.id,
-        memberId: ensured.memberId,
+        memberId: ensured?.memberId ?? null,
         role: body.role
       }
     });
@@ -230,6 +230,7 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
     id: result.membership.id,
     role: result.membership.role,
     is_active: result.membership.isActive,
+    member_id: result.membership.memberId,
     user_id: result.user.id,
     user_created: result.userCreated,
     user: { id: result.user.id, name: result.user.name, mobile: phoneMobile, email: result.user.email },
@@ -289,37 +290,30 @@ router.patch("/:id", requireProject, requireRoles("owner", "admin"), validatePar
 
   const nextRole = body.role ?? before.role;
   const nextIsActive = body.is_active ?? before.isActive;
-  const removingMemberRole = before.role === "member" && (nextRole !== "member" || !nextIsActive);
-  if (removingMemberRole) {
-    const otherActiveRoles = await prisma.projectMembership.count({
-      where: {
-        tenantId: auth.tenantId,
-        projectId: auth.projectId,
-        userId: before.userId,
-        isActive: true,
-        id: { not: id }
-      }
-    });
-    if (otherActiveRoles > 0) {
-      throw badRequest("A user with project access must keep an active member role");
-    }
-  }
-
   const membership = await prisma.$transaction(async (tx) => {
-    let memberId: string | undefined;
+    let memberId: string | null | undefined;
 
-    if (nextIsActive) {
+    if (nextIsActive && (nextRole === "member" || body.also_member)) {
       const targetUser = await tx.user.findFirstOrThrow({
         where: { id: before.userId, tenantId: auth.tenantId, isActive: true },
         select: { id: true, name: true, mobile: true, email: true }
       });
-      const ensured = await ensureUserProjectMember(tx, {
-        tenantId: auth.tenantId,
-        projectId: auth.projectId,
-        user: targetUser,
-        defaultShares: defaultShareSeedForRole(nextRole)
-      });
+      const ensured = before.role === "member" || body.also_member
+        ? await ensureUserProjectMember(tx, {
+            tenantId: auth.tenantId,
+            projectId: auth.projectId,
+            user: targetUser,
+            defaultShares: 0
+          })
+        : await ensureUserProjectMemberRecord(tx, {
+            tenantId: auth.tenantId,
+            projectId: auth.projectId,
+            user: targetUser,
+            defaultShares: 0
+          });
       memberId = ensured.memberId;
+    } else if (nextRole !== "member") {
+      memberId = null;
     }
 
     return tx.projectMembership.update({
@@ -327,7 +321,7 @@ router.patch("/:id", requireProject, requireRoles("owner", "admin"), validatePar
       data: {
         ...(body.role !== undefined ? { role: body.role } : {}),
         ...(body.is_active !== undefined ? { isActive: body.is_active } : {}),
-        ...(memberId ? { memberId } : {})
+        ...(memberId !== undefined ? { memberId } : {})
       }
     });
   });
@@ -343,7 +337,12 @@ router.patch("/:id", requireProject, requireRoles("owner", "admin"), validatePar
     after: membership
   });
 
-  return ok(res, { id: membership.id, role: membership.role, is_active: membership.isActive });
+  return ok(res, {
+    id: membership.id,
+    role: membership.role,
+    is_active: membership.isActive,
+    member_id: membership.memberId
+  });
 }));
 
 export { router as membershipsRouter };

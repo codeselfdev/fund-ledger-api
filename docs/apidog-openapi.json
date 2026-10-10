@@ -552,6 +552,7 @@
       "post": {
         "tags": ["Projects"],
         "summary": "Grant role access by user ID, mobile, or email",
+        "description": "Access roles do not create financial Member records. Only role=member creates or links a Member; admin/accountant-only assignments return member_id=null.",
         "security": [{ "BearerAuth": [] }],
         "parameters": [{ "$ref": "#/components/parameters/ProjectIdHeader" }],
         "requestBody": {

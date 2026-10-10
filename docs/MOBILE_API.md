@@ -314,6 +314,11 @@ Example account setup:
 | Notification feed | `GET /v1/notifications`, `PATCH /v1/notifications/:id/read` |
 | Push token | `POST /v1/notifications/device-token`, `DELETE /v1/notifications/device-token` |
 
+Role access and financial membership are separate. Assigning `admin`, `accountant`,
+`cashier`, `approver`, or `auditor` creates project access only and returns
+`member_id: null`. A Member record is created or linked only when `role` is
+explicitly set to `member` or through the dedicated member APIs.
+
 ## Important write payloads
 
 Add a member (also creates/links the user and member membership):
@@ -614,3 +619,15 @@ actions, but the client must still handle `403` responses.
 `GET /v1/schedules/:id/member-summary` is restricted to staff and management in the selected tenant/project. It returns `{ schedule, collection, items }`; each item includes member identity, shares and photo reference, the due with `outstanding`, `pending_amount`, `pending_deposit_ids`, and exclusive `payment_state` (`unpaid`, `pending`, `paid`). Settled balances including waivers have state `paid`; the UI labels them Settled where appropriate. Pending figures are estimates until confirmation, using the same oldest-due-first policy as deposits.
 
 `GET /v1/recurring-schedules` adds `estimated_total` (rule unit amount times active member shares) and `estimated_dues` (active members with shares). These are forecasts; future membership changes can alter generated dues. Existing schedule PATCH, recurring-rule PATCH, deposit and member-reminder endpoints continue to handle mutations. No new schema migration is needed for schedule summaries.
+
+
+## Member project browsing
+
+Active project members can use the existing read APIs for project transparency:
+
+- `GET /v1/members`: active directory with `due_amount`; member-only readers receive name, mobile, shares, status, timestamps, and photo reference. User linkage, email, address, and private profile fields are omitted or null. Staff responses are unchanged.
+- `GET /v1/members/:id/photo`: members may view active directory members' photos within the current project. This does not grant access to their full profile, dues detail, payments, or documents.
+- `GET /v1/ledger`: project transactions with existing direction/date/account filters.
+- `GET /v1/expenses` and `GET /v1/expenses/by-category`: expense list, detail data, and chart grouping.
+
+These reads retain authenticated tenant/project scoping. Member-only accounts cannot create expenses, approve/reject/disburse expenses, manage members, or adjust accounts. Member home shows Members, Ledger, and Expenses shortcuts; directory rows have no profile/deposit/follow-up actions, and project browse views hide the payment FAB. Existing personal dues/payment and self-profile flows are unchanged. No schema migration is required for this access change.

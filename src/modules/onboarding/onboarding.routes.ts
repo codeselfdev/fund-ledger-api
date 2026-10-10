@@ -21,6 +21,8 @@ import { writeAccountTransactionAudit, writeAudit } from "../../core/audit/audit
 import { findActiveUsersByEmail, findActiveUsersByMobile, googlePlaceholderMobile, issueOtp, mobilesEquivalent, resolveFirebaseIdentity } from "../auth/auth.service.js";
 import { provisionTenant } from "../tenants/tenants.service.js";
 
+import { projectTypeSchema } from "../../core/projects/project-settings.js";
+
 const router = Router();
 
 const signupRateLimit = rateLimit({
@@ -32,6 +34,8 @@ const signupRateLimit = rateLimit({
 });
 
 const signupSchema = z.object({
+  project_type: projectTypeSchema.default("fund_shares"),
+  owner_is_member: z.boolean().default(false),
   org_name: z.string().min(2).max(120),
   slug: z.string().min(3).max(48).regex(/^[a-z0-9-]+$/).optional(),
   currency: z.string().length(3).default("BDT"),
@@ -53,6 +57,7 @@ const organizationSetupSchema = z.object({
 });
 
 const accountingSchema = z.object({
+  accountant_is_member: z.boolean().default(false),
   accountant: z.object({
     name: z.string().min(2).max(120),
     mobile: z.string().min(6).max(32),
@@ -86,7 +91,7 @@ const shareholdersSetupSchema = z.object({
 });
 
 const skipSchema = z.object({
-  step: z.enum(["shareholders"]).optional()
+  step: z.enum(["shareholders", "accounting"]).optional()
 });
 
 const onboardingProgressSelect = {
@@ -121,7 +126,7 @@ async function loadOnboardingBundle(tenantId: string) {
   const project = progress
     ? await prisma.project.findFirst({
         where: { tenantId, id: progress.projectId },
-        select: { id: true, name: true, totalShares: true }
+        select: { id: true, name: true, totalShares: true, projectType: true }
       })
     : null;
 
@@ -208,6 +213,8 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
       currency: body.currency,
       projectName: body.project_name,
       projectTotalShares: body.total_shares,
+      projectType: body.project_type,
+      ownerIsMember: body.owner_is_member,
       adminName: ownerName,
       adminMobile: ownerMobile,
       adminEmail: ownerEmail,
@@ -276,6 +283,8 @@ router.get("/status", authenticate, requireRoles("any"), asyncHandler(async (req
 
   let checks: {
     project_id: string | null;
+    project_type: string;
+    accountant_skipped: boolean;
     accountant_set: boolean;
     accountant_member_linked: boolean;
     owner_member_id: string | null;
@@ -288,6 +297,8 @@ router.get("/status", authenticate, requireRoles("any"), asyncHandler(async (req
     project_name: string | null;
   } = {
     project_id: bundle.progress?.projectId ?? null,
+    project_type: bundle.project?.projectType ?? "fund_shares",
+    accountant_skipped: bundle.progress?.accountantStepStatus === "skipped",
     accountant_set: false,
     accountant_member_linked: false,
     owner_member_id: null,
@@ -342,6 +353,8 @@ router.get("/status", authenticate, requireRoles("any"), asyncHandler(async (req
 
     checks = {
       project_id: bundle.progress.projectId,
+      project_type: bundle.project?.projectType ?? "fund_shares",
+      accountant_skipped: bundle.progress.accountantStepStatus === "skipped",
       accountant_set: Boolean(accountantMembership),
       accountant_member_linked: Boolean(accountantMembership?.memberId),
       owner_member_id: ownerMembership?.memberId ?? null,
@@ -461,7 +474,7 @@ router.post("/accounting", authenticate, requireProject, requireRoles("owner"), 
   if (!progress) throw badRequest("Onboarding is not initialized for this tenant");
   assertOnboardingProject(auth.projectId, progress.projectId);
 
-  const { user, nextProgress, memberId, memberShares } = await prisma.$transaction(async (tx) => {
+  const { user, member, nextProgress } = await prisma.$transaction(async (tx) => {
     const user = await tx.user.upsert({
       where: {
         tenantId_mobile: {
@@ -489,36 +502,17 @@ router.post("/accounting", authenticate, requireProject, requireRoles("owner"), 
           role: "accountant"
         }
       },
-      update: { isActive: true },
+      update: { isActive: true, memberId: null },
       create: {
         tenantId: auth.tenantId,
         projectId: progress.projectId,
         userId: user.id,
-        role: "accountant"
+        role: "accountant",
+        memberId: null
       }
     });
 
-    const ensured = await ensureUserProjectMember(tx, {
-      tenantId: auth.tenantId,
-      projectId: progress.projectId,
-      user: {
-        id: user.id,
-        name: user.name,
-        mobile: user.mobile,
-        email: user.email
-      },
-      defaultShares: 1
-    });
-
-    await tx.projectMembership.updateMany({
-      where: {
-        tenantId: auth.tenantId,
-        projectId: progress.projectId,
-        userId: user.id,
-        role: "accountant"
-      },
-      data: { memberId: ensured.memberId }
-    });
+    const member = body.accountant_is_member ? await ensureUserProjectMember(tx, { tenantId: auth.tenantId, projectId: progress.projectId, user, defaultShares: 0 }) : null;
 
     const nextState = recomputeOnboardingStatus({
       organizationStepStatus: progress.organizationStepStatus,
@@ -540,7 +534,7 @@ router.post("/accounting", authenticate, requireProject, requireRoles("owner"), 
       select: onboardingProgressSelect
     });
 
-    return { user, nextProgress, memberId: ensured.memberId, memberShares: ensured.shares };
+    return { user, member, nextProgress };
   });
 
   await writeAudit({
@@ -563,9 +557,9 @@ router.post("/accounting", authenticate, requireProject, requireRoles("owner"), 
       name: user.name,
       mobile: user.mobile,
       email: user.email,
-      member_id: memberId,
-      shares: memberShares,
-      roles: ["accountant", "member"]
+      member_id: member?.memberId ?? null,
+      shares: 0,
+      roles: member ? ["accountant", "member"] : ["accountant"]
     },
     onboarding: summarizeOnboarding(nextProgress)
   });
@@ -726,31 +720,6 @@ router.post("/shareholders", authenticate, requireProject, requireRoles("owner")
   if (!progress) throw badRequest("Onboarding is not initialized for this tenant");
   assertOnboardingProject(auth.projectId, progress.projectId);
   assertStepCompleted(progress.accountsStepStatus, "Accounts setup");
-
-  await prisma.$transaction(async (tx) => {
-    const activeManagementMemberships = await tx.projectMembership.findMany({
-      where: {
-        tenantId: auth.tenantId,
-        projectId: progress.projectId,
-        isActive: true,
-        role: { in: ["owner", "admin", "accountant"] }
-      },
-      include: {
-        user: {
-          select: { id: true, name: true, mobile: true, email: true }
-        }
-      }
-    });
-
-    for (const membership of activeManagementMemberships) {
-      await ensureUserProjectMember(tx, {
-        tenantId: auth.tenantId,
-        projectId: progress.projectId,
-        user: membership.user,
-        defaultShares: 1
-      });
-    }
-  });
 
   const seenMobiles = new Set<string>();
   for (const member of normalizedMembers) {
@@ -999,7 +968,16 @@ router.post("/skip", authenticate, requireProject, requireRoles("owner"), valida
   if (!progress) throw badRequest("Onboarding is not initialized for this tenant");
   assertOnboardingProject(auth.projectId, progress.projectId);
 
-  // This onboarding version supports skipping only the final shareholders step.
+  if (req.body.step === "accounting") {
+    assertStepCompleted(progress.organizationStepStatus, "Organization setup");
+    const hasAccountant = await prisma.projectMembership.findFirst({ where: { tenantId: auth.tenantId, projectId: progress.projectId, role: "accountant", isActive: true } });
+    if (hasAccountant) throw badRequest("An accountant is already assigned. Manage roles and deposit review in project settings.");
+    const state = recomputeOnboardingStatus({ ...progress, accountantStepStatus: "skipped" });
+    const updated = await prisma.onboardingProgress.update({ where: { tenantId: auth.tenantId }, data: { accountantStepStatus: "skipped", accountantUserId: null, incomeApprovalFlow: "accountant_only", expenseApprovalFlow: "accountant_only", status: state.status, completedAt: state.completedAt }, select: onboardingProgressSelect });
+    await writeAudit({ tenantId: auth.tenantId, projectId: auth.projectId, actorUserId: auth.userId, action: "onboarding.step_skipped", entityType: "onboarding_progress", entityId: progress.tenantId, after: { step: "accounting" } });
+    return ok(res, { skipped: "accounting", onboarding: summarizeOnboarding(updated) });
+  }
+
   const step = "shareholders";
   if (progress.shareholdersStepStatus === "done" || progress.shareholdersStepStatus === "skipped") {
     return ok(res, {
@@ -1015,12 +993,6 @@ router.post("/skip", authenticate, requireProject, requireRoles("owner"), valida
     _sum: { shares: true }
   });
   const sharesAssigned = sharesAggregate._sum.shares ?? 0;
-  if (sharesAssigned < 1) {
-    throw badRequest("You can skip shareholder completion only after adding at least 1 share", {
-      minimum_required_shares: 1,
-      shares_assigned: sharesAssigned
-    });
-  }
 
   const nextState = recomputeOnboardingStatus({
     organizationStepStatus: progress.organizationStepStatus,

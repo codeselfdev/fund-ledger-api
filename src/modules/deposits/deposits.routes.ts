@@ -17,6 +17,8 @@ import { calculateDueBalance } from "../members/member-settlement.service.js";
 import { sendWhatsAppGroupMessage } from "../../core/whatsapp/whatsapp.service.js";
 import { resolveCommitmentsForDeposit } from "../follow-ups/followups.service.js";
 
+import { projectDepositRoute } from "../../core/projects/project-settings.js";
+
 const router = Router();
 const MEMBER_RECEIPT_REQUIRED_MESSAGE = "Please upload a receipt before submitting this payment";
 
@@ -184,6 +186,7 @@ async function finalizeDepositConfirmation(input: {
     amount: number;
     memberId: string;
     accountId: string | null;
+    status: DepositStatus;
     allocate: string | null;
   };
 }) {
@@ -226,14 +229,12 @@ async function finalizeDepositConfirmation(input: {
   });
 
   const result = await prisma.$transaction(async (tx) => {
-    const deposit = await tx.deposit.update({
-      where: { id: input.depositId },
-      data: {
-        status: "confirmed",
-        approverById: input.auth.userId,
-        confirmedAt: new Date()
-      }
+    const claimed = await tx.deposit.updateMany({
+      where: { id: input.depositId, tenantId: input.auth.tenantId, projectId: input.auth.projectId, status: input.before.status },
+      data: { status: "confirmed", approverById: input.auth.userId, confirmedAt: new Date() }
     });
+    if (claimed.count !== 1) throw badRequest("Deposit was already reviewed. Refresh the list.");
+    const deposit = await tx.deposit.findUniqueOrThrow({ where: { id: input.depositId } });
 
     const receipt = await tx.receipt.create({
       data: {
@@ -300,6 +301,7 @@ async function finalizeAdvanceDepositConfirmation(input: {
     amount: number;
     memberId: string;
     accountId: string | null;
+    status: DepositStatus;
   };
 }) {
   if (!input.before.accountId) {
@@ -312,14 +314,12 @@ async function finalizeAdvanceDepositConfirmation(input: {
   const receiptNo = `RCT-${Date.now()}-${input.depositId.slice(-4).toUpperCase()}`;
 
   const result = await prisma.$transaction(async (tx) => {
-    const deposit = await tx.deposit.update({
-      where: { id: input.depositId },
-      data: {
-        status: "confirmed",
-        approverById: input.auth.userId,
-        confirmedAt: new Date()
-      }
+    const claimed = await tx.deposit.updateMany({
+      where: { id: input.depositId, tenantId: input.auth.tenantId, projectId: input.auth.projectId, status: input.before.status },
+      data: { status: "confirmed", approverById: input.auth.userId, confirmedAt: new Date() }
     });
+    if (claimed.count !== 1) throw badRequest("Deposit was already reviewed. Refresh the list.");
+    const deposit = await tx.deposit.findUniqueOrThrow({ where: { id: input.depositId } });
 
     const receipt = await tx.receipt.create({
       data: {
@@ -364,7 +364,8 @@ async function finalizeAdvanceDepositConfirmation(input: {
 router.post("/", requireProject, requireRoles("member", "cashier", "accountant", "admin"), validateBody(depositBodySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const body = req.body as z.infer<typeof depositBodySchema>;
-  const submittedByAccountant = auth.roles.includes("accountant");
+  const approvalRoute = await projectDepositRoute(auth.tenantId, auth.projectId);
+  const submittedByAccountant = approvalRoute === "accountant" && auth.roles.includes("accountant");
   if (!(await canSubmitForMember(auth, body.member_id))) {
     throw forbidden("You are not allowed to submit deposit for this member");
   }
@@ -412,7 +413,8 @@ router.post("/", requireProject, requireRoles("member", "cashier", "accountant",
         proofFileId: body.proof_file_id,
         reference: body.reference,
         allocate: body.allocate,
-        status: submittedByAccountant ? "pending_approver" : "pending_accountant",
+        status: approvalRoute === "admin" || submittedByAccountant ? "pending_approver" : "pending_accountant",
+        approvalRoute,
         submittedById: auth.userId,
         accountantById: submittedByAccountant ? auth.userId : undefined
       }
@@ -441,15 +443,15 @@ router.post("/", requireProject, requireRoles("member", "cashier", "accountant",
     after: deposit
   });
 
-  if (submittedByAccountant) {
+  if (approvalRoute === "admin" || submittedByAccountant) {
     await notifyProjectMembers({
       tenantId: auth.tenantId,
       projectId: auth.projectId,
       actorUserId: auth.userId,
-      roles: ["approver"],
+      roles: approvalRoute === "admin" ? ["owner", "admin"] : ["approver", "owner", "admin"],
       type: "deposit.pending_approver",
       title: "Deposit awaiting final confirmation",
-      body: "An accountant submitted and approved a member deposit for final review.",
+      body: approvalRoute === "admin" ? "A member deposit is awaiting admin approval." : "An accountant submitted and approved a member deposit for final review.",
       entityType: "deposit",
       entityId: deposit.id
     });
@@ -473,7 +475,8 @@ router.post("/", requireProject, requireRoles("member", "cashier", "accountant",
 router.post("/advance", requireProject, requireRoles("member", "cashier", "accountant", "admin"), validateBody(advanceDepositBodySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const body = req.body as z.infer<typeof advanceDepositBodySchema>;
-  const submittedByAccountant = auth.roles.includes("accountant");
+  const approvalRoute = await projectDepositRoute(auth.tenantId, auth.projectId);
+  const submittedByAccountant = approvalRoute === "accountant" && auth.roles.includes("accountant");
   if (!(await canSubmitForMember(auth, body.member_id))) {
     throw forbidden("You are not allowed to submit deposit for this member");
   }
@@ -498,7 +501,8 @@ router.post("/advance", requireProject, requireRoles("member", "cashier", "accou
       proofFileId: body.proof_file_id,
       reference: body.reference,
       allocate: "advance",
-      status: submittedByAccountant ? "pending_approver" : "pending_accountant",
+      status: approvalRoute === "admin" || submittedByAccountant ? "pending_approver" : "pending_accountant",
+      approvalRoute,
       submittedById: auth.userId,
       accountantById: submittedByAccountant ? auth.userId : undefined
     }
@@ -514,15 +518,15 @@ router.post("/advance", requireProject, requireRoles("member", "cashier", "accou
     after: deposit
   });
 
-  if (submittedByAccountant) {
+  if (approvalRoute === "admin" || submittedByAccountant) {
     await notifyProjectMembers({
       tenantId: auth.tenantId,
       projectId: auth.projectId,
       actorUserId: auth.userId,
-      roles: ["approver"],
+      roles: approvalRoute === "admin" ? ["owner", "admin"] : ["approver", "owner", "admin"],
       type: "deposit.pending_approver",
       title: "Advance deposit awaiting final confirmation",
-      body: "An accountant submitted and approved an advance deposit for final review.",
+      body: approvalRoute === "admin" ? "An advance deposit is awaiting admin approval." : "An accountant submitted and approved an advance deposit for final review.",
       entityType: "deposit",
       entityId: deposit.id
     });
@@ -551,8 +555,8 @@ router.delete("/:id", requireProject, requireRoles("member", "cashier"), validat
   });
   if (!before) throw notFound("Deposit not found");
   if (before.submittedById !== auth.userId) throw forbidden("You may only remove your own deposit submissions");
-  if (before.status !== "pending_accountant") {
-    throw badRequest("Deposit can only be removed before accountant review");
+  if (before.status !== "pending_accountant" && !(before.status === "pending_approver" && before.approvalRoute === "admin" && !before.accountantById)) {
+    throw badRequest("Deposit can only be removed before review");
   }
 
   await prisma.deposit.delete({ where: { id } });
@@ -603,7 +607,8 @@ router.get("/", requireProject, requireRoles("staff"), validateQuery(depositQuer
     where: {
       tenantId: auth.tenantId,
       projectId: auth.projectId,
-      ...statusWhere
+      ...statusWhere,
+      ...(!isOversight ? { approvalRoute: "accountant" as const } : {})
     },
     include: {
       member: true,
@@ -626,8 +631,12 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
     where: { id, tenantId: auth.tenantId, projectId: auth.projectId }
   });
   if (!before) throw notFound("Deposit not found");
-  if (before.status === "pending_accountant") {
-    if (!auth.roles.includes("accountant") && !auth.roles.includes("admin")) {
+  const admin = auth.roles.includes("admin") || auth.roles.includes("owner");
+  const directAdmin = before.approvalRoute === "admin" || (before.status === "pending_accountant" && await projectDepositRoute(auth.tenantId, auth.projectId) === "admin");
+  if (directAdmin && !admin) throw forbidden("Only an admin can approve this deposit");
+
+  if (before.status === "pending_accountant" && !directAdmin) {
+    if (!auth.roles.includes("accountant") && !admin) {
       throw forbidden("Only an accountant or admin can process this approval stage");
     }
 
@@ -639,14 +648,12 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
     });
     if (!account) throw notFound("Account not found");
 
-    const deposit = await prisma.deposit.update({
-      where: { id },
-      data: {
-        status: "pending_approver",
-        accountantById: auth.userId,
-        accountId: account.id
-      }
+    const claimed = await prisma.deposit.updateMany({
+      where: { id, tenantId: auth.tenantId, projectId: auth.projectId, status: "pending_accountant" },
+      data: { status: "pending_approver", accountantById: auth.userId, accountId: account.id }
     });
+    if (claimed.count !== 1) throw badRequest("Deposit was already reviewed. Refresh the list.");
+    const deposit = await prisma.deposit.findUniqueOrThrow({ where: { id } });
 
     await writeAudit({
       tenantId: auth.tenantId,
@@ -663,7 +670,7 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
       tenantId: auth.tenantId,
       projectId: auth.projectId,
       actorUserId: auth.userId,
-      roles: ["approver"],
+      roles: ["approver", "owner", "admin"],
       type: "deposit.pending_approver",
       title: "Deposit awaiting final confirmation",
       body: "An accountant approved a deposit for final review.",
@@ -674,13 +681,13 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
     return ok(res, { id: deposit.id, status: deposit.status, accountant_by: deposit.accountantById });
   }
 
-  if (before.status !== "pending_approver") {
+  if (before.status !== "pending_approver" && !(directAdmin && before.status === "pending_accountant")) {
     throw badRequest("Only pending deposits can be approved");
   }
-  if (!auth.roles.includes("approver") && !auth.roles.includes("admin")) {
+  if (!auth.roles.includes("approver") && !admin) {
     throw forbidden("Only an approver or admin can finalize this deposit");
   }
-  if (before.allocate === "advance" && !before.accountantById) {
+  if (before.allocate === "advance" && !before.accountantById && !directAdmin) {
     throw badRequest("Advance deposit must be approved by an accountant before approver confirmation");
   }
 
@@ -757,8 +764,12 @@ router.post("/:id/confirm", requireProject, requireRoles("approver", "admin"), v
     where: { id, tenantId: auth.tenantId, projectId: auth.projectId }
   });
   if (!before) throw notFound("Deposit not found");
-  if (before.status !== "pending_approver") throw badRequest("Deposit is not in approver queue");
-  if (before.allocate === "advance" && !before.accountantById) {
+  const admin = auth.roles.includes("admin") || auth.roles.includes("owner");
+  const directAdmin = before.approvalRoute === "admin" || (before.status === "pending_accountant" && await projectDepositRoute(auth.tenantId, auth.projectId) === "admin");
+  if (directAdmin && !admin) throw forbidden("Only an admin can approve this deposit");
+
+  if (before.status !== "pending_approver" && !(directAdmin && before.status === "pending_accountant")) throw badRequest("Deposit is not in approver queue");
+  if (before.allocate === "advance" && !before.accountantById && !directAdmin) {
     throw badRequest("Advance deposit must be approved by an accountant before approver confirmation");
   }
   const result = before.allocate === "advance"
@@ -835,6 +846,7 @@ router.post("/:id/reject", requireProject, requireRoles("accountant", "approver"
     where: { id, tenantId: auth.tenantId, projectId: auth.projectId }
   });
   if (!before) throw notFound("Deposit not found");
+  if (before.approvalRoute === "admin" && !auth.roles.includes("admin") && !auth.roles.includes("owner")) throw forbidden("Only an admin can reject this deposit");
   if (before.status !== "pending_accountant" && before.status !== "pending_approver") {
     throw badRequest("Only pending deposits can be rejected");
   }

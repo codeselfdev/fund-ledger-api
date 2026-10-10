@@ -1,3 +1,4 @@
+import { accountDeletionRouter } from "./modules/auth/account-deletion.routes.js";
 import type { Express } from "express";
 import { authenticate } from "./core/security/auth.middleware.js";
 import { requireActiveSubscription } from "./core/security/subscription.middleware.js";
@@ -37,6 +38,7 @@ import { followupsRouter } from "./modules/follow-ups/followups.routes.js";
 
 export function registerRoutes(app: Express) {
   app.use("/v1/tenants", tenantsRouter);
+  app.use("/v1/auth", accountDeletionRouter);
   app.use("/v1/auth", authRouter);
   app.use("/v1/onboarding", onboardingRouter);
 

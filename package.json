@@ -14,7 +14,9 @@
     "create:super-admin": "tsx src/scripts/create-super-admin.ts",
     "create:super-admin:prod": "node dist/scripts/create-super-admin.js",
     "storage:migrate-local-to-r2": "tsx src/scripts/migrate-local-uploads-to-r2.ts",
-    "storage:migrate-local-to-r2:prod": "node dist/scripts/migrate-local-uploads-to-r2.js"
+    "storage:migrate-local-to-r2:prod": "node dist/scripts/migrate-local-uploads-to-r2.js",
+    "privacy:requests": "tsx src/scripts/list-account-deletion-requests.ts",
+    "privacy:requests:prod": "node dist/scripts/list-account-deletion-requests.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",

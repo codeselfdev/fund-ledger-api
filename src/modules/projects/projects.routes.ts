@@ -22,10 +22,14 @@ import {
   sendProjectInvitationEmail
 } from "../../core/invitations/project-invitation.service.js";
 
+import { projectTypeSchema, portalSettingsSchema, normalizePortalSettings } from "../../core/projects/project-settings.js";
+
 const projectsRouter = Router();
 const invitationsRouter = Router();
 
 const createProjectSchema = z.object({
+  project_type: projectTypeSchema.default("fund_shares"),
+  owner_is_member: z.boolean().default(false),
   name: z.string().min(2),
   total_shares: z.number().int().positive(),
   penalty_policy: optionalPenaltyPolicySchema,
@@ -33,13 +37,15 @@ const createProjectSchema = z.object({
 });
 
 const updateProjectSchema = z.object({
+  portal_settings: portalSettingsSchema.optional(),
   name: z.string().min(2).optional(),
   total_shares: z.number().int().positive().optional(),
   logo_file_id: z.string().min(1).nullable().optional(),
   penalty_policy: optionalPenaltyPolicySchema,
   address: z.string().optional()
 }).refine((value) => (
-  value.name !== undefined
+  value.portal_settings !== undefined
+  || value.name !== undefined
   || value.total_shares !== undefined
   || value.logo_file_id !== undefined
   || value.penalty_policy !== undefined
@@ -77,6 +83,8 @@ projectsRouter.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
     name: membership.project.name,
     address: membership.project.address,
     total_shares: membership.project.totalShares,
+    project_type: membership.project.projectType,
+    portal_settings: normalizePortalSettings(membership.project.portalSettings),
     logo_file_id: membership.project.logoFileId,
     logo_url: logoUrl(membership.project.logoFileId),
     role: membership.role,
@@ -100,6 +108,7 @@ projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validat
         tenantId: auth.tenantId,
         name: body.name,
         totalShares: body.total_shares,
+        projectType: body.project_type,
         penaltyPolicy: body.penalty_policy,
         address: body.address
       }
@@ -114,7 +123,7 @@ projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validat
       }
     });
 
-    await ensureUserProjectMember(tx, {
+    if (body.owner_is_member && body.project_type === "fund_shares") await ensureUserProjectMember(tx, {
       tenantId: auth.tenantId,
       projectId: createdProject.id,
       user: actor,
@@ -159,6 +168,8 @@ projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validat
     name: result.project.name,
     address: result.project.address,
     total_shares: result.project.totalShares,
+    project_type: result.project.projectType,
+    portal_settings: normalizePortalSettings(result.project.portalSettings),
     logo_file_id: result.project.logoFileId,
     logo_url: logoUrl(result.project.logoFileId)
   });
@@ -200,6 +211,8 @@ projectsRouter.get("/:id", validateParams(idParamSchema), asyncHandler(async (re
     name: project.name,
     address: project.address,
     total_shares: project.totalShares,
+    project_type: project.projectType,
+    portal_settings: normalizePortalSettings(project.portalSettings),
     assigned_shares: assignedShares,
     remaining_shares: Math.max(0, project.totalShares - assignedShares),
     penalty_policy: project.penaltyPolicy,
@@ -277,7 +290,8 @@ projectsRouter.patch("/:id", validateParams(idParamSchema), validateBody(updateP
       totalShares: body.total_shares,
       logoFileId: body.logo_file_id,
       penaltyPolicy: body.penalty_policy,
-      address: body.address
+      address: body.address,
+      portalSettings: body.portal_settings
     }
   });
 
@@ -297,6 +311,8 @@ projectsRouter.patch("/:id", validateParams(idParamSchema), validateBody(updateP
     name: project.name,
     address: project.address,
     total_shares: project.totalShares,
+    project_type: project.projectType,
+    portal_settings: normalizePortalSettings(project.portalSettings),
     logo_file_id: project.logoFileId,
     logo_url: logoUrl(project.logoFileId),
     penalty_policy: project.penaltyPolicy
@@ -311,8 +327,6 @@ invitationsRouter.post("/", requireProject, requireRoles("owner", "approver", "a
   const project = await prisma.project.findFirstOrThrow({
     where: { id: projectId, tenantId: auth.tenantId }
   });
-  const shouldSeedShareholder = body.role === "owner" || body.role === "admin" || body.role === "accountant";
-
   const { invitation, user } = await prisma.$transaction(async (tx) => {
     const user = await tx.user.upsert({
       where: {
@@ -333,19 +347,19 @@ invitationsRouter.post("/", requireProject, requireRoles("owner", "approver", "a
       }
     });
 
-    const ensuredMember = await ensureUserProjectMember(tx, {
-      tenantId: auth.tenantId,
-      projectId: project.id,
-      user: {
-        id: user.id,
-        name: user.name,
-        mobile: user.mobile,
-        email: user.email
-      },
-      defaultShares: shouldSeedShareholder ? 1 : 0
-    });
-
-    if (body.role !== "member") {
+    if (body.role === "member") {
+      await ensureUserProjectMember(tx, {
+        tenantId: auth.tenantId,
+        projectId: project.id,
+        user: {
+          id: user.id,
+          name: user.name,
+          mobile: user.mobile,
+          email: user.email
+        },
+        defaultShares: 0
+      });
+    } else {
       await tx.projectMembership.upsert({
         where: {
           projectId_userId_role: {
@@ -356,14 +370,14 @@ invitationsRouter.post("/", requireProject, requireRoles("owner", "approver", "a
         },
         update: {
           isActive: true,
-          memberId: ensuredMember.memberId
+          memberId: null
         },
         create: {
           tenantId: auth.tenantId,
           projectId: project.id,
           userId: user.id,
           role: body.role,
-          memberId: ensuredMember.memberId
+          memberId: null
         }
       });
     }

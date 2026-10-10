@@ -13,6 +13,7 @@ export type LoginSessionPayload = {
   memberships: Array<{
     project_id: string;
     project_name: string;
+    project_type: "fund_shares" | "accounting" | "billing";
     role: string;
     member_id: string | null;
   }>;
@@ -193,6 +194,7 @@ export function toLoginSessionPayload(
     memberships: user.memberships.map((membership) => ({
       project_id: membership.projectId,
       project_name: membership.project.name,
+      project_type: membership.project.projectType,
       role: membership.role,
       member_id: membership.memberId
     }))

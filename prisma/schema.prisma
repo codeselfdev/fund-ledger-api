@@ -189,11 +189,24 @@ model Tenant {
   @@map("tenants")
 }
 
+enum ProjectType {
+  fund_shares
+  accounting
+  billing
+}
+
+enum DepositApprovalRoute {
+  accountant
+  admin
+}
+
 model Project {
   id            String   @id @default(cuid())
   tenantId      String   @map("tenant_id")
   name          String
   totalShares   Int      @map("total_shares")
+  projectType   ProjectType @default(fund_shares) @map("project_type")
+  portalSettings Json? @map("portal_settings")
   logoFileId    String?  @map("logo_file_id")
   address       String?  @map("address")
   penaltyPolicy Json?    @map("penalty_policy")
@@ -527,6 +540,7 @@ model Deposit {
   reference      String?
   allocate       String?
   status         DepositStatus @default(pending_accountant)
+  approvalRoute  DepositApprovalRoute @default(accountant) @map("approval_route")
   submittedById  String        @map("submitted_by_id")
   accountantById String?       @map("accountant_by_id")
   approverById   String?       @map("approver_by_id")
@@ -1099,4 +1113,19 @@ model ProjectNotice {
   createdBy   User @relation("ProjectNoticeCreator", fields: [createdById], references: [id], onDelete: Restrict)
   @@index([tenantId, projectId, expiresAt, deletedAt])
   @@map("project_notices")
+}
+
+// Operator-fulfilled privacy requests. No contact details are duplicated here.
+model AccountDeletionRequest {
+  id             String    @id @default(cuid())
+  userId         String    @unique @map("user_id")
+  tenantId       String    @map("tenant_id")
+  status         String    @default("pending")
+  requestedAt    DateTime  @default(now()) @map("requested_at")
+  dueAt          DateTime  @map("due_at")
+  completedAt    DateTime? @map("completed_at")
+  resolutionNote String?   @map("resolution_note")
+
+  @@index([status, dueAt])
+  @@map("account_deletion_requests")
 }

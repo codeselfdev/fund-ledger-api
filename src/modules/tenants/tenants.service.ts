@@ -1,4 +1,4 @@
-import { Prisma, TenantPlan } from "@prisma/client";
+import { Prisma, TenantPlan, ProjectType } from "@prisma/client";
 import { prisma } from "../../core/prisma/client.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { createProvisionedOnboardingSeed } from "../../core/onboarding/onboarding.service.js";
@@ -18,6 +18,8 @@ export type ProvisionTenantInput = {
   adminEmail?: string;
   projectName?: string;
   projectTotalShares?: number;
+  projectType?: ProjectType;
+  ownerIsMember?: boolean;
   plan?: TenantPlan;
   trialDays?: number;
   penaltyPolicy?: Prisma.InputJsonValue;
@@ -93,6 +95,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
         tenantId: tenant.id,
         name: projectName,
         totalShares: projectTotalShares,
+        projectType: input.projectType ?? "fund_shares",
         penaltyPolicy: input.penaltyPolicy
       }
     });
@@ -106,7 +109,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
       }
     });
 
-    const ensuredMember = await ensureUserProjectMember(tx, {
+    const ensuredMember = input.ownerIsMember && (!input.projectType || input.projectType === "fund_shares") ? await ensureUserProjectMember(tx, {
       tenantId: tenant.id,
       projectId: project.id,
       user: {
@@ -116,7 +119,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
         email: user.email
       },
       defaultShares: 1
-    });
+    }) : null;
 
     await tx.projectMembership.create({
       data: {
@@ -124,7 +127,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
         projectId: project.id,
         userId: user.id,
         role: "owner",
-        memberId: ensuredMember.memberId
+        memberId: ensuredMember?.memberId ?? null
       }
     });
 
@@ -148,7 +151,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
         organizationStepStatus: onboarding.organizationStepStatus,
         accountantStepStatus: onboarding.accountantStepStatus,
         accountsStepStatus: onboarding.accountsStepStatus,
-        shareholdersStepStatus: onboarding.shareholdersStepStatus,
+        shareholdersStepStatus: input.projectType && input.projectType !== "fund_shares" ? "skipped" : onboarding.shareholdersStepStatus,
         incomeApprovalFlow: onboarding.incomeApprovalFlow,
         expenseApprovalFlow: onboarding.expenseApprovalFlow,
         completedAt: onboarding.completedAt

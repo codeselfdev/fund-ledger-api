@@ -48,7 +48,7 @@ router.get("/dashboard", requireProject, requireRoles("staff", "admin", "owner")
       where: {
         tenantId: auth.tenantId,
         projectId: auth.projectId,
-        status: auth.roles.includes("accountant") ? "pending_accountant" : "pending_approver"
+        status: auth.roles.includes("admin") || auth.roles.includes("owner") ? { in: ["pending_accountant", "pending_approver"] } : auth.roles.includes("accountant") ? "pending_accountant" : "pending_approver"
       }
     }),
     prisma.expense.count({ where: { tenantId: auth.tenantId, projectId: auth.projectId, status: "pending" } }),

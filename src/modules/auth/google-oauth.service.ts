@@ -371,6 +371,8 @@ export async function signupWithGoogleTicket(input: {
   ownerMobile?: string;
   projectName?: string;
   totalShares?: number;
+  projectType?: "fund_shares" | "accounting" | "billing";
+  ownerIsMember?: boolean;
 }): Promise<GoogleSignupResult> {
   pruneTickets();
   const row = tickets.get(input.ticket);
@@ -395,6 +397,8 @@ export async function signupWithGoogleTicket(input: {
       slug: slugifyOrgName(input.orgName),
       projectName: input.projectName,
       projectTotalShares: input.totalShares,
+      projectType: input.projectType,
+      ownerIsMember: input.ownerIsMember,
       adminName: ownerName,
       adminMobile: ownerMobile,
       adminEmail: row.identity.email,
