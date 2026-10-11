@@ -2,8 +2,8 @@ import { z } from "zod";
 import { prisma } from "../prisma/client.js";
 
 export const projectTypeSchema = z.enum(["fund_shares", "accounting", "billing"]);
-export const memberShortcutKeys = ["members", "ledger", "expenses"] as const;
-export const accountantShortcutKeys = ["members", "expenses", "ledger", "commerce", "approvals", "pending_expenses", "accounts"] as const;
+export const memberShortcutKeys = ["members", "ledger", "expenses", "income"] as const;
+export const accountantShortcutKeys = ["members", "expenses", "ledger", "commerce", "approvals", "pending_expenses", "accounts", "income"] as const;
 const unique = (items: string[]) => new Set(items).size === items.length;
 export const portalSettingsSchema = z.object({
   deposit_review: z.enum(["automatic", "admin_only"]),
@@ -12,7 +12,7 @@ export const portalSettingsSchema = z.object({
 }).strict();
 export type PortalSettings = z.infer<typeof portalSettingsSchema>;
 export function normalizePortalSettings(raw: unknown): PortalSettings {
-  const defaults: PortalSettings = { deposit_review: "automatic", member_shortcuts: [...memberShortcutKeys], accountant_shortcuts: ["members", "expenses", "ledger", "commerce"] };
+  const defaults: PortalSettings = { deposit_review: "automatic", member_shortcuts: [...memberShortcutKeys], accountant_shortcuts: ["members", "expenses", "ledger", "commerce", "income"] };
   const parsed = portalSettingsSchema.safeParse(raw);
   return parsed.success ? parsed.data : defaults;
 }

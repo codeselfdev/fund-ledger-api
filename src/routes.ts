@@ -1,3 +1,5 @@
+import { customersRouter } from './modules/customers/customers.routes.js';
+import { accountingRouter } from "./modules/accounting/accounting.routes.js";
 import { platformBillingRouter } from "./modules/subscription/platform-billing.routes.js";
 import { accountDeletionRouter } from "./modules/auth/account-deletion.routes.js";
 import type { Express } from "express";
@@ -65,6 +67,8 @@ export function registerRoutes(app: Express) {
   app.use("/v1/vendors", vendorsRouter);
   app.use("/v1/accounts", accountsRouter);
   app.use("/v1/incomes", incomesRouter);
+  app.use("/v1/customers", customersRouter);
+  app.use("/v1/accounting", accountingRouter);
   app.use("/v1/inventory-categories", inventoryCategoriesRouter);
   app.use("/v1/inventory", inventoryRouter);
   app.use("/v1/purchases", purchasesRouter);

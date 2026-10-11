@@ -207,6 +207,10 @@ model Project {
   totalShares   Int      @map("total_shares")
   projectType   ProjectType @default(fund_shares) @map("project_type")
   portalSettings Json? @map("portal_settings")
+  commerceSettings Json? @map("commerce_settings")
+  incomeCategories IncomeCategory[]
+  customers Customer[]
+  businessDocuments BusinessDocument[]
   logoFileId    String?  @map("logo_file_id")
   address       String?  @map("address")
   penaltyPolicy Json?    @map("penalty_policy")
@@ -837,6 +841,7 @@ model Account {
   updatedAt DateTime    @updatedAt @map("updated_at")
 
   project          Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  businessPayments BusinessPayment[]
   txns             AccountTransaction[]
   deposits         Deposit[]
   targetedExpenses Expense[]            @relation("ExpenseTargetAccount")
@@ -877,12 +882,20 @@ model AccountTransaction {
   description   String?
   balanceAfter  Int                  @map("balance_after")
   createdById   String?              @map("created_by_id")
+  incomeSource String? @map("income_source")
+  incomeCategoryId String? @map("income_category_id")
+  incomeCustomerId String? @map("income_customer_id")
+  incomeCategory IncomeCategory? @relation(fields: [incomeCategoryId], references: [id], onDelete: Restrict)
+  incomeCustomer Customer? @relation(fields: [incomeCustomerId], references: [id], onDelete: Restrict)
+  occurredOn DateTime? @map("occurred_on")
+  requestKey String? @map("request_key")
   createdAt     DateTime             @default(now()) @map("created_at")
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, projectId, accountId])
   @@index([tenantId, projectId, direction])
+  @@unique([projectId, requestKey])
   @@map("account_transactions")
 }
 
@@ -1132,4 +1145,94 @@ model AccountDeletionRequest {
 
   @@index([status, dueAt])
   @@map("account_deletion_requests")
+}
+
+
+model Customer {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  name String
+  mobile String?
+  email String?
+  address String?
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  incomeTransactions AccountTransaction[]
+  documents BusinessDocument[]
+  @@index([tenantId, projectId, isActive])
+  @@map("customers")
+}
+
+model BusinessDocument {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  customerId String @map("customer_id")
+  customerSnapshot Json @map("customer_snapshot")
+  kind String
+  number String
+  status String @default("draft")
+  lines Json
+  subtotal Int
+  discount Int @default(0)
+  tax Int @default(0)
+  total Int
+  paidAmount Int @default(0) @map("paid_amount")
+  documentDate DateTime @map("document_date")
+  dueDate DateTime? @map("due_date")
+  note String?
+  workflow Json
+  events Json
+  sourceId String? @unique @map("source_id")
+  requestKey String @map("request_key")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  source BusinessDocument? @relation("DocumentFlow", fields: [sourceId], references: [id], onDelete: Restrict)
+  next BusinessDocument? @relation("DocumentFlow")
+  payments BusinessPayment[]
+  @@unique([projectId, requestKey])
+  @@unique([projectId, number])
+  @@index([tenantId, projectId, kind, status])
+  @@map("business_documents")
+}
+
+model BusinessPayment {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  documentId String @map("document_id")
+  accountId String @map("account_id")
+  accountName String @map("account_name")
+  amount Int
+  paymentDate DateTime @map("payment_date")
+  reference String?
+  requestKey String @map("request_key")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  document BusinessDocument @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, documentId])
+  @@map("business_payments")
+}
+
+model IncomeCategory {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  name String
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  transactions AccountTransaction[]
+  @@unique([projectId, name])
+  @@index([tenantId, projectId, isActive])
+  @@map("income_categories")
 }
