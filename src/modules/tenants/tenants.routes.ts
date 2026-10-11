@@ -8,6 +8,7 @@ import { prisma } from "../../core/prisma/client.js";
 import { requireProvisioningApiKey } from "../../core/security/api-key.middleware.js";
 import { authenticate, requireProject, requireRoles } from "../../core/security/auth.middleware.js";
 import { requireActiveSubscription } from "../../core/security/subscription.middleware.js";
+import { requireOrganizationManagement } from "../../core/security/organization-access.js";
 import { requireAuthContext, requireProjectContext } from "../../core/security/auth.context.js";
 import { validateBody } from "../../core/validation/validate.js";
 import { optionalPenaltyPolicySchema } from "../../core/validation/common.schemas.js";
@@ -26,7 +27,7 @@ const provisionTenantSchema = z.object({
   admin_mobile: z.string().min(6),
   admin_email: z.string().email().optional(),
   plan: z.nativeEnum(TenantPlan).default("free"),
-  trial_days: z.number().int().min(0).max(365).default(182),
+  trial_days: z.number().int().min(0).max(365).optional(),
   penalty_policy: optionalPenaltyPolicySchema
 });
 
@@ -48,6 +49,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function mergeContact(currentContact: unknown, patchContact: Record<string, unknown> | undefined): Prisma.InputJsonValue | undefined {
   if (!patchContact) return undefined;
+  if (["subscription", "billing", "owner_user_id"].some(key => key in patchContact)) throw badRequest("Billing fields can only be changed by the billing service");
   const base = isRecord(currentContact) ? { ...currentContact } : {};
   return jsonValue({
     ...base,
@@ -94,7 +96,9 @@ router.get("/current", authenticate, requireActiveSubscription, asyncHandler(asy
     }
   });
 
-  return ok(res, tenant);
+  // Manual payment references are available only through the organization-management billing API.
+  const contact = isRecord(tenant.contact) ? Object.fromEntries(Object.entries(tenant.contact).filter(([key]) => key !== "billing")) : tenant.contact;
+  return ok(res, { ...tenant, contact });
 }));
 
 router.patch(
@@ -103,6 +107,7 @@ router.patch(
   requireActiveSubscription,
   requireProject,
   requireRoles("owner"),
+  requireOrganizationManagement,
   validateBody(updateTenantSchema),
   asyncHandler(async (req, res) => {
     const auth = requireProjectContext(req);
@@ -111,7 +116,7 @@ router.patch(
 
     const before = await prisma.tenant.findUniqueOrThrow({ where: { id: auth.tenantId } });
     const tenant = await prisma.tenant.update({
-      where: { id: auth.tenantId },
+      where: { id: auth.tenantId, updatedAt: before.updatedAt },
       data: {
         name: body.name,
         branding: jsonValue(body.branding),

@@ -1,9 +1,12 @@
+import { forbidden } from "../../core/http/api-error.js";
+import { invoicesFromContact, submitInvoicePayment } from "./billing.service.js";
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { ok } from "../../core/http/response.js";
 import { prisma } from "../../core/prisma/client.js";
 import { requireRoles } from "../../core/security/auth.middleware.js";
+import { requireOrganizationManagement } from "../../core/security/organization-access.js";
 import { requireAuthContext } from "../../core/security/auth.context.js";
 import { evaluateSubscription, renewTenantSubscription, startTenantTrial } from "../../core/subscription/subscription.service.js";
 import { validateBody } from "../../core/validation/validate.js";
@@ -26,76 +29,23 @@ router.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
   return ok(res, {
     tenant_id: tenant.id,
     tenant_name: tenant.name,
+    can_manage_billing: auth.roles.includes("owner") || auth.roles.includes("admin"),
     plan: tenant.plan,
     ...summary
   });
 }));
 
-router.post("/renew", requireRoles("owner", "admin"), asyncHandler(async (req, res) => {
+// Customer organization roles never grant authority to approve their own subscription.
+router.post("/renew", asyncHandler(async () => { throw forbidden("Only the billing service can approve a paid renewal"); }));
+router.post("/trial", asyncHandler(async () => { throw forbidden("Trial periods cannot be reset by customers"); }));
+const paymentSchema = z.object({ payment_reference: z.string().trim().min(3).max(200) });
+router.get("/invoices", requireRoles("owner", "admin"), requireOrganizationManagement, asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
-  const tenant = await prisma.tenant.findUniqueOrThrow({
-    where: { id: auth.tenantId },
-    select: { contact: true }
-  });
-
-  const renewed = renewTenantSubscription(tenant.contact);
-  const updatedTenant = await prisma.tenant.update({
-    where: { id: auth.tenantId },
-    data: { contact: renewed.contact },
-    select: { id: true, name: true, plan: true, contact: true }
-  });
-
-  await writeAudit({
-    tenantId: auth.tenantId,
-    projectId: auth.projectId,
-    actorUserId: auth.userId,
-    action: "subscription.renewed",
-    entityType: "tenant",
-    entityId: auth.tenantId,
-    after: renewed.subscription
-  });
-
-  const summary = evaluateSubscription(updatedTenant.contact);
-  return ok(res, {
-    tenant_id: updatedTenant.id,
-    tenant_name: updatedTenant.name,
-    plan: updatedTenant.plan,
-    ...summary
-  });
+  const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: auth.tenantId } });
+  return ok(res, invoicesFromContact(tenant.contact));
 }));
-
-router.post("/trial", requireRoles("owner", "admin"), validateBody(trialBodySchema), asyncHandler(async (req, res) => {
+router.post("/invoices/:invoiceId/payment", requireRoles("owner", "admin"), requireOrganizationManagement, validateBody(paymentSchema), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
-  const body = req.body as z.infer<typeof trialBodySchema>;
-  const tenant = await prisma.tenant.findUniqueOrThrow({
-    where: { id: auth.tenantId },
-    select: { contact: true }
-  });
-
-  const trial = startTenantTrial(tenant.contact, body.trial_days);
-  const updatedTenant = await prisma.tenant.update({
-    where: { id: auth.tenantId },
-    data: { contact: trial.contact },
-    select: { id: true, name: true, plan: true, contact: true }
-  });
-
-  await writeAudit({
-    tenantId: auth.tenantId,
-    projectId: auth.projectId,
-    actorUserId: auth.userId,
-    action: "subscription.trial_started",
-    entityType: "tenant",
-    entityId: auth.tenantId,
-    after: trial.subscription
-  });
-
-  const summary = evaluateSubscription(updatedTenant.contact);
-  return ok(res, {
-    tenant_id: updatedTenant.id,
-    tenant_name: updatedTenant.name,
-    plan: updatedTenant.plan,
-    ...summary
-  });
+  return ok(res, await submitInvoicePayment(auth.tenantId, req.params.invoiceId!, auth.userId, paymentSchema.parse(req.body).payment_reference));
 }));
-
 export { router as subscriptionRouter };

@@ -140,7 +140,7 @@ async function loadOnboardingBundle(tenantId: string) {
 }
 
 function assertOwnerOnboarding(roles: Role[]) {
-  if (!roles.includes("owner")) throw forbidden("Only the owner can manage onboarding");
+  if (!roles.includes("owner") && !roles.includes("admin")) throw forbidden("Only project management can manage onboarding");
 }
 
 function assertOnboardingProject(activeProjectId: string, onboardingProjectId: string) {

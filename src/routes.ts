@@ -1,3 +1,4 @@
+import { platformBillingRouter } from "./modules/subscription/platform-billing.routes.js";
 import { accountDeletionRouter } from "./modules/auth/account-deletion.routes.js";
 import type { Express } from "express";
 import { authenticate } from "./core/security/auth.middleware.js";
@@ -37,15 +38,16 @@ import { eventsRouter, pollsRouter } from "./modules/community/community.routes.
 import { followupsRouter } from "./modules/follow-ups/followups.routes.js";
 
 export function registerRoutes(app: Express) {
+  app.use("/v1/platform/billing", platformBillingRouter);
   app.use("/v1/tenants", tenantsRouter);
   app.use("/v1/auth", accountDeletionRouter);
   app.use("/v1/auth", authRouter);
   app.use("/v1/onboarding", onboardingRouter);
 
+  app.use("/v1/projects", projectsRouter);
   app.use(authenticate);
   app.use("/v1/subscription", subscriptionRouter);
   app.use(requireActiveSubscription);
-  app.use("/v1/projects", projectsRouter);
   app.use("/v1/invitations", invitationsRouter);
   app.use("/v1/members", memberProfileRouter);
   app.use("/v1/members", membersRouter);

@@ -24,7 +24,7 @@ type Args = {
   adminMobile: string;
   adminEmail?: string;
   currency: string;
-  trialDays: number;
+  trialDays?: number;
   projectName: string;
   projectTotalShares: number;
   printOtp: boolean;
@@ -42,7 +42,7 @@ Required:
 Optional:
   --admin-email <email>           recommended (OTP login emails)
   --currency <ISO>                default: BDT
-  --trial-days <n>                default: 182
+  --trial-days <n>                default: three calendar months
   --project-name <name>           default: Default Project
   --total-shares <n>              default: 1
   --print-otp                     issue + print a one-time login code
@@ -81,9 +81,9 @@ function parseArgs(argv: string[]): Args {
     throw new Error("--slug must match /^[a-z0-9-]+$/");
   }
 
-  const trialDaysRaw = readArg(argv, "--trial-days") ?? "182";
-  const trialDays = Number(trialDaysRaw);
-  if (!Number.isInteger(trialDays) || trialDays < 0 || trialDays > 3650) {
+  const trialDaysRaw = readArg(argv, "--trial-days");
+  const trialDays = trialDaysRaw === undefined ? undefined : Number(trialDaysRaw);
+  if (trialDays !== undefined && (!Number.isInteger(trialDays) || trialDays < 0 || trialDays > 3650)) {
     throw new Error("--trial-days must be an integer between 0 and 3650");
   }
   const totalSharesRaw = readArg(argv, "--total-shares") ?? "1";

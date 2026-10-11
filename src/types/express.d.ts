@@ -8,6 +8,7 @@ declare global {
         userId: string;
         tenantId: string;
         projectId: string | null;
+        sessionProjectId?: string | null;
         roles: Role[];
         memberId: string | null;
       };

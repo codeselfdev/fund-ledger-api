@@ -8,6 +8,7 @@ import { depositsRouter } from '../dist/modules/deposits/deposits.routes.js';
 import { onboardingRouter } from '../dist/modules/onboarding/onboarding.routes.js';
 import { provisionTenant } from '../dist/modules/tenants/tenants.service.js';
 import { signAccessToken } from '../dist/core/security/jwt.js';
+import { createTrialSubscription } from '../dist/core/subscription/subscription.service.js';
 import { normalizePortalSettings, portalSettingsSchema } from '../dist/core/projects/project-settings.js';
 let server, url, project, members, roles, deposits, due, account, receipts, progress, notifications, scopeQueries;
 const owner = { id: 'owner', tenantId: 'tenant', name: 'Owner', mobile: 'e:owner', email: null, isActive: true };
@@ -26,8 +27,8 @@ before(async () => {
  prisma.project.findFirstOrThrow=async ({where})=>{scopeQueries.push(where);if(!matches(project,where)) throw new Error('Project not found');return structuredClone(project);};
  prisma.project.create=async ({data})=>(project={...project,...clean(data),id:'project'});
  prisma.project.update=async ({data})=>(project={...project,...clean(data)});
- prisma.tenant.findUnique=async ({where})=>where.slug?null:{id:'tenant',name:'Business',slug:'business',contact:{}};
- prisma.tenant.findUniqueOrThrow=async ()=>({id:'tenant',name:'Business',slug:'business',contact:{}});
+ prisma.tenant.findUnique=async ({where})=>where.slug?null:{id:'tenant',name:'Business',slug:'business',contact:{subscription:createTrialSubscription(182)}};
+ prisma.tenant.findUniqueOrThrow=async ()=>({id:'tenant',name:'Business',slug:'business',contact:{subscription:createTrialSubscription(182)}});
  prisma.tenant.create=async ({data})=>({id:'tenant',...data});
  prisma.user.findFirst=async()=>null;
  prisma.user.findFirstOrThrow=async()=>owner;
@@ -36,7 +37,7 @@ before(async () => {
  prisma.user.upsert=async ({create})=>({id:'accountant',isActive:true,...create});
  prisma.user.findMany=async()=>[];
  prisma.session.create=async ({data})=>({id:'session',...data});prisma.session.update=async()=>({});
- prisma.session.findFirst=async()=>({id:'session',tenantId:'tenant',userId:'owner',activeProjectId:'project',user:owner});
+ prisma.session.findFirst=async({where})=>({id:'session',tenantId:'tenant',userId:where.userId,activeProjectId:'project',user:{...owner,id:where.userId}});
  prisma.onboardingProgress.create=async ({data})=>(progress={...data});
  prisma.onboardingProgress.findUnique=async()=>structuredClone(progress);
  prisma.onboardingProgress.update=async ({data})=>(progress={...progress,...clean(data)});
@@ -81,12 +82,12 @@ before(async () => {
 beforeEach(reset);
 after(async()=>{await new Promise(resolve=>server.close(resolve));await prisma.$disconnect();});
 async function request(path,body,role='admin',method='POST'){
- const token=signAccessToken({sessionId:'session',tenantId:'tenant',userId:'owner'});
+ const token=signAccessToken({sessionId:'session',tenantId:'tenant',userId:role==='member'?'member-user':'owner'});
  const response=await fetch(url+path,{method,headers:{'content-type':'application/json','x-role':role,authorization:`Bearer ${token}`},...(body!==undefined?{body:JSON.stringify(body)}:{})});return{status:response.status,body:await response.json()};
 }
 const settings={deposit_review:'admin_only',member_shortcuts:['ledger'],accountant_shortcuts:['approvals','expenses']};
-test('project creation defaults to Fund/Shares and leaves owner access-only',async()=>{
- const res=await request('/projects',{name:'Fund',total_shares:10});assert.equal(res.status,201);assert.equal(members.length,0);assert.equal(res.body.data.project_type,'fund_shares');assert.deepEqual(roles.map(row=>row.role),['owner','owner']);
+test('project creation defaults to Fund/Shares and leaves the creator access-only',async()=>{
+ const res=await request('/projects',{name:'Fund',total_shares:10});assert.equal(res.status,201);assert.equal(members.length,0);assert.equal(res.body.data.project_type,'fund_shares');assert.deepEqual(roles.map(row=>row.role),['owner','admin']);
 });
 test('project creation explicitly links the owner only when selected',async()=>{
  assert.equal((await request('/projects',{name:'Fund',total_shares:10,owner_is_member:true})).status,201);assert.equal(members.length,1);assert.equal(members[0].shares,1);assert.ok(roles.some(row=>row.role==='member'));

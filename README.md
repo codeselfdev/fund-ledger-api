@@ -86,7 +86,7 @@ Users sign up themselves. Onboarding state is persisted in the database (`onboar
 4) Shareholders (share allocation)
 ```
 
-Every new org gets **6 months free** (~182 days). After that, renew for **1 year** via `POST /v1/subscription/renew`.
+Every new org gets **3 calendar months free**. After expiry, an operator-issued bill and manual payment approval renew access for **1 year**. Customers cannot approve their own renewal. See [Organization billing](docs/ORGANIZATION_BILLING.md).
 
 ### 1. Signup
 
@@ -199,7 +199,6 @@ npm run create:super-admin -- \
   --admin-name "Salahuddin Ahmed" \
   --admin-mobile "+8801711553300" \
   --admin-email "owner@example.com" \
-  --trial-days 182 \
   --print-otp
 ```
 
@@ -212,7 +211,6 @@ npm run create:super-admin:prod -- \
   --admin-name "Salahuddin Ahmed" \
   --admin-mobile "+8801711553300" \
   --admin-email "owner@example.com" \
-  --trial-days 182 \
   --print-otp
 ```
 

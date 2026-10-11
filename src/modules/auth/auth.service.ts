@@ -1,20 +1,24 @@
+import { linkedIdentityUsers } from "../../core/security/linked-identity.js";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../core/prisma/client.js";
 import { forbidden, unauthorized } from "../../core/http/api-error.js";
 import { hashToken, sessionExpiryDate, signAccessToken } from "../../core/security/jwt.js";
 import { sendOtpEmail } from "../../core/mail/mailer.service.js";
 import { verifyAuthIdToken, verifyFirebasePhoneIdToken } from "../../core/firebase/admin.js";
+import { summarizeProjectMemberships } from "../../core/security/project-access.js";
 
 export type LoginSessionPayload = {
   token: string;
+  identity_root_id?: string;
   user: { id: string; name: string; mobile: string };
   tenant: { id: string; name: string; slug: string };
-  active_project_id: string;
+  active_project_id: string | null;
   memberships: Array<{
     project_id: string;
     project_name: string;
     project_type: "fund_shares" | "accounting" | "billing";
     role: string;
+    roles: string[];
     member_id: string | null;
   }>;
 };
@@ -144,7 +148,7 @@ export function googlePlaceholderMobile(uid: string): string {
 
 const userLoginInclude = {
   memberships: {
-    where: { isActive: true },
+    where: { isActive: true, project: { isActive: true } },
     include: { project: true, member: true }
   },
   tenant: true
@@ -165,13 +169,13 @@ export async function findActiveUsersByMobile(mobile: string, tenantSlug?: strin
     include: userLoginInclude
   });
 
-  return users.filter((user) => mobilesEquivalent(user.mobile, mobile));
+  return deduplicateLinkedUsers(users.filter((user) => mobilesEquivalent(user.mobile, mobile)));
 }
 
 export async function findActiveUsersByEmail(email: string, tenantSlug?: string) {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return [];
-  return prisma.user.findMany({
+  const users = await prisma.user.findMany({
     where: {
       isActive: true,
       email: { equals: normalized, mode: "insensitive" },
@@ -179,42 +183,41 @@ export async function findActiveUsersByEmail(email: string, tenantSlug?: string)
     },
     include: userLoginInclude
   });
+  return deduplicateLinkedUsers(users);
+}
+
+function deduplicateLinkedUsers<T extends { id: string; identityRootId: string | null }>(users: T[]) {
+  const seen = new Set<string>();
+  return users.filter(user => { const root = user.identityRootId ?? user.id; if (seen.has(root)) return false; seen.add(root); return true; });
 }
 
 export function toLoginSessionPayload(
   user: LoginUser,
   token: string,
-  activeProjectId: string
+  activeProjectId: string | null
 ): LoginSessionPayload {
   return {
     token,
     user: { id: user.id, name: user.name, mobile: user.mobile },
     tenant: { id: user.tenant.id, name: user.tenant.name, slug: user.tenant.slug },
     active_project_id: activeProjectId,
-    memberships: user.memberships.map((membership) => ({
-      project_id: membership.projectId,
-      project_name: membership.project.name,
-      project_type: membership.project.projectType,
-      role: membership.role,
-      member_id: membership.memberId
-    }))
+    memberships: summarizeProjectMemberships(user.memberships)
   };
 }
 
 export async function issueLoginSession(user: LoginUser, projectId?: string): Promise<LoginSessionPayload> {
   if (!user) throw unauthorized("Invalid login");
-  const activeMembership = projectId
-    ? user.memberships.find((membership) => membership.projectId === projectId)
-    : user.memberships[0];
-  if (!activeMembership) throw forbidden("No active membership for requested project");
-
-  const { token } = await createSessionToken({
-    tenantId: user.tenantId,
-    userId: user.id,
-    activeProjectId: activeMembership.projectId
+  const identity = await linkedIdentityUsers(user.id);
+  const allMemberships = await prisma.projectMembership.findMany({
+    where: { userId: { in: identity.userIds }, isActive: true, project: { isActive: true } }, include: { project: true }
   });
+  const activeMembership = projectId ? allMemberships.find(row => row.projectId === projectId) : (user.memberships[0] ?? allMemberships[0]);
+  if (projectId && !activeMembership) throw forbidden("No active membership for requested project");
+  const selectedUser = activeMembership && activeMembership.userId !== user.id ? await getActiveUserForLogin(activeMembership.userId) : user;
+  const { token } = await createSessionToken({ tenantId: selectedUser.tenantId, userId: selectedUser.id, activeProjectId: activeMembership?.projectId ?? null });
+  return { ...toLoginSessionPayload(selectedUser, token, activeMembership?.projectId ?? null),
+    identity_root_id: identity.rootId, memberships: summarizeProjectMemberships(allMemberships) };
 
-  return toLoginSessionPayload(user, token, activeMembership.projectId);
 }
 
 export async function getActiveUserForLogin(userId: string) {

@@ -81,7 +81,7 @@ router.get("/member-document-titles", requireProject, requireRoles("any"), async
   const auth = requireProjectContext(req);
   const tenant = await prisma.tenant.findUniqueOrThrow({
     where: { id: auth.tenantId },
-    select: { contact: true }
+    select: { contact: true, updatedAt: true }
   });
   const titles = readTitles(tenant.contact);
   return ok(res, {
@@ -94,7 +94,7 @@ router.post("/member-document-titles", requireProject, requireRoles("owner", "ad
   const body = req.body as z.infer<typeof titleCreateSchema>;
   const tenant = await prisma.tenant.findUniqueOrThrow({
     where: { id: auth.tenantId },
-    select: { contact: true }
+    select: { contact: true, updatedAt: true }
   });
 
   const titles = readTitles(tenant.contact);
@@ -113,7 +113,7 @@ router.post("/member-document-titles", requireProject, requireRoles("owner", "ad
   const nextTitles = [...titles, createdTitle];
 
   await prisma.tenant.update({
-    where: { id: auth.tenantId },
+    where: { id: auth.tenantId, updatedAt: tenant.updatedAt },
     data: { contact: writeTitles(tenant.contact, nextTitles) }
   });
 
@@ -136,7 +136,7 @@ router.patch("/member-document-titles/:id", requireProject, requireRoles("owner"
   const body = req.body as z.infer<typeof titleUpdateSchema>;
   const tenant = await prisma.tenant.findUniqueOrThrow({
     where: { id: auth.tenantId },
-    select: { contact: true }
+    select: { contact: true, updatedAt: true }
   });
 
   const titles = readTitles(tenant.contact);
@@ -157,7 +157,7 @@ router.patch("/member-document-titles/:id", requireProject, requireRoles("owner"
   const nextTitles = titles.map((item) => (item.id === id ? updated : item));
 
   await prisma.tenant.update({
-    where: { id: auth.tenantId },
+    where: { id: auth.tenantId, updatedAt: tenant.updatedAt },
     data: { contact: writeTitles(tenant.contact, nextTitles) }
   });
 
@@ -190,7 +190,7 @@ router.post("/members/:id/documents", requireProject, requireRoles("any"), valid
     }),
     prisma.tenant.findUniqueOrThrow({
       where: { id: auth.tenantId },
-      select: { contact: true }
+      select: { contact: true, updatedAt: true }
     })
   ]);
   if (!member) throw notFound("Member not found");
@@ -260,7 +260,7 @@ router.get("/members/:id/documents", requireProject, requireRoles("any"), valida
     }),
     prisma.tenant.findUniqueOrThrow({
       where: { id: auth.tenantId },
-      select: { contact: true }
+      select: { contact: true, updatedAt: true }
     })
   ]);
   if (!member) throw notFound("Member not found");

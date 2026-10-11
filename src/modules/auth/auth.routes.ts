@@ -1,10 +1,12 @@
+import { linkedIdentityUsers } from "../../core/security/linked-identity.js";
+import { getActiveUserForLogin } from "./auth.service.js";
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { badRequest, forbidden, unauthorized } from "../../core/http/api-error.js";
 import { ok } from "../../core/http/response.js";
 import { prisma } from "../../core/prisma/client.js";
-import { authenticate, requireRoles } from "../../core/security/auth.middleware.js";
+import { authenticate, authenticateAccount, requireRoles } from "../../core/security/auth.middleware.js";
 import { requireAuthContext } from "../../core/security/auth.context.js";
 import { hashToken } from "../../core/security/jwt.js";
 import { validateBody } from "../../core/validation/validate.js";
@@ -14,6 +16,7 @@ import { buildGoogleAuthorizationUrl, handleGoogleOAuthCallback, resolveGoogleAu
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
 import { summarizeOnboardingForClient } from "../../core/onboarding/onboarding.service.js";
 import { hasDelegatedPayerAccess } from "../../core/security/deposit-delegate.service.js";
+import { summarizeProjectMemberships } from "../../core/security/project-access.js";
 
 const router = Router();
 
@@ -162,30 +165,39 @@ router.post("/login", validateBody(loginSchema), asyncHandler(async (req, res) =
   const payload = await issueLoginSession(user, body.project_id);
 
   await writeAudit({
-    tenantId: user.tenantId,
+    tenantId: payload.tenant.id,
     projectId: payload.active_project_id,
-    actorUserId: user.id,
+    actorUserId: payload.user.id,
     action: "auth.login",
     entityType: "session",
-    after: { user_id: user.id }
+    after: { user_id: payload.user.id }
   });
 
   return ok(res, payload);
 }));
 
-router.post("/switch-project", authenticate, requireRoles("any"), validateBody(switchProjectSchema), asyncHandler(async (req, res) => {
+router.post("/switch-project", authenticateAccount, requireRoles("any"), validateBody(switchProjectSchema), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const body = req.body as z.infer<typeof switchProjectSchema>;
 
+  const identity = await linkedIdentityUsers(auth.userId);
   const membership = await prisma.projectMembership.findFirst({
     where: {
-      tenantId: auth.tenantId,
-      userId: auth.userId,
+      userId: { in: identity.userIds },
       projectId: body.project_id,
-      isActive: true
+      isActive: true,
+      project: { isActive: true }
     }
   });
   if (!membership) throw forbidden("No active role for requested project");
+
+  if (membership.tenantId !== auth.tenantId || membership.userId !== auth.userId) {
+    const target = await getActiveUserForLogin(membership.userId);
+    const login = await issueLoginSession(target, body.project_id);
+    await writeAudit({ tenantId: login.tenant.id, projectId: body.project_id, actorUserId: login.user.id,
+      action: "auth.switch_project", entityType: "project", entityId: body.project_id });
+    return ok(res, { ...login, identity_root_id: identity.rootId });
+  }
 
   await prisma.session.update({
     where: { id: auth.sessionId },
@@ -212,7 +224,7 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
       include: {
         tenant: true,
         memberships: {
-          where: { isActive: true },
+          where: { isActive: true, project: { isActive: true } },
           include: { project: true, member: true }
         }
       }
@@ -220,6 +232,7 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
     prisma.onboardingProgress.findUnique({
       where: { tenantId: auth.tenantId },
       select: {
+        projectId: true,
         status: true,
         organizationStepStatus: true,
         accountantStepStatus: true,
@@ -232,6 +245,8 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
       }
     })
   ]);
+  const identity = await linkedIdentityUsers(auth.userId);
+  const allMemberships = await prisma.projectMembership.findMany({ where: { userId: { in: identity.userIds }, isActive: true, project: { isActive: true } }, include: { project: true } });
   const canPayForMembersByRole = auth.roles.includes("admin") || auth.roles.includes("accountant") || auth.roles.includes("cashier");
   const canPayForMembers = canPayForMembersByRole || (
     auth.projectId ? hasDelegatedPayerAccess(user.tenant.contact, auth.projectId, auth.userId) : false
@@ -239,7 +254,9 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
   const onboardingProject = user.memberships.find((membership) => membership.projectId === auth.projectId)?.project
     ?? user.memberships[0]?.project
     ?? null;
-  const onboarding = summarizeOnboardingForClient(onboardingProgress, onboardingProject);
+  const onboarding = summarizeOnboardingForClient(
+    onboardingProgress?.projectId === auth.projectId ? onboardingProgress : null, onboardingProject
+  );
   const subscription = evaluateSubscription(user.tenant.contact);
 
   return ok(res, {
@@ -249,13 +266,8 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
     roles: auth.roles,
     can_pay_for_members: canPayForMembers,
     member_id: auth.memberId,
-    memberships: user.memberships.map((membership) => ({
-      project_id: membership.projectId,
-      project_name: membership.project.name,
-      project_type: membership.project.projectType,
-      role: membership.role,
-      member_id: membership.memberId
-    })),
+    identity_root_id: identity.rootId,
+    memberships: summarizeProjectMemberships(allMemberships),
     onboarding,
     subscription: {
       status: subscription.status,
@@ -267,7 +279,7 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
   });
 }));
 
-router.post("/logout", authenticate, requireRoles("any"), asyncHandler(async (req, res) => {
+router.post("/logout", authenticateAccount, requireRoles("any"), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const token = req.header("authorization")?.slice("Bearer ".length).trim();
 

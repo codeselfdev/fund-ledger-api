@@ -1,3 +1,7 @@
+import { readObject, StorageObjectNotFoundError } from "../../core/storage/object-storage.service.js";
+import { randomUUID } from "node:crypto";
+import { linkedIdentityUsers } from "../../core/security/linked-identity.js";
+import { createThreeMonthTrial } from "../../core/subscription/subscription.service.js";
 import { Router } from "express";
 import { z } from "zod";
 import { Role } from "@prisma/client";
@@ -5,7 +9,9 @@ import { asyncHandler } from "../../core/http/async-handler.js";
 import { badRequest, forbidden, notFound } from "../../core/http/api-error.js";
 import { created, ok } from "../../core/http/response.js";
 import { prisma } from "../../core/prisma/client.js";
-import { requireProject, requireRoles } from "../../core/security/auth.middleware.js";
+import { authenticate, authenticateAccount, requireProject, requireRoles } from "../../core/security/auth.middleware.js";
+import { requireActiveSubscription } from "../../core/security/subscription.middleware.js";
+import { summarizeProjectMemberships } from "../../core/security/project-access.js";
 import { requireAuthContext, requireProjectContext } from "../../core/security/auth.context.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams } from "../../core/validation/validate.js";
@@ -26,10 +32,12 @@ import { projectTypeSchema, portalSettingsSchema, normalizePortalSettings } from
 
 const projectsRouter = Router();
 const invitationsRouter = Router();
+projectsRouter.use(authenticateAccount);
 
 const createProjectSchema = z.object({
   project_type: projectTypeSchema.default("fund_shares"),
   owner_is_member: z.boolean().default(false),
+  organization_name: z.string().trim().min(2).max(150),
   name: z.string().min(2),
   total_shares: z.number().int().positive(),
   penalty_policy: optionalPenaltyPolicySchema,
@@ -68,34 +76,129 @@ function logoUrl(logoFileId: string | null) {
 
 projectsRouter.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
+  const identity = await linkedIdentityUsers(auth.userId);
   const memberships = await prisma.projectMembership.findMany({
     where: {
-      tenantId: auth.tenantId,
-      userId: auth.userId,
-      isActive: true
+      userId: { in: identity.userIds },
+      isActive: true,
+      project: { isActive: true }
     },
     include: { project: true, member: true },
     orderBy: { createdAt: "asc" }
   });
 
-  return ok(res, memberships.map((membership) => ({
-    project_id: membership.projectId,
-    name: membership.project.name,
-    address: membership.project.address,
-    total_shares: membership.project.totalShares,
-    project_type: membership.project.projectType,
-    portal_settings: normalizePortalSettings(membership.project.portalSettings),
-    logo_file_id: membership.project.logoFileId,
-    logo_url: logoUrl(membership.project.logoFileId),
-    role: membership.role,
-    member_id: membership.memberId,
-    is_active: membership.project.isActive,
-    is_current: membership.projectId === auth.projectId
-  })));
+  const choices = summarizeProjectMemberships(memberships).map((access) => {
+    const project = memberships.find(row => row.projectId === access.project_id)!.project;
+    return {
+      ...access, name: project.name, address: project.address, total_shares: project.totalShares,
+      portal_settings: normalizePortalSettings(project.portalSettings),
+      logo_file_id: project.logoFileId, logo_url: project.logoFileId ? `/v1/projects/${project.id}/logo` : null,
+      is_active: project.isActive,
+      is_current: access.project_id === (req.header("x-project-id") ?? auth.sessionProjectId)
+    };
+  });
+  return ok(res, choices);
 }));
 
-projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validateBody(createProjectSchema), asyncHandler(async (req, res) => {
-  const auth = requireProjectContext(req);
+projectsRouter.post("/owned-organization", requireRoles("any"), validateBody(createProjectSchema), asyncHandler(async (req, res) => {
+  const auth = requireAuthContext(req);
+  const body = req.body as z.infer<typeof createProjectSchema>;
+  const actor = await prisma.user.findUniqueOrThrow({
+    where: { id: auth.userId },
+    select: { id: true, name: true, mobile: true, email: true, identityRootId: true, deviceId: true }
+  });
+
+  const identity = await linkedIdentityUsers(actor.id);
+  const result = await prisma.$transaction(async (tx) => {
+    const tenant = await tx.tenant.create({ data: {
+      name: body.organization_name, slug: `org-${randomUUID()}`, currency: "BDT", plan: "free",
+      contact: { subscription: createThreeMonthTrial() }
+    } });
+    const owner = await tx.user.create({ data: { tenantId: tenant.id, name: actor.name,
+      mobile: actor.mobile, email: actor.email, identityRootId: identity.rootId, deviceId: actor.deviceId } });
+    const createdProject = await tx.project.create({
+      data: {
+        tenantId: tenant.id,
+        name: body.name,
+        totalShares: body.total_shares,
+        projectType: body.project_type,
+        penaltyPolicy: body.penalty_policy,
+        address: body.address
+      }
+    });
+
+    await tx.projectMembership.create({
+      data: {
+        tenantId: tenant.id,
+        projectId: createdProject.id,
+        userId: owner.id,
+        role: "owner"
+      }
+    });
+
+    const member = body.owner_is_member && body.project_type === "fund_shares" ? await ensureUserProjectMember(tx, {
+      tenantId: tenant.id,
+      projectId: createdProject.id,
+      user: owner,
+      defaultShares: 1
+    }) : null;
+
+    const account = await tx.account.create({
+      data: {
+        tenantId: tenant.id,
+        projectId: createdProject.id,
+        name: "Cash",
+        type: "cash",
+        isDefault: true
+      }
+    });
+
+    await tx.onboardingProgress.create({ data: { tenantId: tenant.id, projectId: createdProject.id,
+      status: "completed", organizationStepStatus: "done", accountantStepStatus: "skipped",
+      accountsStepStatus: "done", shareholdersStepStatus: "skipped",
+      incomeApprovalFlow: "accountant_only", expenseApprovalFlow: "accountant_only", completedAt: new Date() } });
+    return { tenant, owner, project: createdProject, account, memberId: member?.memberId ?? null };
+  });
+
+  await writeAudit({
+    tenantId: result.tenant.id,
+    projectId: result.project.id,
+    actorUserId: result.owner.id,
+    action: "project.created",
+    entityType: "project",
+    entityId: result.project.id,
+    after: result.project
+  });
+
+  await writeAudit({
+    tenantId: result.tenant.id,
+    projectId: result.project.id,
+    actorUserId: result.owner.id,
+    action: "account.created",
+    entityType: "account",
+    entityId: result.account.id,
+    after: result.account
+  });
+
+  return created(res, {
+    tenant_id: result.tenant.id,
+    project_id: result.project.id,
+    name: result.project.name,
+    address: result.project.address,
+    total_shares: result.project.totalShares,
+    role: "owner",
+    roles: body.owner_is_member && result.memberId ? ["owner", "member"] : ["owner"],
+    member_id: result.memberId,
+    is_active: result.project.isActive,
+    project_type: result.project.projectType,
+    portal_settings: normalizePortalSettings(result.project.portalSettings),
+    logo_file_id: result.project.logoFileId,
+    logo_url: logoUrl(result.project.logoFileId)
+  });
+}));
+
+projectsRouter.post("/", authenticate, requireActiveSubscription, requireProject, requireRoles("owner", "admin"), validateBody(createProjectSchema.omit({ organization_name: true })), asyncHandler(async (req, res) => {
+  const auth = requireAuthContext(req);
   const body = req.body as z.infer<typeof createProjectSchema>;
   const actor = await prisma.user.findUniqueOrThrow({
     where: { id: auth.userId },
@@ -119,16 +222,16 @@ projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validat
         tenantId: auth.tenantId,
         projectId: createdProject.id,
         userId: auth.userId,
-        role: "owner"
+        role: "admin"
       }
     });
 
-    if (body.owner_is_member && body.project_type === "fund_shares") await ensureUserProjectMember(tx, {
+    const member = body.owner_is_member && body.project_type === "fund_shares" ? await ensureUserProjectMember(tx, {
       tenantId: auth.tenantId,
       projectId: createdProject.id,
       user: actor,
       defaultShares: 1
-    });
+    }) : null;
 
     const account = await tx.account.create({
       data: {
@@ -140,7 +243,7 @@ projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validat
       }
     });
 
-    return { project: createdProject, account };
+    return { project: createdProject, account, memberId: member?.memberId ?? null };
   });
 
   await writeAudit({
@@ -168,6 +271,10 @@ projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validat
     name: result.project.name,
     address: result.project.address,
     total_shares: result.project.totalShares,
+    role: "admin",
+    roles: body.owner_is_member && result.memberId ? ["admin", "member"] : ["admin"],
+    member_id: result.memberId,
+    is_active: result.project.isActive,
     project_type: result.project.projectType,
     portal_settings: normalizePortalSettings(result.project.portalSettings),
     logo_file_id: result.project.logoFileId,
@@ -175,7 +282,31 @@ projectsRouter.post("/", requireProject, requireRoles("owner", "admin"), validat
   });
 }));
 
-projectsRouter.get("/:id", validateParams(idParamSchema), asyncHandler(async (req, res) => {
+// Discovery can display a granted project's current logo without handing out an operational session.
+projectsRouter.get("/:id/logo", validateParams(idParamSchema), asyncHandler(async (req, res) => {
+  const auth = requireAuthContext(req);
+  const identity = await linkedIdentityUsers(auth.userId);
+  const access = await prisma.projectMembership.findFirst({ where: {
+    projectId: req.params.id, userId: { in: identity.userIds }, isActive: true, project: { isActive: true }
+  } });
+  if (!access) throw forbidden();
+  const project = await prisma.project.findFirst({ where: { id: access.projectId, tenantId: access.tenantId, isActive: true } });
+  if (!project?.logoFileId) throw notFound("Project logo not found");
+  const upload = await prisma.upload.findFirst({ where: { id: project.logoFileId, tenantId: project.tenantId,
+    projectId: project.id, purpose: "project_logo", mimeType: { startsWith: "image/" } } });
+  if (!upload) throw notFound("Project logo not found");
+  try {
+    const object = await readObject(upload.storageKey);
+    res.setHeader("Content-Type", upload.mimeType);
+    res.setHeader("Cache-Control", "private, max-age=300");
+    return res.send(object.buffer);
+  } catch (error) {
+    if (error instanceof StorageObjectNotFoundError) throw notFound("Project logo not found");
+    throw error;
+  }
+}));
+
+projectsRouter.get("/:id", requireActiveSubscription, validateParams(idParamSchema), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
 
@@ -226,7 +357,7 @@ projectsRouter.get("/:id", validateParams(idParamSchema), asyncHandler(async (re
   });
 }));
 
-projectsRouter.patch("/:id", validateParams(idParamSchema), validateBody(updateProjectSchema), asyncHandler(async (req, res) => {
+projectsRouter.patch("/:id", requireActiveSubscription, validateParams(idParamSchema), validateBody(updateProjectSchema), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
   const body = req.body as z.infer<typeof updateProjectSchema>;
@@ -323,6 +454,13 @@ invitationsRouter.post("/", requireProject, requireRoles("owner", "approver", "a
   const auth = requireProjectContext(req);
   const body = req.body as z.infer<typeof invitationSchema>;
   const projectId = body.project_id ?? auth.projectId;
+  if (projectId !== auth.projectId) {
+    const access = await prisma.projectMembership.findFirst({
+      where: { tenantId: auth.tenantId, userId: auth.userId, projectId, isActive: true,
+        role: { in: ["owner", "admin", "approver"] } }
+    });
+    if (!access) throw forbidden("No invitation permission for the requested project");
+  }
 
   const project = await prisma.project.findFirstOrThrow({
     where: { id: projectId, tenantId: auth.tenantId }

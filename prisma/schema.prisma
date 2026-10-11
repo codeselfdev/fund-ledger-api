@@ -301,6 +301,9 @@ model User {
   name         String
   mobile       String
   email        String?
+  identityRootId String? @map("identity_root_id")
+  identityRoot User? @relation("LinkedOrganizationIdentity", fields: [identityRootId], references: [id], onDelete: Restrict)
+  linkedOrganizationUsers User[] @relation("LinkedOrganizationIdentity")
   passwordHash String?  @map("password_hash")
   deviceId     String?  @map("device_id")
   isActive     Boolean  @default(true) @map("is_active")
@@ -323,6 +326,7 @@ model User {
   resolvedCommitments PaymentCommitment[] @relation("PaymentCommitmentResolver")
   sentReminders      MemberReminder[]     @relation("MemberReminderSender")
 
+  @@index([identityRootId])
   @@unique([tenantId, mobile])
   @@index([tenantId])
   @@map("users")

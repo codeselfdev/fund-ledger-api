@@ -2,7 +2,7 @@ import { Prisma, TenantPlan, ProjectType } from "@prisma/client";
 import { prisma } from "../../core/prisma/client.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { createProvisionedOnboardingSeed } from "../../core/onboarding/onboarding.service.js";
-import { createTrialSubscription, DEFAULT_TRIAL_DAYS } from "../../core/subscription/subscription.service.js";
+import { createTrialSubscription, createThreeMonthTrial, DEFAULT_TRIAL_DAYS } from "../../core/subscription/subscription.service.js";
 import { ensureUserProjectMember } from "../../core/security/member-link.service.js";
 import { createSessionToken } from "../auth/auth.service.js";
 
@@ -47,7 +47,6 @@ function jsonValue(value: unknown): Prisma.InputJsonValue | undefined {
 export async function provisionTenant(input: ProvisionTenantInput): Promise<ProvisionTenantResult> {
   const currency = (input.currency ?? "BDT").toUpperCase();
   const plan = input.plan ?? TenantPlan.free;
-  const trialDays = input.trialDays ?? DEFAULT_TRIAL_DAYS;
   const projectName = input.projectName?.trim() || "My Project";
   const projectTotalShares = input.projectTotalShares ?? 1;
   const source = input.source ?? "provisioning";
@@ -76,7 +75,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    const contact = jsonValue({ subscription: createTrialSubscription(trialDays) });
+    const contact = jsonValue({ subscription: input.trialDays === undefined ? createThreeMonthTrial() : createTrialSubscription(input.trialDays) });
     const onboarding = createProvisionedOnboardingSeed({ source });
 
     const tenant = await tx.tenant.create({

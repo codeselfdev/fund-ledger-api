@@ -13,8 +13,8 @@ type StoredSubscription = {
 };
 
 const DEFAULT_RENEWAL_TERM_YEARS = 1;
-/** ~6 months free use before yearly payment is required. */
-export const DEFAULT_TRIAL_DAYS = 182;
+/** Day-based provisioning override; new organizations default to three calendar months. */
+export const DEFAULT_TRIAL_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -37,7 +37,9 @@ function toIso(date: Date | null) {
 
 function addYears(base: Date, years: number) {
   const next = new Date(base);
-  next.setFullYear(next.getFullYear() + years);
+  const month = next.getUTCMonth();
+  next.setUTCFullYear(next.getUTCFullYear() + years);
+  if (next.getUTCMonth() !== month) next.setUTCDate(0);
   return next;
 }
 
@@ -147,10 +149,20 @@ export function createTrialSubscription(trialDays: number, now = new Date()) {
   return stored;
 }
 
+export function createThreeMonthTrial(now = new Date()) {
+  const end = new Date(now);
+  const day = end.getUTCDate();
+  end.setUTCDate(1);
+  end.setUTCMonth(end.getUTCMonth() + 3);
+  const last = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0)).getUTCDate();
+  end.setUTCDate(Math.min(day, last));
+  return { ...createTrialSubscription(0, now), status: "trial" as const, trial_ends_at: end.toISOString() };
+}
+
 export function renewTenantSubscription(contact: unknown, now = new Date()) {
   const existing = getStoredSubscription(contact);
-  const renewalYears = existing?.renewal_term_years ?? DEFAULT_RENEWAL_TERM_YEARS;
-  const currentPeriodEnd = parseDate(existing?.current_period_end_at);
+  const renewalYears = DEFAULT_RENEWAL_TERM_YEARS;
+  const currentPeriodEnd = parseDate(existing?.current_period_end_at ?? existing?.trial_ends_at);
   const baseStart = currentPeriodEnd && currentPeriodEnd.getTime() > now.getTime() ? currentPeriodEnd : now;
   const nextEnd = addYears(baseStart, renewalYears);
 

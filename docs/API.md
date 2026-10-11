@@ -35,11 +35,11 @@ Onboarding is tracked in a dedicated DB table (`onboarding_progress`) and has **
 3. Bank/cash account setup
 4. Shareholder member setup (share allocation)
 
-Every new org gets **~6 months free** (`182` days), then yearly renewal.
+Every new org gets **3 calendar months free**, then one-year renewal after operator approval of a submitted manual payment.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/v1/onboarding/signup` | public | Step 1: create org + owner + initial project + 6‑month trial; returns token. Accepts Google or Firebase phone `id_token`. Google signup does not require `owner_mobile`. |
+| POST | `/v1/onboarding/signup` | public | Step 1: create org + owner + initial project + 3-month trial; returns token. Accepts Google or Firebase phone `id_token`. Google signup does not require `owner_mobile`. |
 | GET | `/v1/onboarding/status` | any | Current onboarding step states, approval flow, and completion status |
 | POST | `/v1/onboarding/organization` | owner | Update organization/project details and complete the organization step (`/project` is a compatibility alias) |
 | POST | `/v1/onboarding/accounting` | owner | Step 2: assign accountant and set approval flow (`accountant_only` / `accountant_and_approver`) for income & expense |
@@ -58,7 +58,7 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
-| POST | `/v1/tenants` | api_key | Provision tenant, first owner, default project, default cash account, and subscription trial (`trial_days`, default 182) |
+| POST | `/v1/tenants` | api_key | Provision tenant, first owner, default project, default cash account, and subscription trial (three calendar months by default; optional `trial_days` override) |
 | GET | `/v1/tenants/current` | any | Current tenant details |
 | PATCH | `/v1/tenants/current` | owner | Update tenant branding, contact, locale, currency |
 | GET | `/v1/projects` | any | Projects accessible to caller |
@@ -79,8 +79,8 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | GET | `/v1/auth/me` | any | Current user, tenant, active project, roles, linked member, `can_pay_for_members`, onboarding, subscription |
 | POST | `/v1/auth/logout` | any | Revoke current token |
 | GET | `/v1/subscription` | any | Current tenant subscription status for mobile gating |
-| POST | `/v1/subscription/renew` | owner, admin | Renew subscription for 1 year |
-| POST | `/v1/subscription/trial` | owner, admin | Start/reset custom trial period (`trial_days`) |
+| POST | `/v1/subscription/renew` | disabled | Returns 403; customers cannot approve their own renewal |
+| POST | `/v1/subscription/trial` | disabled | Returns 403; customers cannot reset trials |
 
 Project logos use the normal authenticated upload flow:
 
@@ -377,3 +377,5 @@ See `docs/PAYMENT_FOLLOWUPS_API.md` for payloads, errors, automatic deposit reso
 - `account.type`: `bank`, `cash`
 - `txn.direction`: `in`, `out`, `transfer`, `penalty`
 - `role`: `owner`, `admin`, `member`, `cashier`, `accountant`, `approver`, `auditor`
+
+See [organization ownership and billing](ORGANIZATION_BILLING.md) for linked organization creation, scoped session rotation, invoices and payment approval.

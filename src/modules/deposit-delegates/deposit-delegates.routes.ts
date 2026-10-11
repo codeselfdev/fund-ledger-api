@@ -31,7 +31,7 @@ router.get("/deposit-delegates", requireProject, requireRoles("owner", "admin"),
   const auth = requireProjectContext(req);
   const tenant = await prisma.tenant.findUniqueOrThrow({
     where: { id: auth.tenantId },
-    select: { contact: true }
+    select: { contact: true, updatedAt: true }
   });
 
   const permissions = listDepositDelegatePermissions(tenant.contact, auth.projectId);
@@ -79,7 +79,7 @@ router.get("/deposit-delegates", requireProject, requireRoles("owner", "admin"),
 router.get("/deposit-delegates/payable-members", requireProject, requireRoles("member", "accountant", "cashier", "admin"), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const staffAccess = auth.roles.some((role) => role === "admin" || role === "accountant" || role === "cashier");
-  const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: auth.tenantId }, select: { contact: true } });
+  const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: auth.tenantId }, select: { contact: true, updatedAt: true } });
   const permissions = listDepositDelegatePermissions(tenant.contact, auth.projectId)
     .filter((permission) => permission.user_id === auth.userId && permission.is_active);
   const canSeeAll = staffAccess || permissions.some((permission) => permission.beneficiary_member_id === null);
@@ -113,7 +113,7 @@ router.get("/deposit-delegates/payable-members/:id/dues", requireProject, requir
   const { id } = req.params as z.infer<typeof idParamSchema>;
   const staffAccess = auth.roles.some((role) => role === "admin" || role === "accountant" || role === "cashier");
   if (!staffAccess && auth.memberId !== id) {
-    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: auth.tenantId }, select: { contact: true } });
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: auth.tenantId }, select: { contact: true, updatedAt: true } });
     if (!canUserPayOnBehalf(tenant.contact, auth.projectId, auth.userId, id)) throw forbidden();
   }
   const member = await prisma.member.findFirst({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId, status: "active" } });
@@ -152,7 +152,7 @@ router.post("/deposit-delegates", requireProject, requireRoles("owner", "admin")
 
   const tenant = await prisma.tenant.findUniqueOrThrow({
     where: { id: auth.tenantId },
-    select: { contact: true }
+    select: { contact: true, updatedAt: true }
   });
   const updated = upsertDepositDelegatePermission({
     contact: tenant.contact,
@@ -164,7 +164,7 @@ router.post("/deposit-delegates", requireProject, requireRoles("owner", "admin")
   });
 
   await prisma.tenant.update({
-    where: { id: auth.tenantId },
+    where: { id: auth.tenantId, updatedAt: tenant.updatedAt },
     data: { contact: updated.contact }
   });
 
@@ -188,7 +188,7 @@ router.patch("/deposit-delegates/:id", requireProject, requireRoles("owner", "ad
 
   const tenant = await prisma.tenant.findUniqueOrThrow({
     where: { id: auth.tenantId },
-    select: { contact: true }
+    select: { contact: true, updatedAt: true }
   });
   const permissions = listDepositDelegatePermissions(tenant.contact, auth.projectId);
   const target = permissions.find((permission) => permission.id === id);
@@ -221,7 +221,7 @@ router.patch("/deposit-delegates/:id", requireProject, requireRoles("owner", "ad
   });
 
   await prisma.tenant.update({
-    where: { id: auth.tenantId },
+    where: { id: auth.tenantId, updatedAt: tenant.updatedAt },
     data: { contact: updated.contact }
   });
 

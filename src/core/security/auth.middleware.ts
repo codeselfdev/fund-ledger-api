@@ -5,6 +5,7 @@ import { forbidden, unauthorized } from "../http/api-error.js";
 import { hashToken, verifyAccessToken } from "./jwt.js";
 import { hasAnyRole, type RoleGate } from "./roles.js";
 import { ensureUserProjectMember } from "./member-link.service.js";
+import { effectiveProjectRoles } from "./project-access.js";
 
 function bearerToken(req: Request) {
   const header = req.header("authorization");
@@ -47,7 +48,8 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
             tenantId: session.tenantId,
             projectId: requestedProjectId,
             userId: session.userId,
-            isActive: true
+            isActive: true,
+            project: { isActive: true }
           }
         });
 
@@ -77,9 +79,8 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
           memberId = ensured.memberId;
         }
 
-        // Treat owner and admin as full-access management roles everywhere.
-        if (roles.includes("owner") && !roles.includes("admin")) roles.push("admin");
-        if (roles.includes("admin") && !roles.includes("owner")) roles.push("owner");
+        // Permissions belong only to the requested project's active memberships.
+        roles = effectiveProjectRoles(roles);
       }
 
       req.auth = {
@@ -87,6 +88,7 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
         userId: session.userId,
         tenantId: session.tenantId,
         projectId: requestedProjectId ?? null,
+        sessionProjectId: session.activeProjectId ?? null,
         roles,
         memberId
       };
