@@ -158,3 +158,9 @@ test('automatic routing with an accountant still requires two reviews before pos
  const reviewed=await request('/deposits/deposit-0/approve',{},'accountant');assert.equal(reviewed.status,200,reviewed.body.error);assert.equal(deposits[0].status,'pending_approver');assert.equal(account.balance,0);assert.equal(receipts.length,0);
  assert.equal((await request('/deposits/deposit-0/confirm',{},'admin')).status,200);assert.equal(account.balance,1000);assert.equal(receipts.length,1);
 });
+
+test('billing and construction creation supply type-specific menus without requiring a share target',async()=>{
+ assert.equal((await request('/projects',{name:'Fund without target'})).status,400);
+ const b=await request('/projects',{name:'Billing office',project_type:'billing'});assert.equal(b.status,201);assert.equal(b.body.data.total_shares,1);assert.ok(b.body.data.billing_menus.some(m=>m.key==='billing_invoices'));assert.deepEqual(b.body.data.portal_settings.member_shortcuts,[]);
+ const c=await request('/projects',{name:'Building site',project_type:'construction'});assert.equal(c.status,201);assert.equal(c.body.data.project_type,'construction');assert.ok(c.body.data.construction_menus.some(m=>m.key==='construction_boq'));assert.ok(c.body.data.portal_settings.accountant_shortcuts.includes('construction_running_bills'));
+});

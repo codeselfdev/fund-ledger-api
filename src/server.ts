@@ -1,3 +1,4 @@
+import { startBillingWorker, stopBillingWorker } from "./modules/billing/billing.worker.js";
 import { createApp } from "./app.js";
 import { env } from "./config/env.js";
 import { stopRecurringSchedulesCron, startRecurringSchedulesCron } from "./core/cron/recurring-schedules.cron.js";
@@ -9,6 +10,7 @@ import { verifyObjectStorage } from "./core/storage/object-storage.service.js";
 
 const app = createApp();
 startRecurringSchedulesCron();
+startBillingWorker();
 startCommunityRemindersCron();
 startPaymentCommitmentsCron();
 
@@ -22,6 +24,7 @@ const server = app.listen(env.port, () => {
 
 async function shutdown() {
   stopRecurringSchedulesCron();
+  stopBillingWorker();
   stopCommunityRemindersCron();
   stopPaymentCommitmentsCron();
   server.close(async () => {

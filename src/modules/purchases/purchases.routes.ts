@@ -1,3 +1,4 @@
+import { financialTransaction } from "../accounting/transaction.js";
 import { Router } from "express";
 import { z } from "zod";
 import { PurchaseStatus } from "@prisma/client";
@@ -155,7 +156,13 @@ router.post("/:id/receive", requireProject, requireRoles("accountant", "admin"),
   if (!account) throw notFound("Account not found");
   if (account.balance < before.totalAmount) throw badRequest("Source account has insufficient balance");
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await financialTransaction(async (tx) => {
+    const linkedBill = await tx.constructionSupplierBill.findFirst({ where: { tenantId: auth.tenantId, projectId: auth.projectId, purchaseId: id, status: { in: ["pending", "approved"] } } });
+    if (linkedBill) throw badRequest("Receive this purchase through its Construction supplier bill; payments are recorded separately");
+    const current = await tx.purchase.findFirst({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId, status: "ordered" } });
+    if (!current) throw badRequest("Purchase is not awaiting receipt");
+    const debit = await tx.account.updateMany({ where: { id: account.id, tenantId: auth.tenantId, projectId: auth.projectId, balance: { gte: before.totalAmount } }, data: { balance: { decrement: before.totalAmount } } });
+    if (!debit.count) throw badRequest("Source account has insufficient balance");
     const purchase = await tx.purchase.update({
       where: { id },
       data: {
@@ -187,10 +194,7 @@ router.post("/:id/receive", requireProject, requireRoles("accountant", "admin"),
       });
     }
 
-    const updatedAccount = await tx.account.update({
-      where: { id: account.id },
-      data: { balance: { decrement: before.totalAmount } }
-    });
+    const updatedAccount = await tx.account.findFirstOrThrow({ where: { id: account.id, tenantId: auth.tenantId, projectId: auth.projectId } });
 
     await tx.accountTransaction.create({
       data: {
@@ -246,9 +250,12 @@ router.post("/:id/cancel", requireProject, requireRoles("accountant", "admin"), 
   if (!before) throw notFound("Purchase not found");
   if (before.status !== "ordered") throw badRequest("Only purchases awaiting receipt can be cancelled");
 
-  const purchase = await prisma.purchase.update({
-    where: { id },
-    data: { status: "cancelled", cancelledById: auth.userId }
+  const purchase = await financialTransaction(async (tx) => {
+    const linkedBill = await tx.constructionSupplierBill.findFirst({ where: { tenantId: auth.tenantId, projectId: auth.projectId, purchaseId: id, status: { in: ["pending", "approved"] } } });
+    if (linkedBill) throw badRequest("A Construction supplier bill is attached; reject it before cancelling an unreceived purchase");
+    const changed = await tx.purchase.updateMany({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId, status: "ordered" }, data: { status: "cancelled", cancelledById: auth.userId } });
+    if (!changed.count) throw badRequest("Only purchases awaiting receipt can be cancelled");
+    return tx.purchase.findFirstOrThrow({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId } });
   });
 
   await writeAudit({

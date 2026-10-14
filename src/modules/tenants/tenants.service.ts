@@ -108,7 +108,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
       }
     });
 
-    const ensuredMember = input.ownerIsMember && (!input.projectType || input.projectType === "fund_shares") ? await ensureUserProjectMember(tx, {
+    const ensuredMember = input.ownerIsMember && (!input.projectType || ["fund_shares", "construction"].includes(input.projectType)) ? await ensureUserProjectMember(tx, {
       tenantId: tenant.id,
       projectId: project.id,
       user: {

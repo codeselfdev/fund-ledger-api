@@ -35,9 +35,3241 @@
     { "name": "Activity" },
     { "name": "Notifications" },
     { "name": "Penalties" },
-    { "name": "Payment Follow-ups" }
+    { "name": "Payment Follow-ups" },
+    { "name": "Billing Management" },
+    { "name": "Construction Financial Management" }
   ],
   "paths": {
+  "/v1/construction/configuration": {
+    "get": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Building/site setup and construction menus",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Update building, dates, financial target and share total",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionSettings"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/overview": {
+    "get": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Budget vs actual, commitments, forecasts, cash requirements and funding",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/cost-heads": {
+    "get": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "List phase/category budget records",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Create phase/category budget",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionBudget"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/boq": {
+    "get": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "List BOQ estimate records",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Create BOQ estimate",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionBoq"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/allocations": {
+    "get": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "List expense cost allocation records",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Create expense cost allocation",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionAllocation"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/contractors": {
+    "get": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "List contractor profile records",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Create contractor profile",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionContractor"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/contracts": {
+    "get": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "List contractor contract records",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Create contractor contract",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionContract"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/running-bills": {
+    "get": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "List cumulative running bill records",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Create cumulative running bill",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionRunningBill"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/supplier-bills": {
+    "get": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "List supplier invoice records",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Create supplier invoice",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionSupplierBill"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/labor": {
+    "get": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "List daily attendance and wages records",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Create daily attendance and wages",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionLabor"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/materials": {
+    "get": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "List site stock movement records",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Create site stock movement",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionMaterial"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/payments": {
+    "get": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "List construction cash payment records",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Create construction cash payment",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionPayment"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/change-orders": {
+    "get": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "List budget/contract change order records",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Create budget/contract change order",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionChangeOrder"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/boq/{id}": {
+    "patch": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Update BOQ estimate or archive item",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionBoq"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/contractors/{id}": {
+    "patch": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Update contractor profile",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionContractor"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/cost-heads/{id}/forecast": {
+    "patch": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Update forecast remaining cost",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionForecast"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/contracts/{id}/status": {
+    "patch": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Suspend or close a fully certified contract",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionContractStatus"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/cost-heads/{id}/decision": {
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Independent approval/rejection for cost-heads",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionDecision"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/running-bills/{id}/decision": {
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Independent approval/rejection for running-bills",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionDecision"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/supplier-bills/{id}/decision": {
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Independent approval/rejection for supplier-bills",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionDecision"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/labor/{id}/decision": {
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Independent approval/rejection for labor",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionDecision"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/change-orders/{id}/decision": {
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Independent approval/rejection for change-orders",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionDecision"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/suppliers": {
+    "get": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "List supplier profiles",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Create supplier profile",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionSupplier"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/suppliers/{id}": {
+    "patch": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Update supplier profile",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ConstructionSupplier"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/supplier-bills/{id}/receive": {
+    "post": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Receive linked purchase stock without a cash debit",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/construction/funding": {
+    "get": {
+      "tags": [
+        "Construction Financial Management"
+      ],
+      "summary": "Member investment shares, contributions, dues and schedule links",
+      "description": "Construction projects only. Financial record approvals require an independent reviewer. See docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "404": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/configuration": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Billing settings, categories and role-aware menus",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Update billing configuration",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingSettings"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/customers": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "List billing customer profiles",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Create customer",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingCustomerInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/customers/{id}": {
+    "patch": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Update customer profile",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingCustomerInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/customers/{id}/ledger": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Full customer running ledger",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        },
+        {
+          "name": "from",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        {
+          "name": "to",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/customers/{id}/statement.pdf": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Printable customer statement",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        },
+        {
+          "name": "from",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        {
+          "name": "to",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Printable billing PDF",
+          "content": {
+            "application/pdf": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/customers/{id}/apply-advance": {
+    "post": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Apply available customer advance",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/plans": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "List billing plans",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Create billing Plan",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingPlanInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/plans/{id}": {
+    "patch": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Edit or archive billing Plan",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingPlanInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/units": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "List billing units",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Create billing Unit",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingUnitInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/units/{id}": {
+    "patch": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Edit or archive billing Unit",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingUnitInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/assignments": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "List subscriptions and service assignments",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          }
+        },
+        {
+          "name": "offset",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          }
+        },
+        {
+          "name": "customer_id",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Assign a customer subscription",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingAssignmentInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/assignments/{id}": {
+    "patch": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Set subscription status or end date",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingAssignmentUpdate"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/assignments/{id}/invoice": {
+    "post": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Generate an assignment cycle invoice",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingGenerateInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/meter-readings": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "List recorded readings",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "name": "assignment_id",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Record metered consumption",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingReadingInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/invoices": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "List invoices and outstanding balances",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          }
+        },
+        {
+          "name": "offset",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          }
+        },
+        {
+          "name": "customer_id",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        {
+          "name": "outstanding",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Issue a one-time service invoice",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingInvoiceInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/invoices/{id}": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Invoice detail with allocations and adjustments",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/invoice-runs": {
+    "post": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Queue up to 5000 monthly invoices",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingRunInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "202": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/invoice-runs/{id}": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Read persisted bulk generation progress",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/payments": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "List payment collections",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          }
+        },
+        {
+          "name": "offset",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          }
+        },
+        {
+          "name": "customer_id",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Collect payment and allocate to invoices",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingPaymentInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/payments/{id}/receipt.pdf": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Printable collection receipt",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Printable billing PDF",
+          "content": {
+            "application/pdf": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/adjustments": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "List adjustment approval requests",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "name": "status",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ]
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Request credit, debit, waiver, write-off, cancellation or refund",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingAdjustmentInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/adjustments/{id}/decision": {
+    "post": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Independent approval or rejection",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "$ref": "#/components/parameters/IdPath"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingDecisionInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/late-fees/apply": {
+    "post": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Apply eligible invoice late fees once",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingAsOfInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/reminders": {
+    "post": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Queue due and overdue reminders",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BillingAsOfInput"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/messages": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Read receipt/reminder email delivery status",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          }
+        },
+        {
+          "name": "offset",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/overview": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Monthly dashboard and current aging",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "name": "month",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}$"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "/v1/billing/reports": {
+    "get": {
+      "tags": [
+        "Billing Management"
+      ],
+      "summary": "Collections, outstanding and aging report",
+      "description": "Billing projects only. See docs/BILLING_MANAGEMENT.md for role gates and financial rules.",
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ProjectIdHeader"
+        },
+        {
+          "name": "from",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        {
+          "name": "to",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "$ref": "#/components/responses/Success"
+        },
+        "400": {
+          "$ref": "#/components/responses/Error"
+        },
+        "403": {
+          "$ref": "#/components/responses/Error"
+        },
+        "409": {
+          "$ref": "#/components/responses/Error"
+        }
+      }
+    }
+  },
     "/health": {
       "get": {
         "tags": ["Health"],
@@ -1400,22 +4632,6 @@
           }
         }
       },
-      "MembershipCreate": {
-        "type": "object",
-        "required": ["role"],
-        "anyOf": [
-          { "required": ["user_id"] },
-          { "required": ["mobile"] },
-          { "required": ["email"] }
-        ],
-        "properties": {
-          "user_id": { "type": "string" },
-          "name": { "type": "string", "minLength": 2 },
-          "mobile": { "type": "string", "minLength": 6 },
-          "email": { "type": "string", "format": "email" },
-          "role": { "$ref": "#/components/schemas/Role" }
-        }
-      },
       "MemberCreate": {
         "required": true,
         "content": {
@@ -1509,18 +4725,6 @@
           }
         }
       },
-      "CallLogCreate": {
-        "type": "object", "required": ["outcome"],
-        "properties": {
-          "outcome": { "type": "string", "enum": ["committed", "no_answer", "claims_paid", "dispute"] },
-          "summary": { "type": "string", "maxLength": 500 },
-          "commitment": { "type": "object", "required": ["promised_date", "amount"], "properties": { "promised_date": { "type": "string", "format": "date" }, "amount": { "type": "integer", "minimum": 1 } } }
-        }
-      },
-      "CommitmentResolve": {
-        "type": "object", "required": ["status", "reason"],
-        "properties": { "status": { "type": "string", "enum": ["kept", "kept_late", "cancelled"] }, "reason": { "type": "string", "minLength": 3, "maxLength": 500 } }
-      },
       "TransferCreate": {
         "required": true,
         "content": {
@@ -1550,6 +4754,1272 @@
       }
     },
     "schemas": {
+  "MembershipCreate": {
+    "type": "object",
+    "required": [
+      "role"
+    ],
+    "anyOf": [
+      {
+        "required": [
+          "user_id"
+        ]
+      },
+      {
+        "required": [
+          "mobile"
+        ]
+      },
+      {
+        "required": [
+          "email"
+        ]
+      }
+    ],
+    "properties": {
+      "user_id": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string",
+        "minLength": 2
+      },
+      "mobile": {
+        "type": "string",
+        "minLength": 6
+      },
+      "email": {
+        "type": "string",
+        "format": "email"
+      },
+      "role": {
+        "$ref": "#/components/schemas/Role"
+      }
+    }
+  },
+  "CallLogCreate": {
+    "type": "object",
+    "required": [
+      "outcome"
+    ],
+    "properties": {
+      "outcome": {
+        "type": "string",
+        "enum": [
+          "committed",
+          "no_answer",
+          "claims_paid",
+          "dispute"
+        ]
+      },
+      "summary": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "commitment": {
+        "type": "object",
+        "required": [
+          "promised_date",
+          "amount"
+        ],
+        "properties": {
+          "promised_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  },
+  "CommitmentResolve": {
+    "type": "object",
+    "required": [
+      "status",
+      "reason"
+    ],
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "kept",
+          "kept_late",
+          "cancelled"
+        ]
+      },
+      "reason": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 500
+      }
+    }
+  },
+  "ConstructionSettings": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "building": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 150
+      },
+      "site": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "start_date": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "end_date": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "financial_target": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647,
+        "default": 0
+      },
+      "total_shares": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 1000
+      }
+    },
+    "required": [
+      "building",
+      "site"
+    ]
+  },
+  "ConstructionBudget": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 150
+      },
+      "phase": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 150
+      },
+      "category": {
+        "type": "string",
+        "enum": [
+          "materials",
+          "labor",
+          "transport",
+          "machinery",
+          "overhead",
+          "contractor",
+          "professional",
+          "other"
+        ]
+      },
+      "budget": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "forecast_remaining": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647,
+        "default": 0
+      }
+    },
+    "required": [
+      "name",
+      "phase",
+      "category",
+      "budget"
+    ]
+  },
+  "ConstructionBoq": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "cost_head_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "name": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 150
+      },
+      "unit": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 30
+      },
+      "quantity": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100000000
+      },
+      "rate": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      }
+    },
+    "required": [
+      "cost_head_id",
+      "name",
+      "unit",
+      "quantity",
+      "rate"
+    ]
+  },
+  "ConstructionAllocation": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "expense_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "cost_head_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "boq_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "request_key": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "required": [
+      "expense_id",
+      "cost_head_id",
+      "amount",
+      "request_key"
+    ]
+  },
+  "ConstructionContractor": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 150
+      },
+      "mobile": {
+        "type": "string",
+        "maxLength": 32
+      },
+      "email": {
+        "type": "string"
+      },
+      "address": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      }
+    },
+    "required": [
+      "name"
+    ]
+  },
+  "ConstructionContract": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "contractor_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "cost_head_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "title": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 150
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "retention_bps": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10000,
+        "default": 500
+      },
+      "request_key": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "required": [
+      "contractor_id",
+      "cost_head_id",
+      "title",
+      "amount",
+      "request_key"
+    ]
+  },
+  "ConstructionRunningBill": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "contract_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "cumulative_certified": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "advance_recovery": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647,
+        "default": 0
+      },
+      "bill_date": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 1000
+      },
+      "request_key": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "required": [
+      "contract_id",
+      "cumulative_certified",
+      "bill_date",
+      "request_key"
+    ]
+  },
+  "ConstructionSupplierBill": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "vendor_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "cost_head_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "boq_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "purchase_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "number": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "description": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 150
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "bill_date": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "request_key": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "required": [
+      "vendor_id",
+      "cost_head_id",
+      "number",
+      "description",
+      "amount",
+      "bill_date",
+      "request_key"
+    ]
+  },
+  "ConstructionLabor": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "cost_head_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "worker_name": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 150
+      },
+      "work_date": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "units": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100000000
+      },
+      "rate": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 1000
+      },
+      "request_key": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "required": [
+      "cost_head_id",
+      "worker_name",
+      "work_date",
+      "units",
+      "rate",
+      "request_key"
+    ]
+  },
+  "ConstructionMaterial": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "item_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "boq_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "kind": {
+        "type": "string",
+        "enum": [
+          "consume",
+          "return",
+          "waste"
+        ]
+      },
+      "quantity": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "entry_date": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "reason": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 1000
+      },
+      "source_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "request_key": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "required": [
+      "item_id",
+      "kind",
+      "quantity",
+      "entry_date",
+      "reason",
+      "request_key"
+    ]
+  },
+  "ConstructionPayment": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "kind": {
+        "type": "string",
+        "enum": [
+          "advance",
+          "running_bill",
+          "retention",
+          "supplier_bill",
+          "labor"
+        ]
+      },
+      "contract_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "running_bill_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "supplier_bill_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "labor_entry_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "account_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "payment_date": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "reference": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "request_key": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "required": [
+      "kind",
+      "account_id",
+      "amount",
+      "payment_date",
+      "request_key"
+    ]
+  },
+  "ConstructionChangeOrder": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "cost_head_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "contract_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "budget_change": {
+        "type": "integer",
+        "minimum": -2147483647,
+        "maximum": 2147483647,
+        "default": 0
+      },
+      "contract_change": {
+        "type": "integer",
+        "minimum": -2147483647,
+        "maximum": 2147483647,
+        "default": 0
+      },
+      "reason": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 1000
+      },
+      "request_key": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "required": [
+      "reason",
+      "request_key"
+    ]
+  },
+  "ConstructionDecision": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "decision": {
+        "type": "string",
+        "enum": [
+          "approve",
+          "reject"
+        ]
+      }
+    },
+    "required": [
+      "decision"
+    ]
+  },
+  "ConstructionForecast": {
+    "type": "object",
+    "properties": {
+      "forecast_remaining": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      }
+    },
+    "required": [
+      "forecast_remaining"
+    ],
+    "additionalProperties": false
+  },
+  "ConstructionContractStatus": {
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "active",
+          "suspended",
+          "closed"
+        ]
+      }
+    },
+    "required": [
+      "status"
+    ],
+    "additionalProperties": false
+  },
+  "ConstructionSupplier": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 2
+      },
+      "phone": {
+        "type": "string"
+      },
+      "email": {
+        "type": "string",
+        "format": "email"
+      },
+      "address": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      },
+      "is_active": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "name"
+    ]
+  },
+  "BillingSettings": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "category": {
+        "type": "string",
+        "enum": [
+          "apartment_community",
+          "isp_subscription",
+          "rental_property",
+          "general_business"
+        ],
+        "default": "general_business"
+      },
+      "automatic_advance": {
+        "type": "boolean",
+        "default": true
+      }
+    },
+    "required": []
+  },
+  "BillingPlanInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 120
+      },
+      "category": {
+        "type": "string",
+        "enum": [
+          "apartment_community",
+          "isp_subscription",
+          "rental_property",
+          "general_business"
+        ]
+      },
+      "mode": {
+        "type": "string",
+        "enum": [
+          "fixed",
+          "usage",
+          "one_time",
+          "installment"
+        ]
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "interval_months": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 12,
+        "default": 1
+      },
+      "installment_count": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 600
+      },
+      "due_days": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 365,
+        "default": 10
+      },
+      "grace_days": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 365,
+        "default": 0
+      },
+      "late_fee_type": {
+        "type": "string",
+        "enum": [
+          "none",
+          "fixed",
+          "percentage"
+        ],
+        "default": "none"
+      },
+      "late_fee_value": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647,
+        "default": 0
+      },
+      "escalation_bps": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10000,
+        "default": 0
+      },
+      "escalation_months": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 120,
+        "default": 12
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      }
+    },
+    "required": [
+      "name",
+      "category",
+      "mode",
+      "amount"
+    ]
+  },
+  "BillingUnitInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+      },
+      "kind": {
+        "type": "string",
+        "enum": [
+          "flat",
+          "shop",
+          "connection",
+          "property",
+          "service"
+        ]
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 1000
+      },
+      "is_active": {
+        "type": "boolean",
+        "default": true
+      }
+    },
+    "required": [
+      "name",
+      "kind"
+    ]
+  },
+  "BillingAssignmentInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "customer_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "plan_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "unit_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "label": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 150
+      },
+      "start_date": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "end_date": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      }
+    },
+    "required": [
+      "customer_id",
+      "plan_id",
+      "label",
+      "start_date"
+    ]
+  },
+  "BillingInvoiceInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "customer_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "invoice_date": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "due_date": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "lines": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "quantity": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "unit_price": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "description",
+            "quantity",
+            "unit_price"
+          ]
+        },
+        "minItems": 1,
+        "maxItems": 100
+      },
+      "discount": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647,
+        "default": 0
+      },
+      "tax": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647,
+        "default": 0
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 1000
+      },
+      "request_key": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "required": [
+      "customer_id",
+      "invoice_date",
+      "due_date",
+      "lines",
+      "request_key"
+    ]
+  },
+  "BillingPaymentInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "customer_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "account_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "method": {
+        "type": "string",
+        "enum": [
+          "cash",
+          "bank",
+          "bkash",
+          "nagad",
+          "card",
+          "cheque"
+        ]
+      },
+      "payment_date": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "reference": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "allocations": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "invoice_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "amount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "invoice_id",
+            "amount"
+          ]
+        },
+        "maxItems": 5000
+      },
+      "request_key": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "required": [
+      "customer_id",
+      "account_id",
+      "amount",
+      "method",
+      "payment_date",
+      "request_key"
+    ]
+  },
+  "BillingAdjustmentInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "customer_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "invoice_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "payment_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      },
+      "kind": {
+        "type": "string",
+        "enum": [
+          "credit_note",
+          "debit_note",
+          "waiver",
+          "write_off",
+          "cancel",
+          "refund"
+        ]
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "reason": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 1000
+      },
+      "request_key": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "required": [
+      "customer_id",
+      "kind",
+      "reason",
+      "request_key"
+    ]
+  },
+  "BillingGenerateInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "period_start": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+        "description": "First day of billing month (YYYY-MM-01)"
+      }
+    },
+    "required": [
+      "period_start"
+    ]
+  },
+  "BillingRunInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "period_start": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+        "description": "First day of billing month (YYYY-MM-01)"
+      },
+      "assignment_ids": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "minItems": 1,
+        "maxItems": 5000,
+        "uniqueItems": true
+      },
+      "request_key": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "required": [
+      "period_start",
+      "request_key"
+    ]
+  },
+  "BillingReadingInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "assignment_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "period_start": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+        "description": "First day of billing month (YYYY-MM-01)"
+      },
+      "previous": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "current": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      }
+    },
+    "required": [
+      "assignment_id",
+      "period_start",
+      "previous",
+      "current"
+    ]
+  },
+  "BillingDecisionInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "decision": {
+        "type": "string",
+        "enum": [
+          "approve",
+          "reject"
+        ]
+      }
+    },
+    "required": [
+      "decision"
+    ]
+  },
+  "BillingAssignmentUpdate": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "active",
+          "suspended",
+          "disconnected",
+          "ended"
+        ]
+      },
+      "end_date": {
+        "type": "string",
+        "format": "date",
+        "nullable": true
+      }
+    },
+    "required": [
+      "status"
+    ]
+  },
+  "BillingAsOfInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "as_of": {
+        "type": "string",
+        "format": "date"
+      }
+    },
+    "required": []
+  },
+  "BillingCustomerInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 120
+      },
+      "mobile": {
+        "type": "string"
+      },
+      "email": {
+        "type": "string",
+        "format": "email"
+      },
+      "address": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "is_active": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "name"
+    ]
+  },
       "SuccessEnvelope": {
         "type": "object",
         "required": ["ok", "data"],
@@ -1682,10 +6152,12 @@
       },
       "ProjectCreate": {
         "type": "object",
-        "required": ["name", "total_shares"],
+        "required": ["name"],
         "properties": {
+          "project_type": { "type": "string", "enum": ["fund_shares", "accounting", "billing", "construction"], "default": "fund_shares" },
+          "owner_is_member": { "type": "boolean", "default": false },
           "name": { "type": "string", "minLength": 2 },
-          "total_shares": { "type": "integer", "minimum": 1 },
+          "total_shares": { "type": "integer", "minimum": 1, "description": "Required for Fund / Shares; defaults to 1 for other project types" },
           "penalty_policy": { "$ref": "#/components/schemas/PenaltyPolicy" }
         }
       },

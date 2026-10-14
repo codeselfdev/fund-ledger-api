@@ -631,3 +631,11 @@ Active project members can use the existing read APIs for project transparency:
 - `GET /v1/expenses` and `GET /v1/expenses/by-category`: expense list, detail data, and chart grouping.
 
 These reads retain authenticated tenant/project scoping. Member-only accounts cannot create expenses, approve/reject/disburse expenses, manage members, or adjust accounts. Member home shows Members, Ledger, and Expenses shortcuts; directory rows have no profile/deposit/follow-up actions, and project browse views hide the payment FAB. Existing personal dues/payment and self-profile flows are unchanged. No schema migration is required for this access change.
+
+## Billing Management
+
+Billing projects now use `/v1/billing` for category-specific menus, customers, units, subscriptions, plans, invoices, collections, advances, adjustments, independent approvals, meter readings, bulk monthly runs, aging, statements, receipts and reminder delivery. See [Billing Management](BILLING_MANAGEMENT.md) for request shapes, permissions, financial behavior and migration rollout.
+
+## Construction Financial Management
+
+`project_type: construction` opens saved construction budgets, BOQ cost allocation, contractors, certified running bills, supplier/labor payables, site material movements, change orders, financial reports and the existing member/share contribution ledger. See [Construction Financial Management](CONSTRUCTION_FINANCIAL_MANAGEMENT.md) for menu, API, recognition and rollout details.

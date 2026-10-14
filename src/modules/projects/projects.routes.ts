@@ -1,3 +1,5 @@
+import { constructionMenus } from "../construction/construction.menu.js";
+import { billingMenus } from "../billing/billing.menu.js";
 import { readObject, StorageObjectNotFoundError } from "../../core/storage/object-storage.service.js";
 import { randomUUID } from "node:crypto";
 import { linkedIdentityUsers } from "../../core/security/linked-identity.js";
@@ -39,10 +41,15 @@ const createProjectSchema = z.object({
   owner_is_member: z.boolean().default(false),
   organization_name: z.string().trim().min(2).max(150),
   name: z.string().min(2),
-  total_shares: z.number().int().positive(),
+  total_shares: z.number().int().positive().optional(),
   penalty_policy: optionalPenaltyPolicySchema,
   address: z.string().optional()
 });
+
+const requireFundShares = <T extends z.AnyZodObject>(schema: T) => schema.refine(
+  value => value.project_type !== "fund_shares" || value.total_shares !== undefined,
+  { message: "Total shares are required for Fund / Shares projects", path: ["total_shares"] }
+);
 
 const updateProjectSchema = z.object({
   portal_settings: portalSettingsSchema.optional(),
@@ -90,8 +97,8 @@ projectsRouter.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
   const choices = summarizeProjectMemberships(memberships).map((access) => {
     const project = memberships.find(row => row.projectId === access.project_id)!.project;
     return {
-      ...access, name: project.name, address: project.address, total_shares: project.totalShares,
-      portal_settings: normalizePortalSettings(project.portalSettings),
+      ...access, ...(project.projectType === "billing" ? { billing_menus: billingMenus(access.roles) } : {}), ...(project.projectType === "construction" ? { construction_menus: constructionMenus(access.roles) } : {}), name: project.name, address: project.address, total_shares: project.totalShares,
+      portal_settings: normalizePortalSettings(project.portalSettings, project.projectType),
       logo_file_id: project.logoFileId, logo_url: project.logoFileId ? `/v1/projects/${project.id}/logo` : null,
       is_active: project.isActive,
       is_current: access.project_id === (req.header("x-project-id") ?? auth.sessionProjectId)
@@ -100,7 +107,7 @@ projectsRouter.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
   return ok(res, choices);
 }));
 
-projectsRouter.post("/owned-organization", requireRoles("any"), validateBody(createProjectSchema), asyncHandler(async (req, res) => {
+projectsRouter.post("/owned-organization", requireRoles("any"), validateBody(requireFundShares(createProjectSchema)), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const body = req.body as z.infer<typeof createProjectSchema>;
   const actor = await prisma.user.findUniqueOrThrow({
@@ -120,7 +127,7 @@ projectsRouter.post("/owned-organization", requireRoles("any"), validateBody(cre
       data: {
         tenantId: tenant.id,
         name: body.name,
-        totalShares: body.total_shares,
+        totalShares: body.total_shares ?? 1,
         projectType: body.project_type,
         penaltyPolicy: body.penalty_policy,
         address: body.address
@@ -136,7 +143,7 @@ projectsRouter.post("/owned-organization", requireRoles("any"), validateBody(cre
       }
     });
 
-    const member = body.owner_is_member && body.project_type === "fund_shares" ? await ensureUserProjectMember(tx, {
+    const member = body.owner_is_member && ["fund_shares", "construction"].includes(body.project_type) ? await ensureUserProjectMember(tx, {
       tenantId: tenant.id,
       projectId: createdProject.id,
       user: owner,
@@ -191,13 +198,15 @@ projectsRouter.post("/owned-organization", requireRoles("any"), validateBody(cre
     member_id: result.memberId,
     is_active: result.project.isActive,
     project_type: result.project.projectType,
-    portal_settings: normalizePortalSettings(result.project.portalSettings),
+    ...(result.project.projectType === "billing" ? { billing_menus: billingMenus(["admin"]) } : {}),
+    ...(result.project.projectType === "construction" ? { construction_menus: constructionMenus(["admin"]) } : {}),
+    portal_settings: normalizePortalSettings(result.project.portalSettings, result.project.projectType),
     logo_file_id: result.project.logoFileId,
     logo_url: logoUrl(result.project.logoFileId)
   });
 }));
 
-projectsRouter.post("/", authenticate, requireActiveSubscription, requireProject, requireRoles("owner", "admin"), validateBody(createProjectSchema.omit({ organization_name: true })), asyncHandler(async (req, res) => {
+projectsRouter.post("/", authenticate, requireActiveSubscription, requireProject, requireRoles("owner", "admin"), validateBody(requireFundShares(createProjectSchema.omit({ organization_name: true }))), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const body = req.body as z.infer<typeof createProjectSchema>;
   const actor = await prisma.user.findUniqueOrThrow({
@@ -210,7 +219,7 @@ projectsRouter.post("/", authenticate, requireActiveSubscription, requireProject
       data: {
         tenantId: auth.tenantId,
         name: body.name,
-        totalShares: body.total_shares,
+        totalShares: body.total_shares ?? 1,
         projectType: body.project_type,
         penaltyPolicy: body.penalty_policy,
         address: body.address
@@ -226,7 +235,7 @@ projectsRouter.post("/", authenticate, requireActiveSubscription, requireProject
       }
     });
 
-    const member = body.owner_is_member && body.project_type === "fund_shares" ? await ensureUserProjectMember(tx, {
+    const member = body.owner_is_member && ["fund_shares", "construction"].includes(body.project_type) ? await ensureUserProjectMember(tx, {
       tenantId: auth.tenantId,
       projectId: createdProject.id,
       user: actor,
@@ -276,7 +285,9 @@ projectsRouter.post("/", authenticate, requireActiveSubscription, requireProject
     member_id: result.memberId,
     is_active: result.project.isActive,
     project_type: result.project.projectType,
-    portal_settings: normalizePortalSettings(result.project.portalSettings),
+    ...(result.project.projectType === "billing" ? { billing_menus: billingMenus(["admin"]) } : {}),
+    ...(result.project.projectType === "construction" ? { construction_menus: constructionMenus(["admin"]) } : {}),
+    portal_settings: normalizePortalSettings(result.project.portalSettings, result.project.projectType),
     logo_file_id: result.project.logoFileId,
     logo_url: logoUrl(result.project.logoFileId)
   });
@@ -343,7 +354,9 @@ projectsRouter.get("/:id", requireActiveSubscription, validateParams(idParamSche
     address: project.address,
     total_shares: project.totalShares,
     project_type: project.projectType,
-    portal_settings: normalizePortalSettings(project.portalSettings),
+    ...(project.projectType === "billing" ? { billing_menus: billingMenus(roles) } : {}),
+    ...(project.projectType === "construction" ? { construction_menus: constructionMenus(roles) } : {}),
+    portal_settings: normalizePortalSettings(project.portalSettings, project.projectType),
     assigned_shares: assignedShares,
     remaining_shares: Math.max(0, project.totalShares - assignedShares),
     penalty_policy: project.penaltyPolicy,
@@ -418,7 +431,7 @@ projectsRouter.patch("/:id", requireActiveSubscription, validateParams(idParamSc
     where: { id },
     data: {
       name: body.name,
-      totalShares: body.total_shares,
+      totalShares: body.total_shares ?? 1,
       logoFileId: body.logo_file_id,
       penaltyPolicy: body.penalty_policy,
       address: body.address,
@@ -443,7 +456,9 @@ projectsRouter.patch("/:id", requireActiveSubscription, validateParams(idParamSc
     address: project.address,
     total_shares: project.totalShares,
     project_type: project.projectType,
-    portal_settings: normalizePortalSettings(project.portalSettings),
+    ...(project.projectType === "billing" ? { billing_menus: billingMenus([access.role]) } : {}),
+    ...(project.projectType === "construction" ? { construction_menus: constructionMenus([access.role]) } : {}),
+    portal_settings: normalizePortalSettings(project.portalSettings, project.projectType),
     logo_file_id: project.logoFileId,
     logo_url: logoUrl(project.logoFileId),
     penalty_policy: project.penaltyPolicy

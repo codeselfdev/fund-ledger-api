@@ -16,7 +16,7 @@ export type LoginSessionPayload = {
   memberships: Array<{
     project_id: string;
     project_name: string;
-    project_type: "fund_shares" | "accounting" | "billing";
+    project_type: "fund_shares" | "accounting" | "billing" | "construction";
     role: string;
     roles: string[];
     member_id: string | null;

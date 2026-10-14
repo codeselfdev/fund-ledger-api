@@ -193,6 +193,7 @@ enum ProjectType {
   fund_shares
   accounting
   billing
+  construction
 }
 
 enum DepositApprovalRoute {
@@ -208,6 +209,27 @@ model Project {
   projectType   ProjectType @default(fund_shares) @map("project_type")
   portalSettings Json? @map("portal_settings")
   commerceSettings Json? @map("commerce_settings")
+  constructionSettings Json? @map("construction_settings")
+  constructionCostHeads ConstructionCostHead[]
+  constructionBoq ConstructionBoq[]
+  constructionAllocations ConstructionCostAllocation[]
+  constructionContractors ConstructionContractor[]
+  constructionContracts ConstructionContract[]
+  constructionRunningBills ConstructionRunningBill[]
+  constructionSupplierBills ConstructionSupplierBill[]
+  constructionLabor ConstructionLaborEntry[]
+  constructionMaterials ConstructionMaterialEntry[]
+  constructionPayments ConstructionPayment[]
+  constructionChanges ConstructionChangeOrder[]
+  billingSettings Json? @map("billing_settings")
+  billingPlans BillingPlan[]
+  billingUnits BillingUnit[]
+  billingAssignments BillingAssignment[]
+  billingInvoices BillingInvoice[]
+  billingPayments BillingPayment[]
+  billingAdjustments BillingAdjustment[]
+  billingRuns BillingRun[]
+  billingMessages BillingMessage[]
   incomeCategories IncomeCategory[]
   customers Customer[]
   businessDocuments BusinessDocument[]
@@ -611,6 +633,7 @@ model Receipt {
 }
 
 model Expense {
+  constructionAllocations ConstructionCostAllocation[]
   id            String          @id @default(cuid())
   tenantId      String          @map("tenant_id")
   projectId     String          @map("project_id")
@@ -645,6 +668,7 @@ model Expense {
 }
 
 model Vendor {
+  constructionSupplierBills ConstructionSupplierBill[]
   id        String   @id @default(cuid())
   tenantId  String   @map("tenant_id")
   projectId String   @map("project_id")
@@ -701,6 +725,7 @@ model InventoryCategory {
 }
 
 model InventoryItem {
+  constructionMaterials ConstructionMaterialEntry[]
   id           String   @id @default(cuid())
   tenantId     String   @map("tenant_id")
   projectId    String   @map("project_id")
@@ -750,6 +775,7 @@ model StockMovement {
 }
 
 model Purchase {
+  constructionSupplierBill ConstructionSupplierBill?
   id            String         @id @default(cuid())
   tenantId      String         @map("tenant_id")
   projectId     String         @map("project_id")
@@ -842,6 +868,8 @@ model Account {
 
   project          Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
   businessPayments BusinessPayment[]
+  billingPayments BillingPayment[]
+  constructionPayments ConstructionPayment[]
   txns             AccountTransaction[]
   deposits         Deposit[]
   targetedExpenses Expense[]            @relation("ExpenseTargetAccount")
@@ -1162,6 +1190,10 @@ model Customer {
   project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
   incomeTransactions AccountTransaction[]
   documents BusinessDocument[]
+  billingAssignments BillingAssignment[]
+  billingInvoices BillingInvoice[]
+  billingPayments BillingPayment[]
+  billingAdjustments BillingAdjustment[]
   @@index([tenantId, projectId, isActive])
   @@map("customers")
 }
@@ -1235,4 +1267,520 @@ model IncomeCategory {
   @@unique([projectId, name])
   @@index([tenantId, projectId, isActive])
   @@map("income_categories")
+}
+
+
+model BillingPlan {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  name String
+  category String
+  mode String
+  amount Int
+  intervalMonths Int @default(1) @map("interval_months")
+  installmentCount Int? @map("installment_count")
+  dueDays Int @default(10) @map("due_days")
+  graceDays Int @default(0) @map("grace_days")
+  lateFeeType String @default("none") @map("late_fee_type")
+  lateFeeValue Int @default(0) @map("late_fee_value")
+  escalationBps Int @default(0) @map("escalation_bps")
+  escalationMonths Int @default(12) @map("escalation_months")
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  assignments BillingAssignment[]
+  @@unique([projectId, name])
+  @@index([tenantId, projectId, isActive])
+  @@map("billing_plans")
+}
+
+model BillingUnit {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  name String
+  kind String
+  note String?
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  assignments BillingAssignment[]
+  @@unique([projectId, name])
+  @@index([tenantId, projectId])
+  @@map("billing_units")
+}
+
+model BillingAssignment {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  customerId String @map("customer_id")
+  planId String @map("plan_id")
+  unitId String? @map("unit_id")
+  label String
+  startDate DateTime @db.Date @map("start_date")
+  endDate DateTime? @db.Date @map("end_date")
+  status String @default("active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  plan BillingPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  unit BillingUnit? @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  invoices BillingInvoice[]
+  readings BillingMeterReading[]
+  @@index([tenantId, projectId, status])
+  @@index([projectId, customerId])
+  @@map("billing_assignments")
+}
+
+model BillingMeterReading {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  assignmentId String @map("assignment_id")
+  periodStart DateTime @db.Date @map("period_start")
+  previous Int
+  current Int
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  assignment BillingAssignment @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  @@unique([assignmentId, periodStart])
+  @@index([tenantId, projectId])
+  @@map("billing_meter_readings")
+}
+
+model BillingInvoice {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  customerId String @map("customer_id")
+  assignmentId String? @map("assignment_id")
+  periodStart DateTime? @db.Date @map("period_start")
+  number String
+  status String @default("issued")
+  customerSnapshot Json @map("customer_snapshot")
+  lines Json
+  subtotal Int
+  discount Int @default(0)
+  tax Int @default(0)
+  total Int
+  paidAmount Int @default(0) @map("paid_amount")
+  creditAmount Int @default(0) @map("credit_amount")
+  debitAmount Int @default(0) @map("debit_amount")
+  lateFeeAmount Int @default(0) @map("late_fee_amount")
+  lateFeeAppliedAt DateTime? @map("late_fee_applied_at")
+  policy Json
+  invoiceDate DateTime @db.Date @map("invoice_date")
+  dueDate DateTime @db.Date @map("due_date")
+  note String?
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  assignment BillingAssignment? @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  allocations BillingAllocation[]
+  adjustments BillingAdjustment[]
+  @@unique([projectId, requestKey])
+  @@unique([projectId, number])
+  @@unique([assignmentId, periodStart])
+  @@index([tenantId, projectId, customerId, status, dueDate])
+  @@map("billing_invoices")
+}
+
+model BillingPayment {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  customerId String @map("customer_id")
+  accountId String @map("account_id")
+  amount Int
+  remainingAmount Int @map("remaining_amount")
+  refundedAmount Int @default(0) @map("refunded_amount")
+  method String
+  paymentDate DateTime @db.Date @map("payment_date")
+  reference String?
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  allocations BillingAllocation[]
+  adjustments BillingAdjustment[]
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, customerId])
+  @@map("billing_payments")
+}
+
+model BillingAllocation {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  invoiceId String @map("invoice_id")
+  paymentId String @map("payment_id")
+  amount Int
+  releasedAt DateTime? @map("released_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  invoice BillingInvoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  payment BillingPayment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  @@index([tenantId, projectId, invoiceId])
+  @@map("billing_allocations")
+}
+
+model BillingAdjustment {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  customerId String @map("customer_id")
+  invoiceId String? @map("invoice_id")
+  paymentId String? @map("payment_id")
+  kind String
+  amount Int
+  reason String
+  status String @default("pending")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdById String @map("created_by_id")
+  decidedById String? @map("decided_by_id")
+  decidedAt DateTime? @map("decided_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  invoice BillingInvoice? @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  payment BillingPayment? @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, status])
+  @@map("billing_adjustments")
+}
+
+model BillingRun {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  periodStart DateTime @db.Date @map("period_start")
+  assignmentIds Json @map("assignment_ids")
+  cursor Int @default(0)
+  results Json
+  status String @default("queued")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  @@unique([projectId, requestKey])
+  @@index([status, createdAt])
+  @@map("billing_runs")
+}
+
+model BillingMessage {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  recipient String
+  subject String
+  body String
+  dedupeKey String @map("dedupe_key")
+  status String @default("queued")
+  attempts Int @default(0)
+  lastError String? @map("last_error")
+  leaseUntil DateTime? @map("lease_until")
+  createdAt DateTime @default(now()) @map("created_at")
+  sentAt DateTime? @map("sent_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  @@unique([projectId, dedupeKey])
+  @@index([status, createdAt])
+  @@map("billing_messages")
+}
+
+
+model ConstructionCostHead {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  name String
+  phase String
+  category String
+  budget Int
+  revisedBudget Int @map("revised_budget")
+  forecastRemaining Int @default(0) @map("forecast_remaining")
+  status String @default("pending")
+  createdById String @map("created_by_id")
+  decidedById String? @map("decided_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  boq ConstructionBoq[]
+  allocations ConstructionCostAllocation[]
+  contracts ConstructionContract[]
+  supplierBills ConstructionSupplierBill[]
+  laborEntries ConstructionLaborEntry[]
+  changes ConstructionChangeOrder[]
+  @@unique([projectId, name, phase])
+  @@index([tenantId, projectId, status])
+  @@map("construction_cost_heads")
+}
+
+model ConstructionBoq {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  costHeadId String @map("cost_head_id")
+  name String
+  unit String
+  quantity Decimal @db.Decimal(18, 3)
+  rate Int
+  estimated Int
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  costHead ConstructionCostHead @relation(fields: [costHeadId], references: [id], onDelete: Restrict)
+  allocations ConstructionCostAllocation[]
+  supplierBills ConstructionSupplierBill[]
+  materialEntries ConstructionMaterialEntry[]
+  @@index([tenantId, projectId, costHeadId])
+  @@map("construction_boq")
+}
+
+model ConstructionCostAllocation {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  expenseId String @map("expense_id")
+  costHeadId String @map("cost_head_id")
+  boqId String? @map("boq_id")
+  amount Int
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  costHead ConstructionCostHead @relation(fields: [costHeadId], references: [id], onDelete: Restrict)
+  boq ConstructionBoq? @relation(fields: [boqId], references: [id], onDelete: Restrict)
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, expenseId])
+  @@map("construction_cost_allocations")
+}
+
+model ConstructionContractor {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  name String
+  mobile String?
+  email String?
+  address String?
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  contracts ConstructionContract[]
+  @@index([tenantId, projectId])
+  @@map("construction_contractors")
+}
+
+model ConstructionContract {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  contractorId String @map("contractor_id")
+  costHeadId String @map("cost_head_id")
+  title String
+  amount Int
+  revisedAmount Int @map("revised_amount")
+  retentionBps Int @default(500) @map("retention_bps")
+  certifiedAmount Int @default(0) @map("certified_amount")
+  advancePaid Int @default(0) @map("advance_paid")
+  advanceRecovered Int @default(0) @map("advance_recovered")
+  retentionHeld Int @default(0) @map("retention_held")
+  retentionReleased Int @default(0) @map("retention_released")
+  status String @default("active")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  contractor ConstructionContractor @relation(fields: [contractorId], references: [id], onDelete: Restrict)
+  costHead ConstructionCostHead @relation(fields: [costHeadId], references: [id], onDelete: Restrict)
+  runningBills ConstructionRunningBill[]
+  payments ConstructionPayment[]
+  changes ConstructionChangeOrder[]
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, contractorId])
+  @@map("construction_contracts")
+}
+
+model ConstructionRunningBill {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  contractId String @map("contract_id")
+  cumulativeCertified Int @map("cumulative_certified")
+  previousCertified Int @map("previous_certified")
+  currentCertified Int @map("current_certified")
+  retention Int
+  advanceRecovery Int @map("advance_recovery")
+  netPayable Int @map("net_payable")
+  paidAmount Int @default(0) @map("paid_amount")
+  billDate DateTime @db.Date @map("bill_date")
+  note String?
+  status String @default("pending")
+  createdById String @map("created_by_id")
+  decidedById String? @map("decided_by_id")
+  decidedAt DateTime? @map("decided_at")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  contract ConstructionContract @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  payments ConstructionPayment[]
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, contractId, status])
+  @@map("construction_running_bills")
+}
+
+model ConstructionSupplierBill {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  vendorId String @map("vendor_id")
+  costHeadId String @map("cost_head_id")
+  boqId String? @map("boq_id")
+  purchaseId String? @unique @map("purchase_id")
+  number String
+  description String
+  amount Int
+  paidAmount Int @default(0) @map("paid_amount")
+  billDate DateTime @db.Date @map("bill_date")
+  status String @default("pending")
+  receivedAt DateTime? @map("received_at")
+  createdById String @map("created_by_id")
+  decidedById String? @map("decided_by_id")
+  decidedAt DateTime? @map("decided_at")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  costHead ConstructionCostHead @relation(fields: [costHeadId], references: [id], onDelete: Restrict)
+  boq ConstructionBoq? @relation(fields: [boqId], references: [id], onDelete: Restrict)
+  purchase Purchase? @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  payments ConstructionPayment[]
+  @@unique([projectId, vendorId, number])
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, status])
+  @@map("construction_supplier_bills")
+}
+
+model ConstructionLaborEntry {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  costHeadId String @map("cost_head_id")
+  workerName String @map("worker_name")
+  workDate DateTime @db.Date @map("work_date")
+  units Decimal @db.Decimal(18, 3)
+  rate Int
+  amount Int
+  paidAmount Int @default(0) @map("paid_amount")
+  note String?
+  status String @default("pending")
+  createdById String @map("created_by_id")
+  decidedById String? @map("decided_by_id")
+  decidedAt DateTime? @map("decided_at")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  costHead ConstructionCostHead @relation(fields: [costHeadId], references: [id], onDelete: Restrict)
+  payments ConstructionPayment[]
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, workDate])
+  @@map("construction_labor_entries")
+}
+
+model ConstructionMaterialEntry {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  itemId String @map("item_id")
+  boqId String? @map("boq_id")
+  kind String
+  quantity Int
+  entryDate DateTime @db.Date @map("entry_date")
+  reason String
+  sourceId String? @map("source_id")
+  returnedQuantity Int @default(0) @map("returned_quantity")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  item InventoryItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  boq ConstructionBoq? @relation(fields: [boqId], references: [id], onDelete: Restrict)
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, itemId])
+  @@map("construction_material_entries")
+}
+
+model ConstructionPayment {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  kind String
+  contractId String? @map("contract_id")
+  runningBillId String? @map("running_bill_id")
+  supplierBillId String? @map("supplier_bill_id")
+  laborEntryId String? @map("labor_entry_id")
+  accountId String @map("account_id")
+  amount Int
+  paymentDate DateTime @db.Date @map("payment_date")
+  reference String?
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  contract ConstructionContract? @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  runningBill ConstructionRunningBill? @relation(fields: [runningBillId], references: [id], onDelete: Restrict)
+  supplierBill ConstructionSupplierBill? @relation(fields: [supplierBillId], references: [id], onDelete: Restrict)
+  laborEntry ConstructionLaborEntry? @relation(fields: [laborEntryId], references: [id], onDelete: Restrict)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, kind])
+  @@map("construction_payments")
+}
+
+model ConstructionChangeOrder {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  costHeadId String? @map("cost_head_id")
+  contractId String? @map("contract_id")
+  budgetChange Int @default(0) @map("budget_change")
+  contractChange Int @default(0) @map("contract_change")
+  reason String
+  status String @default("pending")
+  createdById String @map("created_by_id")
+  decidedById String? @map("decided_by_id")
+  decidedAt DateTime? @map("decided_at")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  costHead ConstructionCostHead? @relation(fields: [costHeadId], references: [id], onDelete: Restrict)
+  contract ConstructionContract? @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, status])
+  @@map("construction_change_orders")
 }

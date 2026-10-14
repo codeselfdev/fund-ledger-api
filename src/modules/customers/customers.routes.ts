@@ -16,7 +16,7 @@ router.get('/', asyncHandler(async (req, res) => {
 }));
 router.post('/', requireRoles('accountant', 'cashier', 'approver'), validateBody(customerSchema), asyncHandler(async (req, res) => {
     const auth = requireProjectContext(req), b = customerSchema.parse(req.body);
-    return created(res, await prisma.customer.create({ data: { tenantId: auth.tenantId, projectId: auth.projectId, name: b.name, mobile: b.mobile, email: b.email, address: b.address } }));
+    return created(res, await prisma.customer.create({ data: { tenantId: auth.tenantId, projectId: auth.projectId, name: b.name, mobile: b.mobile, email: b.email, address: b.address, isActive: b.is_active } }));
 }));
 router.patch('/:id', requireRoles('accountant', 'cashier', 'approver'), validateBody(customerSchema), asyncHandler(async (req, res) => {
     const auth = requireProjectContext(req), b = customerSchema.parse(req.body);

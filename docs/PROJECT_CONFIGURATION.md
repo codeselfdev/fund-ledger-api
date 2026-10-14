@@ -38,3 +38,9 @@ Direct-admin deposits use existing `pending_approver` status. Only owner/admin c
 `POST /v1/deposits/:id/approve` and `/confirm` retain existing contracts. Final confirmation posts balances/dues/receipts in one transaction. Atomic pending-state transition prevents repeated confirmation from posting twice. Admin can directly finalize a legacy pending_accountant item when accountant access is absent or admin-only review is configured. Changing project settings does not otherwise rewrite recorded routes.
 
 The mobile app resolves project type before selecting a role portal. Fund / Shares has existing features; Accounting and Billing currently display a future-feature placeholder with project switching and sign-out.
+
+Billing projects additionally expose `billing_menus` in project responses and role-aware configuration at `GET /v1/billing/configuration`. Billing default member shortcuts are empty; accountant defaults are `customers`, `billing_invoices`, `billing_collections`, `billing_outstanding`, `billing_reports`. The full billing menu keys can be used in `accountant_shortcuts`; see [Billing Management](BILLING_MANAGEMENT.md). Project creation may omit `total_shares` for Billing (the compatibility field defaults to 1).
+
+## Construction Financial Management
+
+`project_type: construction` opens saved construction budgets, BOQ cost allocation, contractors, certified running bills, supplier/labor payables, site material movements, change orders, financial reports and the existing member/share contribution ledger. See [Construction Financial Management](CONSTRUCTION_FINANCIAL_MANAGEMENT.md) for menu, API, recognition and rollout details.

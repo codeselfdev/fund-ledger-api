@@ -379,3 +379,11 @@ See `docs/PAYMENT_FOLLOWUPS_API.md` for payloads, errors, automatic deposit reso
 - `role`: `owner`, `admin`, `member`, `cashier`, `accountant`, `approver`, `auditor`
 
 See [organization ownership and billing](ORGANIZATION_BILLING.md) for linked organization creation, scoped session rotation, invoices and payment approval.
+
+## Billing Management
+
+Billing projects now use `/v1/billing` for category-specific menus, customers, units, subscriptions, plans, invoices, collections, advances, adjustments, independent approvals, meter readings, bulk monthly runs, aging, statements, receipts and reminder delivery. See [Billing Management](BILLING_MANAGEMENT.md) for request shapes, permissions, financial behavior and migration rollout.
+
+## Construction Financial Management
+
+`project_type: construction` opens saved construction budgets, BOQ cost allocation, contractors, certified running bills, supplier/labor payables, site material movements, change orders, financial reports and the existing member/share contribution ledger. See [Construction Financial Management](CONSTRUCTION_FINANCIAL_MANAGEMENT.md) for menu, API, recognition and rollout details.
