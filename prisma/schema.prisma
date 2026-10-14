@@ -168,6 +168,7 @@ enum CallOutcome {
 }
 
 model Tenant {
+  notificationCampaigns NotificationCampaign[]
   id            String     @id @default(cuid())
   name          String
   slug          String     @unique
@@ -202,6 +203,7 @@ enum DepositApprovalRoute {
 }
 
 model Project {
+  notificationCampaigns NotificationCampaign[]
   id            String   @id @default(cuid())
   tenantId      String   @map("tenant_id")
   name          String
@@ -322,6 +324,7 @@ model OnboardingProgress {
 }
 
 model User {
+  notificationCampaigns NotificationCampaign[]
   id           String   @id @default(cuid())
   tenantId     String   @map("tenant_id")
   name         String
@@ -949,6 +952,51 @@ model Upload {
   @@map("uploads")
 }
 
+model NotificationCampaign {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  createdById String? @map("created_by_id")
+  requestId String @map("request_id")
+  title String
+  body String
+  audience String
+  destination String @default("none")
+  push Boolean @default(true)
+  email Boolean @default(false)
+  recipientCount Int @map("recipient_count")
+  createdAt DateTime @default(now()) @map("created_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  deliveries NotificationDelivery[]
+  @@unique([projectId, createdById, requestId])
+  @@index([tenantId, projectId, createdAt])
+  @@map("notification_campaigns")
+}
+
+model NotificationDelivery {
+  id String @id @default(cuid())
+  campaignId String @map("campaign_id")
+  recipientKey String @map("recipient_key")
+  memberId String? @map("member_id")
+  userId String? @map("user_id")
+  email String?
+  channel String
+  title String
+  body String
+  status String @default("pending")
+  error String?
+  attempts Int @default(0)
+  lockedAt DateTime? @map("locked_at")
+  sentAt DateTime? @map("sent_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  campaign NotificationCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  @@unique([campaignId, recipientKey, channel])
+  @@index([status, createdAt])
+  @@map("notification_deliveries")
+}
+
 model Notification {
   id              String    @id @default(cuid())
   tenantId        String    @map("tenant_id")
@@ -960,6 +1008,7 @@ model Notification {
   body            String
   entityType      String?   @map("entity_type")
   entityId        String?   @map("entity_id")
+  destination     String?
   readAt          DateTime? @map("read_at")
   createdAt       DateTime  @default(now()) @map("created_at")
 

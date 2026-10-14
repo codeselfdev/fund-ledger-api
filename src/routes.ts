@@ -1,3 +1,4 @@
+import { notificationCampaignRouter } from "./modules/notification-campaigns/campaign.routes.js";
 import { constructionRouter } from "./modules/construction/construction.routes.js";
 import { billingRouter } from "./modules/billing/billing.routes.js";
 import { customersRouter } from './modules/customers/customers.routes.js';
@@ -79,6 +80,7 @@ export function registerRoutes(app: Express) {
   app.use("/v1/sales", salesRouter);
   app.use("/v1/transfers", transfersRouter);
   app.use("/v1", dashboardRouter);
+  app.use("/v1/notifications/campaigns", notificationCampaignRouter);
   app.use("/v1", activityRouter);
   app.use("/v1", whatsappRouter);
   app.use("/v1", penaltiesRouter);

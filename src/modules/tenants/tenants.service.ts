@@ -1,3 +1,4 @@
+import { withAvailableOrganizationSlug } from "../../core/onboarding/available-slug.js";
 import { Prisma, TenantPlan, ProjectType } from "@prisma/client";
 import { prisma } from "../../core/prisma/client.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
@@ -47,6 +48,13 @@ function jsonValue(value: unknown): Prisma.InputJsonValue | undefined {
 }
 
 export async function provisionTenant(input: ProvisionTenantInput): Promise<ProvisionTenantResult> {
+  if (input.source !== "self_signup") return provisionTenantOnce(input);
+  // Both mobile/OTP signup and the Google ticket flow allocate slugs here.
+  // A collision rolls the transaction back before another candidate is tried.
+  return withAvailableOrganizationSlug(input.slug, slug => provisionTenantOnce({ ...input, slug }));
+}
+
+async function provisionTenantOnce(input: ProvisionTenantInput): Promise<ProvisionTenantResult> {
   const currency = (input.currency ?? "BDT").toUpperCase();
   const plan = input.plan ?? TenantPlan.free;
   const projectName = input.projectName?.trim() || "My Project";

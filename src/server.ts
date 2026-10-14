@@ -1,3 +1,4 @@
+import { startCampaignWorker, stopCampaignWorker } from "./modules/notification-campaigns/campaign.service.js";
 import { startBillingWorker, stopBillingWorker } from "./modules/billing/billing.worker.js";
 import { createApp } from "./app.js";
 import { env } from "./config/env.js";
@@ -11,6 +12,7 @@ import { verifyObjectStorage } from "./core/storage/object-storage.service.js";
 const app = createApp();
 startRecurringSchedulesCron();
 startBillingWorker();
+startCampaignWorker();
 startCommunityRemindersCron();
 startPaymentCommitmentsCron();
 
@@ -25,6 +27,7 @@ const server = app.listen(env.port, () => {
 async function shutdown() {
   stopRecurringSchedulesCron();
   stopBillingWorker();
+  stopCampaignWorker();
   stopCommunityRemindersCron();
   stopPaymentCommitmentsCron();
   server.close(async () => {

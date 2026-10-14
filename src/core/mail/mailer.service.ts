@@ -87,13 +87,13 @@ export async function verifyMailTransport(): Promise<boolean> {
   }
 }
 
-export async function sendMail(input: { to: string; cc?: string[]; subject: string; text: string; html?: string }): Promise<boolean> {
+export async function sendMail(input: { to: string; cc?: string[]; subject: string; text: string; html?: string; fromName?: string }): Promise<boolean> {
   const transport = getTransporter();
   if (!transport) return false;
 
   try {
     await transport.sendMail({
-      from: env.smtp.from,
+      from: input.fromName ? { name: input.fromName, address: env.smtp.from.match(/<([^>]+)>/)?.[1] ?? env.smtp.from } : env.smtp.from,
       to: input.to,
       cc: input.cc?.length ? input.cc : undefined,
       subject: input.subject,
