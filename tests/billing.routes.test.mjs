@@ -6,8 +6,8 @@ process.env.DATABASE_URL = 'postgresql://test:test@127.0.0.1:1/test';
 process.env.JWT_SECRET = 'billing-isolated-test';
 const { prisma } = await import('../dist/core/prisma/client.js');
 const { Prisma } = await import('@prisma/client');
-const { billingRouter } = await import('../dist/modules/billing/billing.routes.js');
-const { authenticate } = await import('../dist/core/security/auth.middleware.js');
+const { registerRoutes } = await import('../dist/routes.js');
+const { notFoundHandler } = await import('../dist/core/http/not-found.js');
 const { signAccessToken, hashToken } = await import('../dist/core/security/jwt.js');
 const { errorHandler } = await import('../dist/core/http/error-handler.js');
 const { processRun } = await import('../dist/modules/billing/billing.service.js');
@@ -80,13 +80,14 @@ function mock(table) {
 }
 before(async () => {
   for (const [model, table] of Object.entries(models)) Object.assign(prisma[model], mock(table));
+  prisma.tenant.findUnique = async () => ({ contact: { subscription: { status: 'trial', trial_ends_at: new Date(Date.now() + 86400000).toISOString() } } });
   prisma.$transaction = async fn => {
     const previous = queue; let release; queue = new Promise(r => release = r); await previous;
     const snapshot = copy(db);
     try { if (retry) { retry = false; throw new Prisma.PrismaClientKnownRequestError('serialization', { code: 'P2034', clientVersion: 'test' }); } return await fn(prisma); }
     catch (e) { db = snapshot; throw e; } finally { release(); }
   };
-  const app = express(); app.use(express.json({ limit: '2mb' })); app.use(authenticate); app.use('/billing', billingRouter); app.use(errorHandler);
+  const app = express(); app.use(express.json({ limit: '2mb' })); registerRoutes(app); app.use(notFoundHandler); app.use(errorHandler);
   server = app.listen(0, '127.0.0.1'); await new Promise(r => server.once('listening', r)); base = `http://127.0.0.1:${server.address().port}`;
 });
 beforeEach(reset);
@@ -97,7 +98,7 @@ function token(role, project, userId) {
   db.memberships.push({ tenantId: 't', projectId: project, userId, role, isActive: true, memberId: role === 'member' ? 'member' : null }); return value;
 }
 async function request(path, body, role = 'accountant', method = body ? 'POST' : 'GET', project = 'p', userId = `user-${role}`) {
-  const response = await fetch(base + '/billing' + path, { method, headers: { authorization: `Bearer ${token(role, project, userId)}`, 'x-project-id': project, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const response = await fetch(base + '/v1/billing' + path, { method, headers: { authorization: `Bearer ${token(role, project, userId)}`, 'x-project-id': project, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
   return { status: response.status, body: response.headers.get('content-type')?.includes('pdf') ? Buffer.from(await response.arrayBuffer()) : await response.json() };
 }
 const invoiceBody = (extra = {}) => ({ customer_id: 'c', invoice_date: '2026-01-01', due_date: '2026-01-10', lines: [{ description: 'Service charge', quantity: 1, unit_price: 1000 }], request_key: randomUUID(), ...extra });
@@ -111,6 +112,19 @@ const approve = row => request(`/adjustments/${row.id}/decision`, { decision: 'a
 test('billing configuration exposes category-specific menus and defaults without shareholder shortcuts', async () => {
   const r = await request('/configuration'); assert.equal(r.status, 200); assert.equal(r.body.data.categories.length, 4); assert.ok(r.body.data.menus.some(m => m.key === 'billing_invoices')); assert.equal(r.body.data.menus.find(m => m.key === 'billing_approvals').can_write, false);
   assert.deepEqual(normalizePortalSettings(null, 'billing').member_shortcuts, []); assert.ok(normalizePortalSettings(null, 'billing').accountant_shortcuts.includes('billing_collections')); assert.equal(portalSettingsSchema.safeParse(normalizePortalSettings(null, 'billing')).success, true); assert.ok(normalizePortalSettings(null).member_shortcuts.includes('members'));
+});
+test('a newly created billing project loads through the application routes with no plans or invoices', async () => {
+  db.customers = []; db.accounts = [];
+  for (const path of ['/plans', '/units', '/customers']) {
+    const response = await request(path, undefined, 'admin');
+    assert.equal(response.status, 200, path);
+    assert.deepEqual(response.body.data, [], path);
+  }
+  assert.equal((await request('/configuration', undefined, 'admin')).status, 200);
+  const overview = await request('/overview?month=2026-10', undefined, 'admin');
+  assert.equal(overview.status, 200);
+  for (const key of ['customers', 'total_billed', 'collected', 'outstanding', 'overdue_accounts', 'collection_progress']) assert.equal(overview.body.data[key], 0, key);
+  assert.deepEqual(overview.body.data.recent, []);
 });
 for (const role of ['member', 'auditor', 'approver', 'cashier']) test(`${role} cannot issue billing invoices or configure plans`, async () => {
   assert.equal((await request('/invoices', invoiceBody(), role)).status, 403); assert.equal((await request('/plans', { name: 'Service', category: 'general_business', mode: 'fixed', amount: 100 }, role)).status, 403);
