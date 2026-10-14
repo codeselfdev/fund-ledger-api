@@ -12,7 +12,6 @@ import { provisionTenant } from "../tenants/tenants.service.js";
 import {
   findActiveUsersByEmail,
   getActiveUserForLogin,
-  googlePlaceholderMobile,
   issueLoginSession,
   toLoginSessionPayload,
   type LoginSessionPayload
@@ -389,7 +388,11 @@ export async function signupWithGoogleTicket(input: {
   }
 
   const ownerName = input.ownerName?.trim() || row.identity.name;
-  const ownerMobile = input.ownerMobile || googlePlaceholderMobile(row.identity.uid);
+  const ownerMobile = input.ownerMobile?.trim();
+  if (!ownerMobile || !/^\+?\d{7,15}$/.test(ownerMobile)) {
+    tickets.set(input.ticket, { ...row, expiresAt: Date.now() + IDENTITY_TICKET_TTL_MS });
+    throw badRequest("Enter a valid owner mobile number.");
+  }
   let result;
   try {
     result = await provisionTenant({
@@ -402,6 +405,7 @@ export async function signupWithGoogleTicket(input: {
       adminName: ownerName,
       adminMobile: ownerMobile,
       adminEmail: row.identity.email,
+      verifiedGoogleEmail: row.identity.email,
       source: "self_signup"
     });
   } catch (error) {

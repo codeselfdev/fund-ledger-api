@@ -16,6 +16,8 @@ export type ProvisionTenantInput = {
   adminName: string;
   adminMobile: string;
   adminEmail?: string;
+  /** Server-verified Google email; never accepted from a signup request body. */
+  verifiedGoogleEmail?: string;
   projectName?: string;
   projectTotalShares?: number;
   projectType?: ProjectType;
@@ -64,7 +66,11 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
       throw Object.assign(new Error("Email already registered"), { code: "EMAIL_TAKEN" });
     }
   }
-  if (input.adminMobile) {
+  // A Google signup is identified by its verified email. Contact mobiles may
+  // repeat across organizations without linking users or granting existing access.
+  const verifiedGoogleSignup = source === "self_signup" && Boolean(input.verifiedGoogleEmail)
+    && input.verifiedGoogleEmail?.trim().toLowerCase() === input.adminEmail?.trim().toLowerCase();
+  if (input.adminMobile && !verifiedGoogleSignup) {
     const existingMobile = await prisma.user.findFirst({
       where: { isActive: true, mobile: input.adminMobile },
       select: { id: true }

@@ -20,6 +20,10 @@ import { summarizeProjectMemberships } from "../../core/security/project-access.
 
 const router = Router();
 
+function isEmailOtpAmbiguous(users: Array<{ id: string; email: string | null }>) {
+  return users.length > 1 && new Set(users.map(user => user.email?.trim().toLowerCase() ?? user.id)).size > 1;
+}
+
 const otpRequestSchema = z.object({
   mobile: z.string().min(6)
 });
@@ -93,6 +97,11 @@ router.post("/otp/request", validateBody(otpRequestSchema), asyncHandler(async (
   const body = req.body as z.infer<typeof otpRequestSchema>;
   const users = await findActiveUsersByMobile(body.mobile);
   if (users.length === 0) throw badRequest("No active user found for this mobile number");
+  // An email OTP must not authenticate a different Google identity just because
+  // both accounts use the same contact mobile. SMS proves phone possession.
+  if (isEmailOtpAmbiguous(users)) {
+    throw badRequest("This mobile is shared by multiple accounts. Continue with Google or use SMS verification.");
+  }
   const user = users[0];
 
   const { code: devCode, emailed } = await issueOtp(body.mobile, user.email);
@@ -152,7 +161,13 @@ router.post("/login", validateBody(loginSchema), asyncHandler(async (req, res) =
     const mobile = body.mobile?.trim() ?? "";
     const validOtp = await verifyOtp(mobile, body.otp);
     if (!validOtp) throw unauthorized("Invalid or expired OTP");
-    users = await findActiveUsersByMobile(mobile, body.tenant_slug);
+    // Also refuse OTPs issued before the contact became shared, even when the
+    // caller specifies a tenant slug. Verified Firebase phone login uses SMS.
+    const mobileUsers = await findActiveUsersByMobile(mobile);
+    if (isEmailOtpAmbiguous(mobileUsers)) {
+      throw badRequest("This mobile is shared by multiple accounts. Continue with Google or use SMS verification.");
+    }
+    users = body.tenant_slug ? await findActiveUsersByMobile(mobile, body.tenant_slug) : mobileUsers;
   }
 
   if (users.length === 0) throw unauthorized("Invalid login");

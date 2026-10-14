@@ -18,7 +18,7 @@ import { ensureUserProjectMember } from "../../core/security/member-link.service
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
 import { validateBody } from "../../core/validation/validate.js";
 import { writeAccountTransactionAudit, writeAudit } from "../../core/audit/audit.service.js";
-import { findActiveUsersByEmail, findActiveUsersByMobile, googlePlaceholderMobile, issueOtp, mobilesEquivalent, resolveFirebaseIdentity } from "../auth/auth.service.js";
+import { findActiveUsersByEmail, findActiveUsersByMobile, issueOtp, mobilesEquivalent, resolveFirebaseIdentity } from "../auth/auth.service.js";
 import { provisionTenant } from "../tenants/tenants.service.js";
 
 import { projectTypeSchema } from "../../core/projects/project-settings.js";
@@ -159,6 +159,7 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
   let ownerMobile = body.owner_mobile;
   let ownerName = body.owner_name;
   let ownerEmail = body.owner_email?.trim().toLowerCase();
+  let verifiedGoogleEmail: string | undefined;
 
   if (body.id_token) {
     let identity;
@@ -169,9 +170,12 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
     }
 
     if (identity.provider === "google") {
+      if (!identity.email || identity.emailVerified !== true) throw badRequest("Google email is not verified");
       ownerEmail = identity.email;
-      ownerName = identity.name || body.owner_name;
-      ownerMobile = body.owner_mobile || googlePlaceholderMobile(identity.uid);
+      verifiedGoogleEmail = identity.email;
+      ownerName = body.owner_name?.trim() || identity.name;
+      ownerMobile = body.owner_mobile?.trim();
+      if (!ownerMobile || !/^\+?\d{7,15}$/.test(ownerMobile)) throw badRequest("Enter a valid owner mobile number.");
       const existing = await findActiveUsersByEmail(identity.email!);
       if (existing.length > 0) {
         throw conflict("This Google account already has a FundLedger login. Sign in instead.");
@@ -193,7 +197,7 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
       throw conflict("This email already has a FundLedger login. Sign in instead.");
     }
   }
-  if (ownerMobile) {
+  if (ownerMobile && !verifiedGoogleEmail) {
     const existingMobile = await findActiveUsersByMobile(ownerMobile);
     if (existingMobile.length > 0) {
       throw conflict("This mobile already has a FundLedger login. Sign in instead.");
@@ -215,6 +219,7 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
       adminName: ownerName,
       adminMobile: ownerMobile,
       adminEmail: ownerEmail,
+      verifiedGoogleEmail,
       source: "self_signup"
     });
   } catch (error) {
