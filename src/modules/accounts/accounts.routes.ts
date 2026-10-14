@@ -11,14 +11,11 @@ import { validateBody, validateParams } from "../../core/validation/validate.js"
 import { writeAccountTransactionAudit, writeAudit } from "../../core/audit/audit.service.js";
 import { createAccountTransfer } from "../transfers/transfer.service.js";
 
+import { accountBankData, accountSetupInputSchema } from "../../core/validation/account.schemas.js";
+
 const router = Router();
 
-const createAccountSchema = z.object({
-  name: z.string().min(2).max(64),
-  type: z.enum(["bank", "cash"]),
-  is_default: z.boolean().optional(),
-  opening_balance: z.number().int().min(0).optional()
-});
+const createAccountSchema = accountSetupInputSchema;
 
 const adjustAccountSchema = z.object({
   direction: z.enum(["money_in", "money_out"]),
@@ -141,6 +138,7 @@ router.post("/", requireProject, requireRoles("accountant", "admin"), validateBo
         projectId: auth.projectId,
         name: body.name,
         type: body.type,
+        ...accountBankData(body),
         balance: openingBalance,
         isDefault: shouldBeDefault
       }

@@ -860,6 +860,10 @@ model Account {
   tenantId  String      @map("tenant_id")
   projectId String      @map("project_id")
   name      String
+  bankName  String?     @map("bank_name")
+  accountName String?   @map("account_name")
+  accountNumber String? @map("account_number")
+  branchName String?    @map("branch_name")
   type      AccountType
   balance   Int         @default(0)
   isDefault Boolean     @default(false) @map("is_default")

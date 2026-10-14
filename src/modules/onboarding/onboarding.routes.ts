@@ -23,6 +23,8 @@ import { provisionTenant } from "../tenants/tenants.service.js";
 
 import { projectTypeSchema } from "../../core/projects/project-settings.js";
 
+import { accountBankData, accountSetupInputSchema } from "../../core/validation/account.schemas.js";
+
 const router = Router();
 
 const signupRateLimit = rateLimit({
@@ -70,12 +72,7 @@ const accountingSchema = z.object({
 });
 
 const accountsSetupSchema = z.object({
-  accounts: z.array(z.object({
-    name: z.string().min(2).max(64),
-    type: z.enum(["bank", "cash"]),
-    is_default: z.boolean().optional(),
-    opening_balance: z.number().int().min(0).optional()
-  })).min(1).max(25)
+  accounts: z.array(accountSetupInputSchema).min(1).max(25)
 });
 
 const shareholderSchema = z.object({
@@ -620,6 +617,7 @@ router.post("/accounts", authenticate, requireProject, requireRoles("owner"), va
           projectId: progress.projectId,
           name: account.name,
           type: account.type,
+          ...accountBankData(account),
           balance: openingBalance,
           isDefault: account.is_default ?? false
         }
