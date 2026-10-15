@@ -41,6 +41,7 @@ before(async()=>{
  prisma.deposit.findFirst=async({where})=>copy(deposits.find(d=>matches(d,where))??null);
  prisma.deposit.findUniqueOrThrow=async({where})=>copy(deposits.find(d=>d.id===where.id));
  prisma.deposit.updateMany=async({where,data})=>{const rows=deposits.filter(d=>matches(d,where));rows.forEach(d=>Object.assign(d,data));return{count:rows.length};};
+ prisma.deposit.deleteMany=async({where})=>{const removed=deposits.filter(d=>matches(d,where));deposits=deposits.filter(d=>!matches(d,where));allocations=allocations.filter(a=>!removed.some(d=>d.id===a.depositId));return{count:removed.length};};
  prisma.depositAllocation.createMany=async({data})=>{allocations.push(...data.map(d=>({...d,amount:0})));return{count:data.length};};
  prisma.depositAllocation.findMany=async({where})=>allocations.filter(a=>a.depositId===where.depositId).map(a=>({...a,due:copy(dues.find(d=>d.id===a.dueId))}));
  prisma.depositAllocation.updateMany=async({where,data})=>{const rows=allocations.filter(a=>matches(a,where));rows.forEach(a=>Object.assign(a,data));return{count:rows.length};};
@@ -106,4 +107,40 @@ test('changed balance is rechecked before confirmation and successful confirmati
  assert.equal((await request(`/deposits/${result.body.data.id}/confirm`,{})).status,400);assert.equal(account.balance,0);assert.equal(receipts.length,0);
  dues[0].paidAmount=0;assert.equal((await request(`/deposits/${result.body.data.id}/confirm`,{})).status,200);
  assert.equal((await request(`/deposits/${result.body.data.id}/confirm`,{})).status,400);assert.equal(account.balance,22000);assert.equal(receipts.length,1);
+});
+
+async function removePayment(id, role='member') {
+ const res=await fetch(`${base}/deposits/${id}`,{method:'DELETE',headers:{'x-role':role}});
+ return {status:res.status,body:await res.json()};
+}
+function pendingDeposit(extra={}) {
+ const row={id:'pending-own',tenantId:'tenant',projectId:'project',memberId:'member',submittedById:'actor',amount:3000,status:'pending_accountant',accountantById:null,...extra};
+ deposits.push(row);return row;
+}
+test('member can delete own awaiting payment at either review stage without changing ledger balances',async()=>{
+ for(const status of ['submitted','pending_accountant','pending_approver']) {
+  const row=pendingDeposit({id:`own-${status}`,status,accountantById:status==='pending_approver'?'accountant':null});
+  allocations.push({depositId:row.id,dueId:'arrears'});
+  const result=await removePayment(row.id);assert.equal(result.status,200,JSON.stringify(result.body));
+  assert.equal(deposits.some(d=>d.id===row.id),false);assert.equal(allocations.some(a=>a.depositId===row.id),false);
+ }
+ assert.equal(account.balance,0);assert.equal(outstanding(),22000);assert.equal(receipts.length,0);assert.equal(transactions.length,0);
+});
+test('member cannot delete confirmed or rejected payments or another submitter, tenant or project submission',async()=>{
+ for(const extra of [{status:'confirmed'},{status:'rejected'},{submittedById:'someone-else'},{tenantId:'other'},{projectId:'other'}]) {
+  deposits=[];const row=pendingDeposit(extra);const result=await removePayment(row.id);
+  assert.ok([400,403,404].includes(result.status));assert.equal(deposits.length,1);
+ }
+});
+test('confirmation that wins the race prevents deletion of posted payment history',async()=>{
+ const row=pendingDeposit();const original=prisma.deposit.deleteMany;
+ prisma.deposit.deleteMany=async args=>{row.status='confirmed';account.balance=3000;receipts.push({depositId:row.id});transactions.push({referenceId:row.id});return original(args);};
+ try {assert.equal((await removePayment(row.id)).status,400);assert.equal(deposits.length,1);assert.equal(account.balance,3000);assert.equal(receipts.length,1);assert.equal(transactions.length,1);}
+ finally {prisma.deposit.deleteMany=original;}
+});
+test('deletion that wins prevents subsequent confirmation and posting',async()=>{
+ const submitted=await request('/deposits',{...payment,proof_file_id:'proof'},'member');assert.equal(submitted.status,201);
+ const id=submitted.body.data.id;assert.equal((await removePayment(id)).status,200);
+ assert.equal((await request(`/deposits/${id}/confirm`,{})).status,404);
+ assert.equal(account.balance,0);assert.equal(receipts.length,0);assert.equal(transactions.length,0);
 });

@@ -566,11 +566,20 @@ router.delete("/:id", requireProject, requireRoles("member", "cashier"), validat
   });
   if (!before) throw notFound("Deposit not found");
   if (before.submittedById !== auth.userId) throw forbidden("You may only remove your own deposit submissions");
-  if (before.status !== "pending_accountant" && !(before.status === "pending_approver" && before.approvalRoute === "admin" && !before.accountantById)) {
-    throw badRequest("Deposit can only be removed before review");
+  const removableStatuses: DepositStatus[] = ["submitted", "pending_accountant", "pending_approver"];
+  if (!removableStatuses.includes(before.status)) {
+    throw badRequest("Only payments awaiting final approval can be removed");
   }
 
-  await prisma.deposit.delete({ where: { id } });
+  // Compete with confirmation's conditional update on the same deposit row.
+  // If posting wins, this delete cannot remove its receipt or account history.
+  const removed = await prisma.deposit.deleteMany({
+    where: {
+      id, tenantId: auth.tenantId, projectId: auth.projectId,
+      submittedById: auth.userId, status: { in: removableStatuses }
+    }
+  });
+  if (removed.count !== 1) throw badRequest("Payment was already reviewed or removed. Refresh the list.");
 
   await writeAudit({
     tenantId: auth.tenantId,
