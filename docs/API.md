@@ -202,7 +202,7 @@ tools can request all schedules with `GET /v1/schedules?include_system=true`. Sy
 schedules cannot be edited through `PATCH /v1/schedules/:id`.
 
 Recurring scheduler cron creates schedules on intended run day, and checks tenant subscription before creating each scheduled item.
-Generated schedule names are dynamic by frequency/date (examples: weekly `1W JAN 26`, monthly `JAN 26`, quarterly `Q1 26`).
+Generated schedule names are dynamic by frequency/date (examples: weekly `1W JAN 26`, `2W JAN 26`, `3W JAN 26`, `4W JAN 26` (and `5W` for days 29–31), monthly `JAN 26`, quarterly `Q1 26`).
 
 ## Deposits & Collections
 

@@ -83,13 +83,13 @@ function quarterOfYear(input: Date) {
   return Math.floor(input.getMonth() / 3) + 1;
 }
 
-function scheduleNameForOccurrence(frequency: RecurringFrequency, runAt: Date) {
+export function scheduleNameForOccurrence(frequency: RecurringFrequency, runAt: Date) {
   const month = MONTH_SHORT[runAt.getMonth()];
   const year = twoDigitYear(runAt);
 
   switch (frequency) {
     case "weekly":
-      return `1W ${month} ${year}`;
+      return `${Math.ceil(runAt.getDate() / 7)}W ${month} ${year}`;
     case "biweekly":
       return `2W ${month} ${year}`;
     case "monthly":
