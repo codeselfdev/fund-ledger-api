@@ -203,6 +203,10 @@ enum DepositApprovalRoute {
 }
 
 model Project {
+  fixedAssets FixedAsset[]
+  fixedAssetOperations FixedAssetOperation[]
+  fixedAssetEvents FixedAssetEvent[]
+  fixedAssetJournals FixedAssetJournal[]
   reportSchedules ReportSchedule[]
   reportExports ReportExport[]
   telegramLinks TelegramLink[]
@@ -1942,4 +1946,91 @@ model IntegrationPost {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   @@index([tenantId, projectId, createdAt])
   @@map("integration_posts")
+}
+
+model FixedAsset {
+  depreciationSourceId String? @map("depreciation_source_id")
+  depreciationSourceThrough String? @map("depreciation_source_through")
+  id              String              @id @default(cuid())
+  tenantId        String              @map("tenant_id")
+  projectId       String              @map("project_id")
+  code            String              @unique
+  name            String
+  category        String
+  cost            Int
+  residual        Int
+  lifeMonths      Int                 @map("life_months")
+  purchaseDate    DateTime            @map("purchase_date")
+  inUseDate       DateTime            @map("in_use_date")
+  supplier        String
+  invoice         String
+  invoiceUploadId String?             @map("invoice_upload_id")
+  accountId       String              @map("account_id")
+  location        String
+  assignedTo      String              @map("assigned_to")
+  serial          String
+  warrantyUntil   DateTime?           @map("warranty_until")
+  nextServiceDate DateTime?           @map("next_service_date")
+  status          String              @default("active")
+  disposedAt      DateTime?           @map("disposed_at")
+  disposal        Json?
+  postedThrough   String?             @map("posted_through")
+  createdById     String              @map("created_by_id")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  events          FixedAssetEvent[]
+  journals        FixedAssetJournal[]
+
+  @@index([tenantId, projectId, status])
+  @@map("fixed_assets")
+}
+
+model FixedAssetOperation {
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  projectId   String   @map("project_id")
+  requestKey  String   @map("request_key")
+  requestHash String   @map("request_hash")
+  result      Json
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([projectId, requestKey])
+  @@map("fixed_asset_operations")
+}
+
+model FixedAssetEvent {
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  id          String     @id @default(cuid())
+  tenantId    String     @map("tenant_id")
+  projectId   String     @map("project_id")
+  assetId     String     @map("asset_id")
+  kind        String
+  date        DateTime
+  detail      Json
+  createdById String     @map("created_by_id")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  asset       FixedAsset @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, projectId, assetId])
+  @@map("fixed_asset_events")
+}
+
+model FixedAssetJournal {
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  id        String     @id @default(cuid())
+  tenantId  String     @map("tenant_id")
+  projectId String     @map("project_id")
+  assetId   String     @map("asset_id")
+  kind      String
+  period    String
+  amount    Int
+  lines     Json
+  createdAt DateTime   @default(now()) @map("created_at")
+  asset     FixedAsset @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@unique([assetId, kind, period, projectId])
+  @@index([tenantId, projectId, period])
+  @@map("fixed_asset_journals")
 }

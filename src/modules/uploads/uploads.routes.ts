@@ -114,6 +114,8 @@ router.get("/:id/view", requireProject, requireRoles("any"), validateParams(idPa
   });
   if (!record) throw notFound("Attachment not found");
 
+  if (record.purpose === "fixed_asset_invoice" && !auth.roles.some(role => ["owner", "admin", "accountant", "auditor"].includes(role))) throw forbidden("Asset invoice access requires a finance role");
+
   if (record.purpose === "notice_image" && !auth.roles.some(role => role === "owner" || role === "admin")) {
     const notice = await prisma.projectNotice.findFirst({ where: { tenantId: auth.tenantId, projectId: auth.projectId, imageFileId: record.id, deletedAt: null, expiresAt: { gt: new Date() } } });
     if (!notice) throw forbidden("Notice image is no longer available");

@@ -1,3 +1,4 @@
+import { startFixedAssetsWorker, stopFixedAssetsWorker } from './modules/fixed-assets/fixed-assets.worker.js';
 import { startReportsWorker, stopReportsWorker } from "./modules/reports/report.worker.js";
 import { startCampaignWorker, stopCampaignWorker } from "./modules/notification-campaigns/campaign.service.js";
 import { startBillingWorker, stopBillingWorker } from "./modules/billing/billing.worker.js";
@@ -15,6 +16,7 @@ startRecurringSchedulesCron();
 startBillingWorker();
 startCampaignWorker();
 startReportsWorker();
+startFixedAssetsWorker();
 startCommunityRemindersCron();
 startPaymentCommitmentsCron();
 
@@ -31,6 +33,7 @@ async function shutdown() {
   stopBillingWorker();
   stopCampaignWorker();
   stopReportsWorker();
+  stopFixedAssetsWorker();
   stopCommunityRemindersCron();
   stopPaymentCommitmentsCron();
   server.close(async () => {
