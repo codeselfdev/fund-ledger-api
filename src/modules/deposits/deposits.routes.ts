@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { DepositStatus, DueStatus, PaymentMethod, Prisma } from "@prisma/client";
+import { DepositStatus, PaymentMethod, Prisma } from "@prisma/client";
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { badRequest, forbidden, notFound } from "../../core/http/api-error.js";
 import { created, ok } from "../../core/http/response.js";
@@ -18,6 +18,8 @@ import { sendWhatsAppGroupMessage } from "../../core/whatsapp/whatsapp.service.j
 import { resolveCommitmentsForDeposit } from "../follow-ups/followups.service.js";
 
 import { projectDepositRoute } from "../../core/projects/project-settings.js";
+
+import { planDepositAllocation, depositAllocationVersion } from "./deposit-allocation.js";
 
 const router = Router();
 const MEMBER_RECEIPT_REQUIRED_MESSAGE = "Please upload a receipt before submitting this payment";
@@ -89,6 +91,7 @@ const rejectSchema = z.object({
 });
 
 const approveSchema = z.object({
+  allocation_version: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   account_id: z.string().min(1).optional()
 });
 
@@ -144,51 +147,10 @@ async function emailDepositDecision(input: {
   }
 }
 
-function allocatePayment(due: {
-  amount: number;
-  paidAmount: number;
-  waivedAmount: number;
-  penaltyDue: number;
-  penaltyPaid: number;
-}, amount: number, allocate: string) {
-  let remaining = amount;
-  let penaltyPaid = due.penaltyPaid;
-  let paidAmount = due.paidAmount;
-
-  const payPenalty = () => {
-    const outstandingPenalty = Math.max(0, due.penaltyDue - penaltyPaid);
-    const applied = Math.min(remaining, outstandingPenalty);
-    penaltyPaid += applied;
-    remaining -= applied;
-  };
-
-  const payPrincipal = () => {
-    const outstandingPrincipal = Math.max(0, due.amount - paidAmount - due.waivedAmount);
-    const applied = Math.min(remaining, outstandingPrincipal);
-    paidAmount += applied;
-    remaining -= applied;
-  };
-
-  if (allocate === "principal_first") {
-    payPrincipal();
-    payPenalty();
-  } else {
-    payPenalty();
-    payPrincipal();
-  }
-
-  const status: DueStatus = paidAmount + due.waivedAmount >= due.amount && penaltyPaid >= due.penaltyDue
-    ? "paid"
-    : paidAmount > 0 || penaltyPaid > 0
-      ? "partial"
-      : "due";
-
-  return { paidAmount, penaltyPaid, status };
-}
-
 async function finalizeDepositConfirmation(input: {
   auth: { tenantId: string; projectId: string; userId: string };
   depositId: string;
+  allocationVersion?: string;
   before: {
     id: string;
     amount: number;
@@ -227,16 +189,27 @@ async function finalizeDepositConfirmation(input: {
   });
   const receiptNo = `RCT-${Date.now()}-${input.depositId.slice(-4).toUpperCase()}`;
 
-  let remaining = input.before.amount;
-  const perDueAllocations = dues.map((due) => {
-    const dueOutstanding = calculateDueBalance(due).total;
-    const appliedToThisDue = Math.min(remaining, dueOutstanding);
-    remaining -= appliedToThisDue;
-    const allocation = allocatePayment(due, appliedToThisDue, input.before.allocate ?? "penalty_first");
-    return { due, appliedToThisDue, allocation };
-  });
+  const perDueAllocations = planDepositAllocation(dues, input.before.amount, input.before.allocate ?? "penalty_first");
+  if (input.allocationVersion && input.allocationVersion !== depositAllocationVersion(input.depositId, input.before.amount, input.before.allocate ?? "penalty_first", perDueAllocations)) {
+    throw badRequest("Schedule amounts changed since review. Reload the breakdown before confirming.");
+  }
 
   const result = await prisma.$transaction(async (tx) => {
+    // Lock dues in a stable order so another confirmation cannot change the
+    // reviewed amounts between validation and posting.
+    await tx.$queryRaw`SELECT id FROM dues
+      WHERE tenant_id = ${input.auth.tenantId} AND project_id = ${input.auth.projectId}
+        AND id IN (${Prisma.join(dues.map(due => due.id).sort())})
+      ORDER BY id FOR UPDATE`;
+    const lockedAllocations = await tx.depositAllocation.findMany({
+      where: { depositId: input.depositId }, include: { due: true }
+    });
+    const lockedPlan = planDepositAllocation(lockedAllocations.map(row => row.due), input.before.amount, input.before.allocate ?? "penalty_first");
+    const reviewedVersion = input.allocationVersion ?? depositAllocationVersion(input.depositId, input.before.amount, input.before.allocate ?? "penalty_first", perDueAllocations);
+    if (reviewedVersion !== depositAllocationVersion(input.depositId, input.before.amount, input.before.allocate ?? "penalty_first", lockedPlan)) {
+      throw badRequest("Schedule amounts changed since review. Reload the breakdown before confirming.");
+    }
+
     const claimed = await tx.deposit.updateMany({
       where: { id: input.depositId, tenantId: input.auth.tenantId, projectId: input.auth.projectId, status: input.before.status },
       data: { status: "confirmed", approverById: input.auth.userId, confirmedAt: new Date() }
@@ -305,6 +278,7 @@ async function finalizeDepositConfirmation(input: {
 async function finalizeAdvanceDepositConfirmation(input: {
   auth: { tenantId: string; projectId: string; userId: string };
   depositId: string;
+  allocationVersion?: string;
   before: {
     amount: number;
     memberId: string;
@@ -312,6 +286,9 @@ async function finalizeAdvanceDepositConfirmation(input: {
     status: DepositStatus;
   };
 }) {
+  if (input.allocationVersion && input.allocationVersion !== depositAllocationVersion(input.depositId, input.before.amount, "advance", [])) {
+    throw badRequest("The advance amount changed since review. Reload before confirming.");
+  }
   if (!input.before.accountId) {
     throw badRequest("This advance deposit has no account set — ask the accountant to set one before approving");
   }
@@ -643,6 +620,53 @@ router.get("/", requireProject, requireRoles("staff"), validateQuery(depositQuer
   return ok(res, deposits);
 }));
 
+router.get("/:id/allocation-preview", requireProject, requireRoles("staff"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  const { id } = req.params as z.infer<typeof idParamSchema>;
+  const deposit = await prisma.deposit.findFirst({
+    where: { id, tenantId: auth.tenantId, projectId: auth.projectId }
+  });
+  if (!deposit) throw notFound("Deposit not found");
+  if (deposit.status !== "pending_accountant" && deposit.status !== "pending_approver") {
+    throw badRequest("This payment is no longer awaiting approval. Refresh the list.");
+  }
+  const oversight = auth.roles.some(role => ["owner", "admin", "auditor"].includes(role));
+  if (!oversight && deposit.approvalRoute === "admin") throw forbidden("This payment is in the admin approval queue");
+  if (!oversight && !(deposit.status === "pending_accountant" && auth.roles.includes("accountant")) &&
+      !(deposit.status === "pending_approver" && auth.roles.includes("approver"))) throw forbidden("This payment is in another approval queue");
+
+  if (deposit.allocate === "advance") {
+    return ok(res, {
+      deposit_id: id, amount: deposit.amount, kind: "advance", allocate: deposit.allocate,
+      allocation_version: depositAllocationVersion(id, deposit.amount, "advance", []),
+      total_allocated: 0, unallocated_amount: 0, advance_amount: deposit.amount,
+      can_confirm: true, reason: null, items: []
+    });
+  }
+  const allocations = await prisma.depositAllocation.findMany({
+    where: { depositId: id, tenantId: auth.tenantId, projectId: auth.projectId },
+    include: { due: { include: { schedule: true } } }
+  });
+  const plan = planDepositAllocation(allocations.map(row => row.due), deposit.amount, deposit.allocate ?? "penalty_first");
+  const total = plan.reduce((sum, row) => sum + row.appliedToThisDue, 0);
+  const unallocated = Math.max(0, deposit.amount - total);
+  return ok(res, {
+    deposit_id: id, amount: deposit.amount, kind: "dues", allocate: deposit.allocate ?? "penalty_first",
+    allocation_version: depositAllocationVersion(id, deposit.amount, deposit.allocate ?? "penalty_first", plan),
+    total_allocated: total, unallocated_amount: unallocated, advance_amount: 0,
+    can_confirm: plan.length > 0 && unallocated === 0,
+    reason: !plan.length ? "No dues are linked to this payment." : unallocated > 0
+      ? "The remaining dues have changed. This payment exceeds the amount that can be posted; review the submission before approval." : null,
+    items: plan.map(row => ({
+      due_id: row.due.id, schedule_id: row.due.scheduleId,
+      schedule_name: row.due.schedule.name, due_date: row.due.dueDate.toISOString(),
+      amount: row.appliedToThisDue, principal_amount: row.principalAmount, penalty_amount: row.penaltyAmount,
+      outstanding_before: calculateDueBalance(row.due).total,
+      outstanding_after: Math.max(0, calculateDueBalance(row.due).total - row.appliedToThisDue)
+    }))
+  });
+}));
+
 router.post("/:id/approve", requireProject, requireRoles("accountant", "approver", "admin"), validateParams(idParamSchema), validateBody(approveSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
@@ -658,6 +682,16 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
   if (before.status === "pending_accountant" && !directAdmin) {
     if (!auth.roles.includes("accountant") && !admin) {
       throw forbidden("Only an accountant or admin can process this approval stage");
+    }
+
+    if (body.allocation_version) {
+      const rows = before.allocate === "advance" ? [] : await prisma.depositAllocation.findMany({
+        where: { depositId: id }, include: { due: true }
+      });
+      const plan = before.allocate === "advance" ? [] : planDepositAllocation(rows.map(row => row.due), before.amount, before.allocate ?? "penalty_first");
+      if (body.allocation_version !== depositAllocationVersion(id, before.amount, before.allocate ?? "penalty_first", plan)) {
+        throw badRequest("Schedule amounts changed since review. Reload the breakdown before approving.");
+      }
     }
 
     const resolvedAccountId = body.account_id ?? before.accountId;
@@ -713,11 +747,13 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
 
   const result = before.allocate === "advance"
     ? await finalizeAdvanceDepositConfirmation({
+      allocationVersion: body.allocation_version,
       auth,
       depositId: id,
       before
     })
     : await finalizeDepositConfirmation({
+      allocationVersion: body.allocation_version,
       auth,
       depositId: id,
       before
@@ -777,9 +813,10 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
   });
 }));
 
-router.post("/:id/confirm", requireProject, requireRoles("approver", "admin"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
+router.post("/:id/confirm", requireProject, requireRoles("approver", "admin"), validateParams(idParamSchema), validateBody(approveSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
+  const body = req.body as z.infer<typeof approveSchema>;
   const before = await prisma.deposit.findFirst({
     where: { id, tenantId: auth.tenantId, projectId: auth.projectId }
   });
@@ -794,11 +831,13 @@ router.post("/:id/confirm", requireProject, requireRoles("approver", "admin"), v
   }
   const result = before.allocate === "advance"
     ? await finalizeAdvanceDepositConfirmation({
+      allocationVersion: body.allocation_version,
       auth,
       depositId: id,
       before
     })
     : await finalizeDepositConfirmation({
+      allocationVersion: body.allocation_version,
       auth,
       depositId: id,
       before

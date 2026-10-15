@@ -17,10 +17,11 @@ import { addDateDays, assertPromiseDate, callLogSchema, compareDateOnly, dateKey
 import { commitmentPayload, getFollowupList, getMemberFollowup, getReliabilityRanking } from "./followups.service.js";
 
 const router = Router();
-const readRoles = requireRoles("owner", "admin", "auditor");
+const readRoles = requireRoles("owner", "admin", "accountant", "auditor");
 const writeRoles = requireRoles("owner", "admin");
 const memberReadRoles = requireRoles("owner", "admin", "accountant", "auditor");
 const callLogRoles = requireRoles("owner", "admin", "accountant");
+const reminderRoles = requireRoles("owner", "admin", "accountant");
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 
 router.get("/follow-ups", requireProject, readRoles, validateQuery(followupsQuerySchema), asyncHandler(async (req, res) => {
@@ -135,7 +136,7 @@ router.post("/commitments/:id/resolve", requireProject, writeRoles, validatePara
   return ok(res, commitmentPayload(result));
 }));
 
-router.post("/members/:id/reminders", requireProject, writeRoles, validateParams(idParamSchema), asyncHandler(async (req, res) => {
+router.post("/members/:id/reminders", requireProject, reminderRoles, validateParams(idParamSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id: memberId } = req.params as z.infer<typeof idParamSchema>;
   const [member, project, outstanding, openCommitments] = await Promise.all([

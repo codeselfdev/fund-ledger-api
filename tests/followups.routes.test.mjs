@@ -69,11 +69,26 @@ test('accountants can read a real member follow-up and create a call log', async
   const timeline=await request('/members/member/follow-up','GET',undefined,'accountant');
   assert.equal(timeline.body.data.timeline.find(item=>item.kind==='commitment').created_by_name,'Staff User');
 });
-test('accountant log access does not allow reminders, resolution or ranking', async () => {
-  assert.equal((await request('/members/member/reminders','POST',undefined,'accountant')).status,403);
+test('accountants can read the queue and ranking and send daily reminders without resolving commitments', async () => {
+  reminders=[];dueAmount=100;
+  for (const path of ['/follow-ups?tab=need','/follow-ups?tab=upcoming','/follow-ups?tab=settled','/follow-ups/reliability']) {
+    assert.equal((await request(path,'GET',undefined,'accountant')).status,200,path);
+  }
+  const sent=await request('/members/member/reminders','POST',undefined,'accountant');
+  assert.equal(sent.status,200);
+  assert.equal(reminders.length,1);
+  assert.equal((await request('/members/member/reminders','POST',undefined,'accountant')).status,409);
   assert.equal((await request('/commitments/any/resolve','POST',{status:'kept',reason:'Payment received'},'accountant')).status,403);
-  assert.equal((await request('/follow-ups/reliability','GET',undefined,'accountant')).status,403);
-  assert.equal((await request('/members/member/follow-up','GET',undefined,'member')).status,403);
+});
+test('follow-up queue and reminder access remain restricted for other project roles', async () => {
+  for (const role of ['member','cashier','approver']) {
+    for (const path of ['/follow-ups','/follow-ups/reliability','/members/member/follow-up']) {
+      assert.equal((await request(path,'GET',undefined,role)).status,403,`${role}: ${path}`);
+    }
+    assert.equal((await request('/members/member/reminders','POST',undefined,role)).status,403);
+  }
+  assert.equal((await request('/follow-ups','GET',undefined,'auditor')).status,200);
+  assert.equal((await request('/members/member/reminders','POST',undefined,'auditor')).status,403);
   assert.equal((await request('/members/member/call-logs','POST',{outcome:'no_answer'},'auditor')).status,403);
 });
 

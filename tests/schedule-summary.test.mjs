@@ -189,3 +189,18 @@ test("ordinary member cannot access schedule-wide identities; list stays backwar
   assert.equal(data[0].collection.pending, 1000);
   assert.equal(data[0].collected_percent, 0);
 });
+
+test("accountants can inspect schedule balances and members without editing schedules", async () => {
+  const headers = { "x-role": "accountant" };
+  const list = await fetch(url + "/schedules", { headers });
+  assert.equal(list.status, 200);
+  assert.equal((await list.json()).data[0].collection.remaining, 2000);
+  const detail = await fetch(url + "/schedules/schedule/member-summary", { headers });
+  assert.equal(detail.status, 200);
+  const { data } = await detail.json();
+  assert.equal(data.items[0].member.id, "member");
+  assert.equal(data.items[0].due.outstanding, 2000);
+  assert.equal(data.items[0].payment_state, "pending");
+  assert.equal((await fetch(url + "/schedules", { method: "POST", headers })).status, 403);
+  assert.equal((await fetch(url + "/schedules/schedule", { method: "PATCH", headers })).status, 403);
+});

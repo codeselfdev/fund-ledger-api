@@ -84,3 +84,12 @@ test('legacy accountant and member defaults are preserved, sanitized and capped 
 test('catalogue definitions have stable unique keys and group colours; role filtering is deterministic',()=>{
  const catalog=availableCatalog('fund_shares',['admin']);assert.equal(new Set(catalog.tools.map(t=>t.key)).size,catalog.tools.length);assert.equal(new Set(catalog.groups.map(g=>g.color)).size,4);assert.ok(catalog.tools.every(t=>t.icon&&t.description&&catalog.groups.some(g=>g.key===t.group)));assert.deepEqual(defaultPins('fund_shares',['admin']),defaultPins('fund_shares',['owner']));
 });
+
+test('accountants can discover and save the schedules shortcut',async()=>{
+ const config=await request('',undefined,'accountant');
+ assert.equal(config.status,200);
+ assert.ok(config.data.tools.some(t=>t.key==='schedules'));
+ assert.equal((await put(['schedules','members'],0,'accountant')).status,200);
+ assert.deepEqual((await request('',undefined,'accountant')).data.pinned,['schedules','members']);
+ for(const role of ['member','cashier','auditor'])assert.equal((await put(['schedules'],0,role)).status,400);
+});

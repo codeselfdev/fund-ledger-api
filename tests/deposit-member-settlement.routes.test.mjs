@@ -19,13 +19,14 @@ function matches(row, where) {
   return row[key]===value;
  });
 }
-function due(id,scheduleId,amount,extra={}) {return {id,scheduleId,amount,tenantId:'tenant',projectId:'project',memberId:'member',paidAmount:0,waivedAmount:0,penaltyDue:0,penaltyPaid:0,status:'due',paidAt:null,dueDate:new Date('2026-01-01'),...extra};}
+function due(id,scheduleId,amount,extra={}) {return {id,scheduleId,amount,schedule:{name:scheduleId},tenantId:'tenant',projectId:'project',memberId:'member',paidAmount:0,waivedAmount:0,penaltyDue:0,penaltyPaid:0,status:'due',paidAt:null,dueDate:new Date('2026-01-01'),...extra};}
 function reset() {
  dues=[due('arrears','imported-schedule',20000),due('new','new-schedule',2000,{dueDate:new Date('2026-10-15')}),due('foreign','foreign-schedule',99999,{tenantId:'other'}),due('other-project','other-project-schedule',99999,{projectId:'other'}),due('other-member','other-member-schedule',99999,{memberId:'other'})];
  deposits=[];allocations=[];receipts=[];transactions=[];queries=[];account={id:'account',tenantId:'tenant',projectId:'project',balance:0};
 }
 before(async()=>{
  prisma.$transaction=async fn=>fn(prisma);
+ prisma.$queryRaw=async()=>[];
  prisma.project.findFirstOrThrow=async()=>({portalSettings:{deposit_review:'admin_only',member_shortcuts:[],accountant_shortcuts:[]}});
  prisma.projectMembership.findFirst=async()=>null;
  prisma.projectMembership.findMany=async()=>[];
@@ -143,4 +144,88 @@ test('deletion that wins prevents subsequent confirmation and posting',async()=>
  const id=submitted.body.data.id;assert.equal((await removePayment(id)).status,200);
  assert.equal((await request(`/deposits/${id}/confirm`,{})).status,404);
  assert.equal(account.balance,0);assert.equal(receipts.length,0);assert.equal(transactions.length,0);
+});
+
+async function allocationPreview(id, role='admin') {
+ const res=await fetch(`${base}/deposits/${id}/allocation-preview`,{headers:{'x-role':role}});
+ return {status:res.status,body:await res.json()};
+}
+test('backend preview assigns 1,000 and 2,000 rather than equal shares, exactly matching final posting',async()=>{
+ dues=[due('first','same-name-one',2000,{paidAmount:1000}),due('second','same-name-two',2000,{dueDate:new Date('2026-10-13')})];
+ const submitted=await request('/deposits',{...payment,amount:3000});assert.equal(submitted.status,201);
+ const id=submitted.body.data.id;const preview=await allocationPreview(id);assert.equal(preview.status,200);
+ const view=preview.body.data;assert.equal(view.can_confirm,true);assert.deepEqual(view.items.map(row=>row.amount),[1000,2000]);
+ assert.deepEqual(view.items.map(row=>row.principal_amount),[1000,2000]);assert.deepEqual(view.items.map(row=>row.penalty_amount),[0,0]);
+ assert.deepEqual(view.items.map(row=>row.due_date),['2026-01-01T00:00:00.000Z','2026-10-13T00:00:00.000Z']);
+ assert.equal(view.total_allocated,3000);assert.equal(view.unallocated_amount,0);
+ assert.equal(account.balance,0);assert.deepEqual(dues.map(row=>row.paidAmount),[1000,0]);assert.equal(receipts.length,0);
+ assert.equal((await request(`/deposits/${id}/confirm`,{})).status,200);
+ assert.deepEqual(allocations.map(row=>row.amount),view.items.map(row=>row.amount));assert.equal(account.balance,3000);
+});
+test('preview includes waivers and separate late fee amounts, respecting the selected priority',async()=>{
+ for(const allocate of ['penalty_first','principal_first']) {
+  reset();dues=[due('first','s1',2000,{paidAmount:500,waivedAmount:500,penaltyDue:300,penaltyPaid:100})];
+  const submitted=await request('/deposits',{...payment,amount:500,allocate});const id=submitted.body.data.id;
+  const view=(await allocationPreview(id)).body.data;assert.equal(view.items[0].outstanding_before,1200);assert.equal(view.items[0].outstanding_after,700);
+  assert.equal(view.items[0].principal_amount,allocate==='penalty_first'?300:500);assert.equal(view.items[0].penalty_amount,allocate==='penalty_first'?200:0);
+  assert.equal((await request(`/deposits/${id}/confirm`,{})).status,200);
+  assert.equal(dues[0].paidAmount,500+view.items[0].principal_amount);assert.equal(dues[0].penaltyPaid,100+view.items[0].penalty_amount);
+ }
+});
+test('changed dues return a refreshed allocation and block approval when payment exceeds current dues',async()=>{
+ const submitted=await request('/deposits',payment);const id=submitted.body.data.id;
+ dues[0].paidAmount=10000;const view=(await allocationPreview(id)).body.data;
+ assert.equal(view.can_confirm,false);assert.equal(view.total_allocated,12000);assert.equal(view.unallocated_amount,10000);assert.ok(view.reason);
+ assert.equal((await request(`/deposits/${id}/confirm`,{})).status,400);assert.equal(account.balance,0);assert.equal(receipts.length,0);
+});
+test('preview distinguishes an advance from dues allocation without posting any money',async()=>{
+ pendingDeposit({allocate:'advance',approvalRoute:'accountant',status:'pending_accountant'});
+ const view=(await allocationPreview('pending-own','accountant')).body.data;
+ assert.equal(view.kind,'advance');assert.equal(view.advance_amount,3000);assert.deepEqual(view.items,[]);assert.equal(view.can_confirm,true);assert.equal(account.balance,0);
+});
+test('preview is project scoped and respects member and approval-queue access',async()=>{
+ pendingDeposit({approvalRoute:'accountant',status:'pending_accountant'});
+ assert.equal((await allocationPreview('pending-own','member')).status,403);
+ assert.equal((await allocationPreview('pending-own','approver')).status,403);
+ assert.equal((await allocationPreview('pending-own','accountant')).status,200);
+ deposits[0].projectId='other';assert.equal((await allocationPreview('pending-own')).status,404);
+});
+test('confirmed payments cannot be previewed as if they were still awaiting approval',async()=>{
+ pendingDeposit({status:'confirmed'});assert.equal((await allocationPreview('pending-own')).status,400);
+});
+
+test('final confirmation with a preview version rejects a changed split even when the total still fits',async()=>{
+ dues=[due('first','s1',2000),due('second','s2',2000,{dueDate:new Date('2026-10-13')})];
+ const submitted=await request('/deposits',{...payment,amount:3000});const id=submitted.body.data.id;
+ const preview=(await allocationPreview(id)).body.data;assert.match(preview.allocation_version,/^[a-f0-9]{64}$/);
+ dues[0].paidAmount=500;
+ const result=await request(`/deposits/${id}/confirm`,{allocation_version:preview.allocation_version});
+ assert.equal(result.status,400);assert.match(result.body.error,/changed since review/);assert.equal(account.balance,0);assert.equal(receipts.length,0);
+ const fresh=(await allocationPreview(id)).body.data;assert.deepEqual(fresh.items.map(row=>row.amount),[1500,1500]);
+ assert.equal((await request(`/deposits/${id}/confirm`,{allocation_version:fresh.allocation_version})).status,200);
+ assert.deepEqual(allocations.map(row=>row.amount),fresh.items.map(row=>row.amount));
+});
+
+test('due change between preview validation and transaction locking cannot post stale amounts',async()=>{
+ dues=[due('first','s1',2000),due('second','s2',2000,{dueDate:new Date('2026-10-13')})];
+ const submitted=await request('/deposits',{...payment,amount:3000});const id=submitted.body.data.id;
+ const preview=(await allocationPreview(id)).body.data;
+ const original=prisma.$queryRaw;prisma.$queryRaw=async()=>{dues[0].paidAmount=500;return[];};
+ try {
+  const result=await request(`/deposits/${id}/confirm`,{allocation_version:preview.allocation_version});
+  assert.equal(result.status,400);assert.match(result.body.error,/changed since review/);assert.equal(account.balance,0);assert.equal(receipts.length,0);assert.equal(transactions.length,0);
+ } finally {prisma.$queryRaw=original;}
+});
+test('accountant cannot approve a breakdown that has changed since preview',async()=>{
+ dues=[due('first','s1',3000)];
+ deposits.push({id:'accountant-payment',tenantId:'tenant',projectId:'project',memberId:'member',submittedById:'actor',amount:3000,allocate:'penalty_first',status:'pending_accountant',approvalRoute:'accountant',accountId:'account'});
+ allocations.push({depositId:'accountant-payment',dueId:'first',scheduleId:'s1',amount:0});
+ const view=(await allocationPreview('accountant-payment','accountant')).body.data;dues[0].paidAmount=500;
+ const originalProject=prisma.project.findFirstOrThrow, originalMembership=prisma.projectMembership.findFirst;
+ prisma.project.findFirstOrThrow=async()=>({portalSettings:{deposit_review:'automatic',member_shortcuts:[],accountant_shortcuts:[]}});
+ prisma.projectMembership.findFirst=async()=>({id:'accountant-membership'});
+ try {
+  const result=await request('/deposits/accountant-payment/approve',{allocation_version:view.allocation_version},'accountant');
+  assert.equal(result.status,400);assert.match(result.body.error,/changed since review/);assert.equal(deposits[0].status,'pending_accountant');assert.equal(account.balance,0);
+ } finally {prisma.project.findFirstOrThrow=originalProject;prisma.projectMembership.findFirst=originalMembership;}
 });

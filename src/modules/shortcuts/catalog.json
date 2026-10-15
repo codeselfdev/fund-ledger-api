@@ -104,7 +104,8 @@
       "roles": [
         "owner",
         "admin",
-        "approver"
+        "approver",
+        "accountant"
       ],
       "project_types": [
         "fund_shares",
