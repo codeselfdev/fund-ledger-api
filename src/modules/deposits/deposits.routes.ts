@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { DepositStatus, PaymentMethod, Prisma } from "@prisma/client";
 import { asyncHandler } from "../../core/http/async-handler.js";
-import { badRequest, forbidden, notFound } from "../../core/http/api-error.js";
+import { badRequest, conflict, forbidden, notFound } from "../../core/http/api-error.js";
 import { created, ok } from "../../core/http/response.js";
 import { prisma } from "../../core/prisma/client.js";
 import { requireProject, requireRoles } from "../../core/security/auth.middleware.js";
@@ -20,6 +20,8 @@ import { resolveCommitmentsForDeposit } from "../follow-ups/followups.service.js
 import { projectDepositRoute } from "../../core/projects/project-settings.js";
 
 import { planDepositAllocation, depositAllocationVersion } from "./deposit-allocation.js";
+
+import { depositReview } from "./deposit-allocation-review.js";
 
 const router = Router();
 const MEMBER_RECEIPT_REQUIRED_MESSAGE = "Please upload a receipt before submitting this payment";
@@ -94,6 +96,25 @@ const approveSchema = z.object({
   allocation_version: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   account_id: z.string().min(1).optional()
 });
+
+const allocationPreviewQuerySchema = z.object({ scope: z.enum(["selected", "member_dues"]).default("selected") });
+const resolutionBase = { source_version: z.string().regex(/^[a-f0-9]{64}$/), reason: z.string().trim().min(3).max(500) };
+const resolveAllocationSchema = z.discriminatedUnion("action", [
+  z.object({ ...resolutionBase, action: z.literal("reassign"), allocation_version: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+  z.object({ ...resolutionBase, action: z.literal("advance") }).strict()
+]);
+
+async function lockReviewedDeposit(tx: Prisma.TransactionClient, input: {
+  auth: { tenantId: string; projectId: string }; depositId: string;
+  before: { status: DepositStatus; amount: number; allocate: string | null; memberId: string; accountId: string | null };
+}) {
+  await tx.$queryRaw`SELECT id FROM deposits WHERE id = ${input.depositId} AND tenant_id = ${input.auth.tenantId} AND project_id = ${input.auth.projectId} FOR UPDATE`;
+  const current = await tx.deposit.findFirst({ where: { id: input.depositId, tenantId: input.auth.tenantId, projectId: input.auth.projectId } });
+  if (!current || current.status !== input.before.status || current.amount !== input.before.amount || current.allocate !== input.before.allocate || current.memberId !== input.before.memberId || current.accountId !== input.before.accountId) {
+    throw conflict("This payment changed or was already reviewed. Refresh the list before approving.");
+  }
+  return current;
+}
 
 async function canSubmitForMember(auth: {
   roles: string[];
@@ -195,6 +216,7 @@ async function finalizeDepositConfirmation(input: {
   }
 
   const result = await prisma.$transaction(async (tx) => {
+    await lockReviewedDeposit(tx, input);
     // Lock dues in a stable order so another confirmation cannot change the
     // reviewed amounts between validation and posting.
     await tx.$queryRaw`SELECT id FROM dues
@@ -229,7 +251,7 @@ async function finalizeDepositConfirmation(input: {
       }
     });
 
-    for (const { due, appliedToThisDue, allocation } of perDueAllocations) {
+    for (const { due, appliedToThisDue, allocation } of lockedPlan) {
       await tx.due.update({
         where: { id: due.id },
         data: {
@@ -281,6 +303,7 @@ async function finalizeAdvanceDepositConfirmation(input: {
   allocationVersion?: string;
   before: {
     amount: number;
+    allocate: string | null;
     memberId: string;
     accountId: string | null;
     status: DepositStatus;
@@ -299,6 +322,7 @@ async function finalizeAdvanceDepositConfirmation(input: {
   const receiptNo = `RCT-${Date.now()}-${input.depositId.slice(-4).toUpperCase()}`;
 
   const result = await prisma.$transaction(async (tx) => {
+    await lockReviewedDeposit(tx, input);
     const claimed = await tx.deposit.updateMany({
       where: { id: input.depositId, tenantId: input.auth.tenantId, projectId: input.auth.projectId, status: input.before.status },
       data: { status: "confirmed", approverById: input.auth.userId, confirmedAt: new Date() }
@@ -620,7 +644,7 @@ router.get("/", requireProject, requireRoles("staff"), validateQuery(depositQuer
   return ok(res, deposits);
 }));
 
-router.get("/:id/allocation-preview", requireProject, requireRoles("staff"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
+router.get("/:id/allocation-preview", requireProject, requireRoles("staff"), validateParams(idParamSchema), validateQuery(allocationPreviewQuerySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
   const deposit = await prisma.deposit.findFirst({
@@ -635,37 +659,58 @@ router.get("/:id/allocation-preview", requireProject, requireRoles("staff"), val
   if (!oversight && !(deposit.status === "pending_accountant" && auth.roles.includes("accountant")) &&
       !(deposit.status === "pending_approver" && auth.roles.includes("approver"))) throw forbidden("This payment is in another approval queue");
 
-  if (deposit.allocate === "advance") {
-    return ok(res, {
-      deposit_id: id, amount: deposit.amount, kind: "advance", allocate: deposit.allocate,
-      allocation_version: depositAllocationVersion(id, deposit.amount, "advance", []),
-      total_allocated: 0, unallocated_amount: 0, advance_amount: deposit.amount,
-      can_confirm: true, reason: null, items: []
-    });
-  }
-  const allocations = await prisma.depositAllocation.findMany({
-    where: { depositId: id, tenantId: auth.tenantId, projectId: auth.projectId },
-    include: { due: { include: { schedule: true } } }
-  });
-  const plan = planDepositAllocation(allocations.map(row => row.due), deposit.amount, deposit.allocate ?? "penalty_first");
-  const total = plan.reduce((sum, row) => sum + row.appliedToThisDue, 0);
-  const unallocated = Math.max(0, deposit.amount - total);
-  return ok(res, {
-    deposit_id: id, amount: deposit.amount, kind: "dues", allocate: deposit.allocate ?? "penalty_first",
-    allocation_version: depositAllocationVersion(id, deposit.amount, deposit.allocate ?? "penalty_first", plan),
-    total_allocated: total, unallocated_amount: unallocated, advance_amount: 0,
-    can_confirm: plan.length > 0 && unallocated === 0,
-    reason: !plan.length ? "No dues are linked to this payment." : unallocated > 0
-      ? "The remaining dues have changed. This payment exceeds the amount that can be posted; review the submission before approval." : null,
-    items: plan.map(row => ({
-      due_id: row.due.id, schedule_id: row.due.scheduleId,
-      schedule_name: row.due.schedule.name, due_date: row.due.dueDate.toISOString(),
-      amount: row.appliedToThisDue, principal_amount: row.principalAmount, penalty_amount: row.penaltyAmount,
-      outstanding_before: calculateDueBalance(row.due).total,
-      outstanding_after: Math.max(0, calculateDueBalance(row.due).total - row.appliedToThisDue)
-    }))
-  });
+  const { scope } = req.query as z.infer<typeof allocationPreviewQuerySchema>;
+  if (scope === "member_dues" && !auth.roles.some(role => ["owner", "admin"].includes(role))) throw forbidden("Only an admin can reassign payment dues");
+  return ok(res, await depositReview(prisma, deposit, scope));
 }));
+
+router.post("/:id/resolve-allocation", requireProject, requireRoles("admin"), validateParams(idParamSchema), validateBody(resolveAllocationSchema), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  const { id } = req.params as z.infer<typeof idParamSchema>;
+  const body = req.body as z.infer<typeof resolveAllocationSchema>;
+  const result = await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM deposits WHERE id = ${id} AND tenant_id = ${auth.tenantId} AND project_id = ${auth.projectId} FOR UPDATE`;
+    const before = await tx.deposit.findFirst({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId } });
+    if (!before) throw notFound("Deposit not found");
+    if (!["pending_accountant", "pending_approver"].includes(before.status) || before.allocate === "advance") {
+      throw conflict("This payment is no longer awaiting allocation review. Refresh the list.");
+    }
+    await tx.$queryRaw`SELECT id FROM dues WHERE tenant_id = ${auth.tenantId} AND project_id = ${auth.projectId} AND member_id = ${before.memberId} ORDER BY id FOR UPDATE`;
+    const current = await depositReview(tx, before);
+    if (current.allocation_version !== body.source_version) throw conflict("The payment breakdown changed. Refresh it and review the resolution again.");
+    if (current.can_confirm) throw conflict("This payment can already be assigned in full. Review its latest breakdown before approving.");
+    const candidate = body.action === "reassign" ? await depositReview(tx, before, "member_dues") : null;
+    if (candidate && body.action === "reassign" && candidate.allocation_version !== body.allocation_version) throw conflict("The other unpaid dues changed. Review the updated amounts before reassigning.");
+    if (candidate && !candidate.can_confirm) throw badRequest("The member does not have enough unpaid dues for this payment. No allocation was changed.");
+    const oldAllocations = await tx.depositAllocation.findMany({ where: { depositId: id, tenantId: auth.tenantId, projectId: auth.projectId } });
+    const items = candidate?.items.filter(item => item.amount > 0) ?? [];
+    // Any change invalidates the earlier accountant endorsement. It never posts money.
+    const status = before.approvalRoute === "accountant" ? "pending_accountant" as const : "pending_approver" as const;
+    const updated = await tx.deposit.updateMany({
+      where: { id, tenantId: auth.tenantId, projectId: auth.projectId, status: before.status },
+      data: { allocate: body.action === "advance" ? "advance" : before.allocate,
+        scheduleId: items.length === 1 ? items[0].schedule_id : null,
+        status, accountantById: null, approverById: null }
+    });
+    if (updated.count !== 1) throw conflict("This payment was already reviewed. Refresh the list.");
+    await tx.depositAllocation.deleteMany({ where: { depositId: id, tenantId: auth.tenantId, projectId: auth.projectId } });
+    if (items.length) await tx.depositAllocation.createMany({ data: items.map(item => ({
+      tenantId: auth.tenantId, projectId: auth.projectId, depositId: id,
+      dueId: item.due_id, scheduleId: item.schedule_id, amount: 0
+    })) });
+    await tx.activity.create({ data: {
+      tenantId: auth.tenantId, projectId: auth.projectId, actorUserId: auth.userId,
+      action: "deposit.allocation_resolved", entityType: "deposit", entityId: id,
+      before: JSON.parse(JSON.stringify({ deposit: before, allocations: oldAllocations })),
+      after: { action: body.action, reason: body.reason, status, allocate: body.action === "advance" ? "advance" : before.allocate,
+        assigned_dues: items.map(item => ({ due_id: item.due_id, amount: item.amount })),
+        advance_amount: body.action === "advance" ? before.amount : 0 }
+    } });
+    return { id, status, allocate: body.action === "advance" ? "advance" : before.allocate };
+  });
+  return ok(res, result);
+}));
+
 
 router.post("/:id/approve", requireProject, requireRoles("accountant", "approver", "admin"), validateParams(idParamSchema), validateBody(approveSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
@@ -684,30 +729,23 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
       throw forbidden("Only an accountant or admin can process this approval stage");
     }
 
-    if (body.allocation_version) {
-      const rows = before.allocate === "advance" ? [] : await prisma.depositAllocation.findMany({
-        where: { depositId: id }, include: { due: true }
+    const deposit = await prisma.$transaction(async tx => {
+      const current = await lockReviewedDeposit(tx, { auth, depositId: id, before });
+      await tx.$queryRaw`SELECT id FROM dues WHERE tenant_id = ${auth.tenantId} AND project_id = ${auth.projectId} AND member_id = ${current.memberId} ORDER BY id FOR UPDATE`;
+      const review = await depositReview(tx, current);
+      if (body.allocation_version && body.allocation_version !== review.allocation_version) throw badRequest("Schedule amounts changed since review. Reload the breakdown before approving.");
+      if (!review.can_confirm) throw badRequest("The dues have changed. Resolve this payment's allocation before approving.");
+      const resolvedAccountId = body.account_id ?? current.accountId;
+      if (!resolvedAccountId) throw badRequest("account_id is required before this deposit can be approved");
+      const account = await tx.account.findFirst({ where: { id: resolvedAccountId, tenantId: auth.tenantId, projectId: auth.projectId } });
+      if (!account) throw notFound("Account not found");
+      const claimed = await tx.deposit.updateMany({
+        where: { id, tenantId: auth.tenantId, projectId: auth.projectId, status: "pending_accountant" },
+        data: { status: "pending_approver", accountantById: auth.userId, accountId: account.id }
       });
-      const plan = before.allocate === "advance" ? [] : planDepositAllocation(rows.map(row => row.due), before.amount, before.allocate ?? "penalty_first");
-      if (body.allocation_version !== depositAllocationVersion(id, before.amount, before.allocate ?? "penalty_first", plan)) {
-        throw badRequest("Schedule amounts changed since review. Reload the breakdown before approving.");
-      }
-    }
-
-    const resolvedAccountId = body.account_id ?? before.accountId;
-    if (!resolvedAccountId) throw badRequest("account_id is required before this deposit can be approved");
-
-    const account = await prisma.account.findFirst({
-      where: { id: resolvedAccountId, tenantId: auth.tenantId, projectId: auth.projectId }
+      if (claimed.count !== 1) throw badRequest("Deposit was already reviewed. Refresh the list.");
+      return tx.deposit.findUniqueOrThrow({ where: { id } });
     });
-    if (!account) throw notFound("Account not found");
-
-    const claimed = await prisma.deposit.updateMany({
-      where: { id, tenantId: auth.tenantId, projectId: auth.projectId, status: "pending_accountant" },
-      data: { status: "pending_approver", accountantById: auth.userId, accountId: account.id }
-    });
-    if (claimed.count !== 1) throw badRequest("Deposit was already reviewed. Refresh the list.");
-    const deposit = await prisma.deposit.findUniqueOrThrow({ where: { id } });
 
     await writeAudit({
       tenantId: auth.tenantId,
@@ -910,14 +948,12 @@ router.post("/:id/reject", requireProject, requireRoles("accountant", "approver"
     throw badRequest("Only pending deposits can be rejected");
   }
 
-  const deposit = await prisma.deposit.update({
-    where: { id },
-    data: {
-      status: "rejected",
-      rejectedById: auth.userId,
-      rejectReason: body.reason
-    }
+  const claimed = await prisma.deposit.updateMany({
+    where: { id, tenantId: auth.tenantId, projectId: auth.projectId, status: before.status },
+    data: { status: "rejected", rejectedById: auth.userId, rejectReason: body.reason }
   });
+  if (claimed.count !== 1) throw conflict("This payment was already reviewed. Refresh the list.");
+  const deposit = await prisma.deposit.findUniqueOrThrow({ where: { id } });
 
   await writeAudit({
     tenantId: auth.tenantId,

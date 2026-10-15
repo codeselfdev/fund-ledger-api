@@ -69,10 +69,12 @@ router.get("/", requireProject, requireRoles("any"), validateQuery(scheduleQuery
   }));
 }));
 
-router.get("/:id/member-summary", requireProject, requireRoles("staff"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
+router.get("/:id/member-summary", requireProject, requireRoles("any"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
-  const schedule = await prisma.schedule.findFirst({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId, purpose: "contribution" } });
+  const canManage = auth.roles.some(role => ["owner", "admin", "approver"].includes(role));
+  const canInspectPayments = auth.roles.some(role => ["owner", "admin", "approver", "accountant", "auditor"].includes(role));
+  const schedule = await prisma.schedule.findFirst({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId, purpose: "contribution", ...(canManage ? {} : { status: { not: "draft" } }) } });
   if (!schedule) throw notFound("Schedule not found");
   const [collection, members] = await Promise.all([
     scheduleCollectionData(auth.tenantId, auth.projectId),
@@ -86,8 +88,8 @@ router.get("/:id/member-summary", requireProject, requireRoles("staff"), validat
     const pending = collection.pending.get(due.id);
     const outstanding = dueRemaining(due);
     const photo = member.profile && typeof member.profile === "object" && !Array.isArray(member.profile) ? member.profile.photo_file_id : null;
-    return [{ member: { ...member, profile: typeof photo === "string" ? { photo_file_id: photo } : null }, due: { ...due, outstanding }, pending_amount: pending?.amount ?? 0,
-      pending_deposit_ids: pending?.depositIds ?? [], payment_state: outstanding === 0 ? "paid" : pending?.amount ? "pending" : "unpaid" }];
+    return [{ member: { ...member, mobile: canInspectPayments ? member.mobile : "", profile: typeof photo === "string" ? { photo_file_id: photo } : null }, due: { ...due, outstanding }, pending_amount: pending?.amount ?? 0,
+      pending_deposit_ids: canInspectPayments ? pending?.depositIds ?? [] : [], payment_state: outstanding === 0 ? "paid" : pending?.amount ? "pending" : "unpaid" }];
   });
   return ok(res, { schedule, collection: summarizeSchedule(dues, items.reduce((sum, row) => sum + row.pending_amount, 0)), items });
 }));

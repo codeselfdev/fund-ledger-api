@@ -173,15 +173,19 @@ test("staff member-summary is project scoped, supplies photos and excludes other
     404,
   );
 });
-test("ordinary member cannot access schedule-wide identities; list stays backward compatible", async () => {
-  assert.equal(
-    (
-      await fetch(url + "/schedules/schedule/member-summary", {
-        headers: { "x-role": "member" },
-      })
-    ).status,
-    403,
-  );
+test("members can read schedule dues without payment identifiers or contact details; list stays backward compatible", async () => {
+  queries = [];
+  const summary = await fetch(url + "/schedules/schedule/member-summary", { headers: { "x-role": "member" } });
+  assert.equal(summary.status, 200);
+  const detail = (await summary.json()).data;
+  assert.equal(detail.items[0].member.name, "Member");
+  assert.equal(detail.items[0].member.mobile, "");
+  assert.deepEqual(detail.items[0].pending_deposit_ids, []);
+  assert.deepEqual(detail.items[0].member.profile, { photo_file_id: "photo" });
+  assert.equal(detail.items[0].due.outstanding, 2000);
+  assert.equal(detail.collection.pending, 1000);
+  assert.ok(queries.every(q => q.tenantId === "tenant" && q.projectId === "project"));
+  assert.deepEqual(queries[0].status, { not: "draft" });
   const res = await fetch(url + "/schedules");
   assert.equal(res.status, 200);
   const { data } = await res.json();
@@ -203,4 +207,20 @@ test("accountants can inspect schedule balances and members without editing sche
   assert.equal(data.items[0].payment_state, "pending");
   assert.equal((await fetch(url + "/schedules", { method: "POST", headers })).status, 403);
   assert.equal((await fetch(url + "/schedules/schedule", { method: "PATCH", headers })).status, 403);
+});
+
+
+test("every project role can read a schedule while read-only roles cannot create or edit", async () => {
+  for (const role of ["owner", "admin", "approver", "accountant", "auditor", "cashier", "member"]) {
+    const headers = { "x-role": role };
+    const res = await fetch(url + "/schedules/schedule/member-summary", { headers });
+    assert.equal(res.status, 200, role);
+    const { data } = await res.json();
+    assert.equal(data.collection.remaining, 2000);
+    assert.equal((await fetch(url + "/schedules/foreign/member-summary", { headers })).status, 404);
+    if (["accountant", "auditor", "cashier", "member"].includes(role)) {
+      assert.equal((await fetch(url + "/schedules", { method: "POST", headers })).status, 403, role);
+      assert.equal((await fetch(url + "/schedules/schedule", { method: "PATCH", headers })).status, 403, role);
+    }
+  }
 });

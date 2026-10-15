@@ -7,7 +7,8 @@ process.env.WHATSAPP_ENABLED = 'false';
 const { prisma } = await import('../dist/core/prisma/client.js');
 const { depositsRouter } = await import('../dist/modules/deposits/deposits.routes.js');
 const { calculateDueBalance } = await import('../dist/modules/members/member-settlement.service.js');
-let server, base, dues, deposits, allocations, receipts, transactions, account, queries;
+let server, base, dues, deposits, allocations, receipts, transactions, account, queries, activities;
+let transactionQueue = Promise.resolve();
 const copy = value => structuredClone(value);
 function matches(row, where) {
  return Object.entries(where).every(([key,value])=>{
@@ -22,10 +23,14 @@ function matches(row, where) {
 function due(id,scheduleId,amount,extra={}) {return {id,scheduleId,amount,schedule:{name:scheduleId},tenantId:'tenant',projectId:'project',memberId:'member',paidAmount:0,waivedAmount:0,penaltyDue:0,penaltyPaid:0,status:'due',paidAt:null,dueDate:new Date('2026-01-01'),...extra};}
 function reset() {
  dues=[due('arrears','imported-schedule',20000),due('new','new-schedule',2000,{dueDate:new Date('2026-10-15')}),due('foreign','foreign-schedule',99999,{tenantId:'other'}),due('other-project','other-project-schedule',99999,{projectId:'other'}),due('other-member','other-member-schedule',99999,{memberId:'other'})];
- deposits=[];allocations=[];receipts=[];transactions=[];queries=[];account={id:'account',tenantId:'tenant',projectId:'project',balance:0};
+ deposits=[];allocations=[];receipts=[];transactions=[];queries=[];activities=[];account={id:'account',tenantId:'tenant',projectId:'project',balance:0};
 }
 before(async()=>{
- prisma.$transaction=async fn=>fn(prisma);
+ prisma.$transaction=async fn=>{
+  const previous=transactionQueue;let release;transactionQueue=new Promise(resolve=>{release=resolve;});await previous;
+  const snapshot=copy({dues,deposits,allocations,receipts,transactions,account,activities});
+  try{return await fn(prisma);}catch(e){({dues,deposits,allocations,receipts,transactions,account,activities}=snapshot);throw e;}finally{release();}
+ };
  prisma.$queryRaw=async()=>[];
  prisma.project.findFirstOrThrow=async()=>({portalSettings:{deposit_review:'admin_only',member_shortcuts:[],accountant_shortcuts:[]}});
  prisma.projectMembership.findFirst=async()=>null;
@@ -43,14 +48,15 @@ before(async()=>{
  prisma.deposit.findUniqueOrThrow=async({where})=>copy(deposits.find(d=>d.id===where.id));
  prisma.deposit.updateMany=async({where,data})=>{const rows=deposits.filter(d=>matches(d,where));rows.forEach(d=>Object.assign(d,data));return{count:rows.length};};
  prisma.deposit.deleteMany=async({where})=>{const removed=deposits.filter(d=>matches(d,where));deposits=deposits.filter(d=>!matches(d,where));allocations=allocations.filter(a=>!removed.some(d=>d.id===a.depositId));return{count:removed.length};};
- prisma.depositAllocation.createMany=async({data})=>{allocations.push(...data.map(d=>({...d,amount:0})));return{count:data.length};};
+ prisma.depositAllocation.createMany=async({data})=>{allocations.push(...data.map(d=>({tenantId:'tenant',projectId:'project',...d,amount:0})));return{count:data.length};};
  prisma.depositAllocation.findMany=async({where})=>allocations.filter(a=>a.depositId===where.depositId).map(a=>({...a,due:copy(dues.find(d=>d.id===a.dueId))}));
  prisma.depositAllocation.updateMany=async({where,data})=>{const rows=allocations.filter(a=>matches(a,where));rows.forEach(a=>Object.assign(a,data));return{count:rows.length};};
+ prisma.depositAllocation.deleteMany=async({where})=>{const removed=allocations.filter(a=>matches(a,where));allocations=allocations.filter(a=>!matches(a,where));return{count:removed.length};};
  prisma.receipt.create=async({data})=>{const row={id:`receipt-${receipts.length}`,...data};receipts.push(row);return copy(row);};
  prisma.accountTransaction.create=async({data})=>{const row={id:`transaction-${transactions.length}`,...data};transactions.push(row);return copy(row);};
  prisma.paymentCommitment.findFirst=async()=>null;
  prisma.whatsAppConnection.findFirst=async()=>null;
- prisma.activity.create=async({data})=>data;
+ prisma.activity.create=async({data})=>{activities.push(copy(data));return data;};
  const app=express();app.use(express.json());app.use((req,_res,next)=>{req.auth={tenantId:'tenant',projectId:'project',userId:'actor',roles:[req.header('x-role')??'admin'],memberId:'member'};next();});
  app.use('/deposits',depositsRouter);app.use((e,_req,res,_next)=>res.status(e.statusCode??500).json({error:e.message,fields:e.fields}));
  server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));base=`http://127.0.0.1:${server.address().port}`;
@@ -146,8 +152,8 @@ test('deletion that wins prevents subsequent confirmation and posting',async()=>
  assert.equal(account.balance,0);assert.equal(receipts.length,0);assert.equal(transactions.length,0);
 });
 
-async function allocationPreview(id, role='admin') {
- const res=await fetch(`${base}/deposits/${id}/allocation-preview`,{headers:{'x-role':role}});
+async function allocationPreview(id, role='admin', scope) {
+ const res=await fetch(`${base}/deposits/${id}/allocation-preview${scope?'?scope='+scope:''}`,{headers:{'x-role':role}});
  return {status:res.status,body:await res.json()};
 }
 test('backend preview assigns 1,000 and 2,000 rather than equal shares, exactly matching final posting',async()=>{
@@ -228,4 +234,111 @@ test('accountant cannot approve a breakdown that has changed since preview',asyn
   const result=await request('/deposits/accountant-payment/approve',{allocation_version:view.allocation_version},'accountant');
   assert.equal(result.status,400);assert.match(result.body.error,/changed since review/);assert.equal(deposits[0].status,'pending_accountant');assert.equal(account.balance,0);
  } finally {prisma.project.findFirstOrThrow=originalProject;prisma.projectMembership.findFirst=originalMembership;}
+});
+
+async function coveredPayment(extra={}) {
+ const submitted=await request('/deposits',{...payment,amount:2000});
+ assert.equal(submitted.status,201);
+ const id=submitted.body.data.id;
+ Object.assign(deposits.find(row=>row.id===id),extra);
+ for(const row of dues.filter(row=>row.tenantId==='tenant'&&row.projectId==='project'&&row.memberId==='member'))row.paidAmount=row.amount;
+ return {id,source:(await allocationPreview(id)).body.data};
+}
+const resolvePayment=(id,source,action,extra={})=>request(`/deposits/${id}/resolve-allocation`,{action,source_version:source.allocation_version,reason:'Verified separate cash received',...extra});
+test('admin can explicitly reassign a covered payment to other member dues without posting until fresh approval',async()=>{
+ const {id,source}=await coveredPayment();assert.equal(source.total_allocated,0);assert.equal(source.can_confirm,false);
+ dues.push(due('replacement','replacement-schedule',3000));
+ const candidate=(await allocationPreview(id,'admin','member_dues')).body.data;
+ assert.equal(candidate.total_allocated,2000);assert.equal(candidate.scope,'member_dues');
+ assert.equal((await request(`/deposits/${id}/confirm`,{allocation_version:candidate.allocation_version})).status,400);
+ const result=await resolvePayment(id,source,'reassign',{allocation_version:candidate.allocation_version});
+ assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.data.status,'pending_approver');
+ assert.deepEqual(allocations.map(row=>row.dueId),['replacement']);assert.equal(deposits[0].amount,2000);
+ assert.equal(account.balance,0);assert.equal(receipts.length,0);assert.equal(transactions.length,0);
+ const audit=activities.find(row=>row.action==='deposit.allocation_resolved');assert.equal(audit.after.reason,'Verified separate cash received');assert.ok(audit.before.allocations.length>0);
+ const fresh=(await allocationPreview(id)).body.data;assert.equal(fresh.can_confirm,true);
+ assert.equal((await request(`/deposits/${id}/confirm`,{allocation_version:fresh.allocation_version})).status,200);
+ assert.equal(account.balance,2000);assert.equal(receipts.length,1);assert.equal(dues.find(row=>row.id==='replacement').paidAmount,2000);
+});
+test('admin can keep the entire separately received payment as advance credit without paying the old dues twice',async()=>{
+ const {id,source}=await coveredPayment();
+ const result=await resolvePayment(id,source,'advance');assert.equal(result.status,200);
+ assert.equal(deposits[0].allocate,'advance');assert.equal(deposits[0].amount,2000);assert.equal(allocations.length,0);
+ assert.equal(account.balance,0);assert.equal(receipts.length,0);
+ const fresh=(await allocationPreview(id)).body.data;assert.equal(fresh.kind,'advance');assert.equal(fresh.advance_amount,2000);
+ assert.equal((await request(`/deposits/${id}/confirm`,{allocation_version:fresh.allocation_version})).status,200);
+ assert.equal(account.balance,2000);assert.equal(receipts.length,1);assert.equal(outstanding(),0);
+ assert.equal((await request(`/deposits/${id}/confirm`,{allocation_version:fresh.allocation_version})).status,400);
+ assert.equal(account.balance,2000);assert.equal(receipts.length,1);
+});
+test('partial overpayment cannot be reassigned unless the whole claim fits; full advance leaves remaining dues unchanged',async()=>{
+ const {id}=await coveredPayment();dues[0].paidAmount=dues[0].amount-500;
+ const source=(await allocationPreview(id)).body.data;assert.equal(source.total_allocated,500);assert.equal(source.unallocated_amount,1500);
+ const candidate=(await allocationPreview(id,'admin','member_dues')).body.data;
+ const original=copy(allocations);assert.equal((await resolvePayment(id,source,'reassign',{allocation_version:candidate.allocation_version})).status,400);
+ assert.deepEqual(allocations,original);assert.equal((await resolvePayment(id,source,'advance')).status,200);
+ const fresh=(await allocationPreview(id)).body.data;await request(`/deposits/${id}/confirm`,{allocation_version:fresh.allocation_version});
+ assert.equal(outstanding(),500);assert.equal(account.balance,2000);assert.equal(deposits[0].allocate,'advance');
+});
+test('changed source or alternative dues invalidate the resolution without changing allocations or money',async()=>{
+ const {id,source}=await coveredPayment();dues.push(due('replacement','replacement-schedule',3000));
+ const candidate=(await allocationPreview(id,'admin','member_dues')).body.data, original=copy(allocations);
+ dues.find(row=>row.id==='replacement').paidAmount=500;
+ assert.equal((await resolvePayment(id,source,'reassign',{allocation_version:candidate.allocation_version})).status,409);
+ assert.deepEqual(allocations,original);
+ dues[0].waivedAmount=1;
+ assert.equal((await resolvePayment(id,source,'advance')).status,409);
+ assert.equal(deposits[0].allocate,'penalty_first');assert.equal(account.balance,0);assert.equal(receipts.length,0);
+});
+test('only admins or owners can resolve allocations, with a reason and an unchanged pending payment',async()=>{
+ const {id,source}=await coveredPayment();
+ for(const role of ['accountant','approver','auditor','cashier','member']) {
+  assert.equal((await allocationPreview(id,role,'member_dues')).status,403,role);
+  assert.equal((await request(`/deposits/${id}/resolve-allocation`,{action:'advance',source_version:source.allocation_version,reason:'Verified cash'},role)).status,403,role);
+ }
+ for(const extra of [{reason:''},{source_version:'invalid'},{amount:1},{action:'unknown'}])assert.equal((await resolvePayment(id,source,'advance',extra)).status,400);
+ deposits[0].projectId='other';assert.equal((await resolvePayment(id,source,'advance')).status,404);deposits[0].projectId='project';
+ deposits[0].status='confirmed';assert.equal((await resolvePayment(id,source,'advance')).status,409);deposits[0].status='pending_approver';
+ assert.equal((await request(`/deposits/${id}/resolve-allocation`,{action:'advance',source_version:source.allocation_version,reason:'Verified cash'},'owner')).status,200);
+});
+test('changing an accountant-reviewed payment clears the endorsement and returns it to accountant review',async()=>{
+ const original=prisma.project.findFirstOrThrow,originalMembership=prisma.projectMembership.findFirst;
+ prisma.project.findFirstOrThrow=async()=>({portalSettings:{deposit_review:'automatic'}});prisma.projectMembership.findFirst=async()=>({id:'accountant-membership'});
+ try {
+  const {id,source}=await coveredPayment({status:'pending_approver',approvalRoute:'accountant',accountantById:'previous-accountant'});
+  const result=await resolvePayment(id,source,'advance');assert.equal(result.status,200);assert.equal(result.body.data.status,'pending_accountant');assert.equal(deposits[0].accountantById,null);
+  assert.equal((await request(`/deposits/${id}/confirm`,{},'approver')).status,400);assert.equal(account.balance,0);
+  const preview=(await allocationPreview(id,'accountant')).body.data;
+  assert.equal((await request(`/deposits/${id}/approve`,{allocation_version:preview.allocation_version},'accountant')).status,200);
+  assert.equal(deposits[0].status,'pending_approver');assert.equal(account.balance,0);
+  const final=(await allocationPreview(id,'approver')).body.data;
+  assert.equal((await request(`/deposits/${id}/confirm`,{allocation_version:final.allocation_version},'approver')).status,200);assert.equal(account.balance,2000);
+ } finally {prisma.project.findFirstOrThrow=original;prisma.projectMembership.findFirst=originalMembership;}
+});
+test('accountant approval cannot bypass a changed balance even without a preview version',async()=>{
+ const {id}=await coveredPayment({approvalRoute:'accountant',status:'pending_accountant'});
+ const original=prisma.project.findFirstOrThrow,originalMembership=prisma.projectMembership.findFirst;
+ prisma.project.findFirstOrThrow=async()=>({portalSettings:{deposit_review:'automatic'}});prisma.projectMembership.findFirst=async()=>({id:'accountant-membership'});
+ try {assert.equal((await request(`/deposits/${id}/approve`,{},'accountant')).status,400);assert.equal(deposits[0].status,'pending_accountant');assert.equal(account.balance,0);}
+ finally {prisma.project.findFirstOrThrow=original;prisma.projectMembership.findFirst=originalMembership;}
+});
+test('two pending payments competing for the same dues post only one deposit',async()=>{
+ const first=await request('/deposits',payment), second=await request('/deposits',payment);
+ const a=first.body.data.id,b=second.body.data.id;
+ const av=(await allocationPreview(a)).body.data,bv=(await allocationPreview(b)).body.data;
+ const results=await Promise.all([request(`/deposits/${a}/confirm`,{allocation_version:av.allocation_version}),request(`/deposits/${b}/confirm`,{allocation_version:bv.allocation_version})]);
+ assert.deepEqual(results.map(row=>row.status).sort(),[200,400]);assert.equal(account.balance,22000);assert.equal(receipts.length,1);assert.equal(transactions.length,1);
+});
+test('rejection cannot overwrite a payment that another reviewer just confirmed',async()=>{
+ const {id}=await coveredPayment();const original=prisma.deposit.updateMany;
+ prisma.deposit.updateMany=async args=>{deposits[0].status='confirmed';return original(args);};
+ try {assert.equal((await request(`/deposits/${id}/reject`,{reason:'Duplicate submission'})).status,409);assert.equal(deposits[0].status,'confirmed');}
+ finally {prisma.deposit.updateMany=original;}
+});
+test('a payment changed after the initial read cannot be posted using its former account or amount',async()=>{
+ const submitted=await request('/deposits',payment),id=submitted.body.data.id;
+ const preview=(await allocationPreview(id)).body.data,original=prisma.$queryRaw;
+ prisma.$queryRaw=async()=>{deposits[0].amount=100;return[];};
+ try {assert.equal((await request(`/deposits/${id}/confirm`,{allocation_version:preview.allocation_version})).status,409);assert.equal(receipts.length,0);assert.equal(account.balance,0);}
+ finally {prisma.$queryRaw=original;}
 });
