@@ -13,6 +13,7 @@ import { dateSchema, pastDateSchema } from '../accounting/workflow.js';
 const router = Router();
 const incomeSchema = z.object({ account_id: z.string().min(1), amount: z.number().int().positive().max(2147483647), source: z.string().trim().min(1).max(120).optional(), note: z.string().max(500).optional(), income_date: pastDateSchema.optional(), request_key: z.string().uuid().optional(), category_id: z.string().min(1).optional(), customer_id: z.string().min(1).optional() });
 const filters = z.object({ category_id: z.string().optional(), customer_id: z.string().optional(), from: dateSchema.optional(), to: dateSchema.optional(), offset: z.coerce.number().int().min(0).default(0) }).refine(v => !v.from || !v.to || v.from <= v.to, 'From date must be on or before To date');
+const incomeTagsSchema = z.object({ category_id: z.string().trim().min(1).nullable() }).strict();
 const categorySchema = z.object({ name: z.string().trim().min(2).max(120), is_active: z.boolean().optional() }).strict();
 async function canRecord(tenantId: string, roles: string[]) {
     const p = await prisma.onboardingProgress.findUnique({ where: { tenantId }, select: { incomeApprovalFlow: true } });
@@ -94,5 +95,25 @@ router.post('/', requireRoles('accountant', 'approver', 'admin'), validateBody(i
         return transaction;
     });
     return created(res, mapIncome(result));
+}));
+// Reporting tags can change without changing the financial transaction or balance.
+router.patch('/:id/tags', requireRoles('accountant', 'approver', 'admin'), validateBody(incomeTagsSchema), asyncHandler(async (req, res) => {
+    const auth = requireProjectContext(req), b = incomeTagsSchema.parse(req.body);
+    if (!await canRecord(auth.tenantId, auth.roles))
+        throw forbidden('Your project income approval flow does not allow this role to tag income');
+    const result = await financialTransaction(async (tx) => {
+        const where = { id: req.params.id, tenantId: auth.tenantId, projectId: auth.projectId, referenceType: 'income', direction: 'money_in' } satisfies Prisma.AccountTransactionWhereUniqueInput;
+        const old = await tx.accountTransaction.findFirst({ where, include });
+        if (!old)
+            throw notFound('Income entry not found');
+        if (b.category_id && !await tx.incomeCategory.findFirst({ where: { id: b.category_id, tenantId: auth.tenantId, projectId: auth.projectId, isActive: true } }))
+            throw notFound('Active income category not found');
+        if (old.incomeCategoryId === b.category_id)
+            return old;
+        const updated = await tx.accountTransaction.update({ where: { ...where, id: old.id }, data: { incomeCategoryId: b.category_id }, include });
+        await tx.activity.create({ data: { tenantId: auth.tenantId, projectId: auth.projectId, actorUserId: auth.userId, action: 'income.tagged', entityType: 'account_transaction', entityId: old.id, before: { category_id: old.incomeCategoryId }, after: { category_id: b.category_id } } });
+        return updated;
+    });
+    return ok(res, mapIncome(result));
 }));
 export { router as incomesRouter };

@@ -34,9 +34,12 @@ All operations use the existing bearer token, `X-Project-Id`, `{ok,data}` envelo
 | GET/POST/PATCH /v1/incomes/categories[/\:id] | Dynamic category names; rename/archive/restore, preserves historical tagging |
 | GET /v1/incomes/report | total_amount, entry_count, by_category and by_customer totals |
 | GET /v1/incomes | All project types; entries, next_offset, can_record. Optional offset pagination |
+| PATCH /v1/incomes/:id/tags | Set or clear the category of an existing income entry: `{category_id: string \| null}` |
 | POST /v1/incomes | Existing account_id/amount/note, optional source, income_date, UUID request_key, category_id, customer_id |
 
 Income list/report accept `category_id`, `customer_id`, `from`, `to` filters. Use `none` for untagged entries. Dates filter the income date, falling back to the recorded date for legacy entries. No category or customer is required. Category/customer names and optional IDs are returned with income entries. Categories can be archived/restored without removing past reports; customer contacts remain restricted to staff. Reports exclude member deposits and invoice payments.
+
+Existing income categories can be set or cleared using `PATCH /v1/incomes/:id/tags`. This uses the same recording permissions as income creation and accepts only `category_id` (an active category ID in the current tenant/project, or `null`). It returns the complete updated income entry. The update and `income.tagged` audit event commit together in a serializable transaction; unchanged tags are idempotent. Amount, account, balance, date, source, customer tag, and request key remain unchanged. This endpoint requires no additional schema migration. Deploy the updated API to enable the mobile page’s Tag now action.
 
 Line shape: `{description,quantity,unit_price,item_id?}`. Dates: `YYYY-MM-DD`; payment/income dates cannot be in the future. The server calculates totals. Mobile always supplies request keys; legacy income clients may omit them for compatibility.
 
