@@ -53,7 +53,8 @@ async function announceConfirmedPayment(input: {
 }
 
 const depositBodySchema = z.object({
-  schedule_ids: z.array(z.string().min(1)).min(1),
+  schedule_ids: z.array(z.string().min(1)).min(1).optional(),
+  settle_all_dues: z.boolean().default(false),
   member_id: z.string().min(1),
   account_id: z.string().min(1),
   amount: z.number().int().positive(),
@@ -61,6 +62,13 @@ const depositBodySchema = z.object({
   proof_file_id: z.string().optional(),
   reference: z.string().optional(),
   allocate: z.enum(["penalty_first", "principal_first"]).default("penalty_first")
+}).superRefine((value, ctx) => {
+  if (!value.settle_all_dues && !value.schedule_ids?.length) {
+    ctx.addIssue({ code: "custom", path: ["schedule_ids"], message: "Select schedules or request settlement of all member dues" });
+  }
+  if (value.settle_all_dues && value.schedule_ids !== undefined) {
+    ctx.addIssue({ code: "custom", path: ["schedule_ids"], message: "Choose either selected schedules or all member dues" });
+  }
 });
 
 const advanceDepositBodySchema = z.object({
@@ -91,7 +99,7 @@ async function canSubmitForMember(auth: {
   tenantId: string;
   projectId: string;
 }, memberId: string) {
-  if (auth.roles.includes("admin")) return true;
+  if (auth.roles.includes("admin") || auth.roles.includes("owner")) return true;
   if (auth.roles.includes("accountant")) return true;
   if (auth.roles.includes("cashier")) return true;
   if (auth.roles.includes("member") && auth.memberId === memberId) return true;
@@ -373,15 +381,18 @@ router.post("/", requireProject, requireRoles("member", "cashier", "accountant",
     throw badRequest(MEMBER_RECEIPT_REQUIRED_MESSAGE);
   }
 
-  const scheduleIds = [...new Set(body.schedule_ids)];
-  const dues = await prisma.due.findMany({
+  const scheduleIds = [...new Set(body.schedule_ids ?? [])];
+  // Imported previous installments are hidden from the schedule browser, but are
+  // real member dues. Resolve member-level payments from the ledger itself.
+  const memberDues = await prisma.due.findMany({
     where: {
       tenantId: auth.tenantId,
       projectId: auth.projectId,
-      scheduleId: { in: scheduleIds },
+      ...(body.settle_all_dues ? {} : { scheduleId: { in: scheduleIds } }),
       memberId: body.member_id
     }
   });
+  const dues = body.settle_all_dues ? memberDues.filter(due => calculateDueBalance(due).total > 0) : memberDues;
   const missing = scheduleIds.filter((scheduleId) => !dues.some((due) => due.scheduleId === scheduleId));
   if (missing.length > 0) {
     throw notFound("Due not found for member and schedule", { missing_schedule_ids: missing });
