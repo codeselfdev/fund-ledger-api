@@ -1,0 +1,1174 @@
+{
+  "groups": [
+    {
+      "key": "money",
+      "label": "Money",
+      "color": "#0F7A6C",
+      "soft": "#E4F4EF"
+    },
+    {
+      "key": "people",
+      "label": "Members",
+      "color": "#2F6FB0",
+      "soft": "#E6EFF8"
+    },
+    {
+      "key": "comm",
+      "label": "Communicate",
+      "color": "#B25E09",
+      "soft": "#FBF0DE"
+    },
+    {
+      "key": "setup",
+      "label": "Reports & setup",
+      "color": "#7A5BB5",
+      "soft": "#EFEAF8"
+    }
+  ],
+  "tools": [
+    {
+      "key": "income",
+      "group": "money",
+      "label": "Income",
+      "description": "Interest, rent, donations",
+      "icon": "M12 3v12 M7 10l5 5 5-5 M4 17v3h16v-3",
+      "keywords": "receive deposit",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor",
+        "member"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "expenses",
+      "group": "money",
+      "label": "Expenses",
+      "description": "Spending by category & vendor",
+      "icon": "M6 3h12v18l-3-2-3 2-3-2-3 2z M9 8h6 M9 12h6 M9 16h3",
+      "keywords": "spend bill cost",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor",
+        "member"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "accounts",
+      "group": "money",
+      "label": "Accounts",
+      "description": "Bank, bKash & cash balances",
+      "icon": "M3 10h18 M5 10v8 M9.5 10v8 M14.5 10v8 M19 10v8 M3 21h18 M12 3l9 5H3z",
+      "keywords": "bank cash balance",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "schedules",
+      "group": "money",
+      "label": "Schedules",
+      "description": "Instalments members owe",
+      "icon": "M8 6h13 M8 12h13 M8 18h9 M3.5 6h.01 M3.5 12h.01 M3.5 18h.01",
+      "keywords": "due instalment payment",
+      "roles": [
+        "owner",
+        "admin",
+        "approver"
+      ],
+      "project_types": [
+        "fund_shares",
+        "construction"
+      ]
+    },
+    {
+      "key": "recurring",
+      "group": "money",
+      "label": "Recurring",
+      "description": "Repeating bills & income",
+      "icon": "M17 2l4 4-4 4 M3 11V9a3 3 0 0 1 3-3h15 M7 22l-4-4 4-4 M21 13v2a3 3 0 0 1-3 3H3",
+      "keywords": "repeat monthly",
+      "roles": [
+        "owner",
+        "admin",
+        "approver"
+      ],
+      "project_types": [
+        "fund_shares",
+        "construction"
+      ]
+    },
+    {
+      "key": "assets",
+      "group": "money",
+      "label": "Fixed assets",
+      "description": "Equipment & depreciation",
+      "icon": "M21 8 12 3 3 8v8l9 5 9-5z M3 8l9 5 9-5 M12 13v8",
+      "keywords": "equipment depreciation",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "auditor"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "members",
+      "group": "people",
+      "label": "Members",
+      "description": "Profiles, dues & documents",
+      "icon": "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M2 21c0-4 3-6 7-6s7 2 7 6 M16 3.5a4 4 0 0 1 0 7.5 M22 21c0-3-1.5-5-4-5.7",
+      "keywords": "people profile",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor",
+        "member"
+      ],
+      "project_types": [
+        "fund_shares",
+        "construction"
+      ]
+    },
+    {
+      "key": "delegates",
+      "group": "people",
+      "label": "Delegate payers",
+      "description": "Who pays on someone’s behalf",
+      "icon": "M8 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M2 21c0-3.5 2.5-6 6-6 1.6 0 3 .5 4 1.3 M14 17h8 M19 14l3 3-3 3",
+      "keywords": "proxy pay behalf",
+      "roles": [
+        "owner",
+        "admin"
+      ],
+      "project_types": [
+        "fund_shares",
+        "construction"
+      ]
+    },
+    {
+      "key": "roles",
+      "group": "people",
+      "label": "Roles",
+      "description": "Who can see and approve what",
+      "icon": "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z M9 12l2 2 4-4",
+      "keywords": "permission access admin",
+      "roles": [
+        "owner",
+        "admin"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "import",
+      "group": "people",
+      "label": "Import members",
+      "description": "Add many from a CSV file",
+      "icon": "M12 15V3 M7 8l5-5 5 5 M4 15v5h16v-5",
+      "keywords": "csv upload bulk",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant"
+      ],
+      "project_types": [
+        "fund_shares",
+        "construction"
+      ]
+    },
+    {
+      "key": "notices",
+      "group": "comm",
+      "label": "Notices",
+      "description": "Announcements for members",
+      "icon": "M3 11v2a1 1 0 0 0 1 1h3l6 4V6L7 10H4a1 1 0 0 0-1 1z M17 9a4 4 0 0 1 0 6 M20 6a8 8 0 0 1 0 12",
+      "keywords": "announce board",
+      "roles": [
+        "owner",
+        "admin"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "notifications",
+      "group": "comm",
+      "label": "Notifications",
+      "description": "Send in-app, push & email",
+      "icon": "M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9 M13.7 21a2 2 0 0 1-3.4 0",
+      "keywords": "push email alert send",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "polls",
+      "group": "comm",
+      "label": "Polls & voting",
+      "description": "Decide together",
+      "icon": "M3 4h5v5H3z M3 15h5v5H3z M4.5 6.5l1 1 2-2 M12 6.5h9 M12 17.5h9",
+      "keywords": "vote poll decide",
+      "roles": [
+        "owner",
+        "admin"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "events",
+      "group": "comm",
+      "label": "Events",
+      "description": "Meetings & site visits",
+      "icon": "M3 5h18v16H3z M3 10h18 M8 3v4 M16 3v4 M8 14h3v3H8z",
+      "keywords": "meeting calendar",
+      "roles": [
+        "owner",
+        "admin"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "reports",
+      "group": "setup",
+      "label": "Reports",
+      "description": "Summaries & Excel exports",
+      "icon": "M3 3v18h18 M7 14l4-4 3 3 5-6",
+      "keywords": "excel export summary",
+      "roles": [
+        "owner",
+        "admin"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "integrations",
+      "group": "setup",
+      "label": "Integrations",
+      "description": "Telegram, WhatsApp, email",
+      "icon": "M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7 M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7",
+      "keywords": "telegram whatsapp connect",
+      "roles": [
+        "owner",
+        "admin"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "ledger",
+      "group": "money",
+      "label": "Ledger",
+      "description": "Project transactions & transfers",
+      "icon": "M4 3h16v18H4z M8 7h8 M8 11h3 M8 15h3 M15 11h1 M15 15h1",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor",
+        "member"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "commerce",
+      "group": "money",
+      "label": "Sales & inventory",
+      "description": "Stock, purchases and sales",
+      "icon": "M3 7h18v14H3z M5 3h14l2 4H3z M9 11h6 M12 7v4",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "auditor"
+      ],
+      "project_types": [
+        "fund_shares"
+      ]
+    },
+    {
+      "key": "approvals",
+      "group": "money",
+      "label": "Deposit approvals",
+      "description": "Review deposits awaiting accountant checks",
+      "icon": "M4 3h12v6 M4 3v18h16V9h-4V3 M8 13l3 3 5-6",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant"
+      ],
+      "project_types": [
+        "fund_shares"
+      ]
+    },
+    {
+      "key": "pending_expenses",
+      "group": "money",
+      "label": "Pending expenses",
+      "description": "Expenses awaiting approval or payment",
+      "icon": "M6 3h12v18l-3-2-3 2-3-2-3 2z M9 7h6 M10 12v3l2 1",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant"
+      ],
+      "project_types": [
+        "fund_shares"
+      ]
+    },
+    {
+      "key": "pending_deposits",
+      "group": "money",
+      "label": "Pending deposits",
+      "description": "Deposits awaiting final confirmation",
+      "icon": "M12 3v10m-4-4 4 4 4-4 M4 17h16v4H4z",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin"
+      ],
+      "project_types": [
+        "fund_shares"
+      ]
+    },
+    {
+      "key": "activity",
+      "group": "setup",
+      "label": "Activity & audit",
+      "description": "Changes made in this project",
+      "icon": "M5 4h14v17H5z M9 4V2h6v2 M8 9h8 M8 13h5 M8 17h7",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "customers",
+      "group": "people",
+      "label": "Customers",
+      "description": "Customer profiles and contact details",
+      "icon": "M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M2 21c0-4 2-6 6-6s6 2 6 6 M17 6h5 M17 10h5 M18 15h4",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "accounting",
+        "billing"
+      ]
+    },
+    {
+      "key": "quotation",
+      "group": "money",
+      "label": "Quotations",
+      "description": "Prepare and review customer quotations",
+      "icon": "M5 3h11l4 4v14H5z M15 3v5h5 M8 12h8 M8 16h5 M8 8h3",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "accounting"
+      ]
+    },
+    {
+      "key": "order",
+      "group": "money",
+      "label": "Orders",
+      "description": "Confirmed customer orders",
+      "icon": "M4 5h16v16H4z M8 5V3h8v2 M8 10h8 M8 14l2 2 5-5",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "accounting"
+      ]
+    },
+    {
+      "key": "sale",
+      "group": "money",
+      "label": "Sales",
+      "description": "Invoices and sales documents",
+      "icon": "M6 3h12v18l-3-2-3 2-3-2-3 2z M9 7h6 M12 10v6 M14 11h-3a1 1 0 0 0 0 2h2a1 1 0 0 1 0 2h-3",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "accounting"
+      ]
+    },
+    {
+      "key": "receivables",
+      "group": "money",
+      "label": "Receivables",
+      "description": "Unpaid sales and partial payments",
+      "icon": "M3 4h18v16H3z M3 8h18 M7 12h4 M7 16h3 M15 12v5m-2-2 2 2 2-2",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "accounting"
+      ]
+    },
+    {
+      "key": "inventory",
+      "group": "money",
+      "label": "Inventory",
+      "description": "Items, stock and purchase orders",
+      "icon": "M3 7h18v14H3z M5 3h14l2 4H3z M9 11h6 M12 7v4",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "accounting"
+      ]
+    },
+    {
+      "key": "billing_units",
+      "group": "money",
+      "label": "Units & connections",
+      "description": "Flats, properties and service connections",
+      "icon": "M3 21V8l9-5 9 5v13 M8 21v-6h8v6 M7 8h1 M16 8h1 M7 11h1 M16 11h1",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    },
+    {
+      "key": "billing_subscriptions",
+      "group": "money",
+      "label": "Subscriptions",
+      "description": "Service assignments and recurring charges",
+      "icon": "M4 5h16v16H4z M8 3v4 M16 3v4 M4 10h16 M8 14h8 M8 17h5",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    },
+    {
+      "key": "billing_plans",
+      "group": "money",
+      "label": "Billing plans",
+      "description": "Pricing, intervals and installment plans",
+      "icon": "M7 3h10v18H7z M10 7h4 M10 11h4 M10 15h4 M10 18h2",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    },
+    {
+      "key": "billing_invoices",
+      "group": "money",
+      "label": "Invoices",
+      "description": "Create and track customer invoices",
+      "icon": "M4 3h11l5 5v13H4z M14 3v6h6 M8 12h8 M8 16h5 M8 7h3",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    },
+    {
+      "key": "billing_collections",
+      "group": "money",
+      "label": "Collections",
+      "description": "Payments, receipts and customer credit",
+      "icon": "M3 15h4l3-3h5a2 2 0 0 1 0 4h-4 M7 15v6h10l5-5 M3 14v8 M17 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    },
+    {
+      "key": "billing_outstanding",
+      "group": "money",
+      "label": "Outstanding dues",
+      "description": "Unpaid invoices and overdue balances",
+      "icon": "M3 5h18v15H3z M3 9h18 M8 13v3 M12 13v3 M16 13v3",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    },
+    {
+      "key": "billing_adjustments",
+      "group": "money",
+      "label": "Adjustments",
+      "description": "Credits, refunds, waivers and advance",
+      "icon": "M3 7h18 M7 3l-4 4 4 4 M21 17H3 M17 13l4 4-4 4",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    },
+    {
+      "key": "billing_approvals",
+      "group": "money",
+      "label": "Billing approvals",
+      "description": "Review requested billing adjustments",
+      "icon": "M4 4h16v16H4z M8 2v4 M16 2v4 M4 9h16 M8 14l3 3 5-6",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "approver",
+        "auditor"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    },
+    {
+      "key": "billing_meters",
+      "group": "money",
+      "label": "Meter readings",
+      "description": "Record consumption before billing",
+      "icon": "M3 17a9 9 0 1 1 18 0 M12 17l5-8 M7 17h10 M6 10l1 1 M12 6v2",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    },
+    {
+      "key": "billing_bulk",
+      "group": "money",
+      "label": "Bulk invoices",
+      "description": "Generate a month of recurring invoices",
+      "icon": "M7 3h14v16H7z M3 7v14h14 M10 8h8 M10 12h8",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    },
+    {
+      "key": "billing_late_fees",
+      "group": "money",
+      "label": "Late fees",
+      "description": "Eligible fees and invoice grace periods",
+      "icon": "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 7v5l3 2",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    },
+    {
+      "key": "billing_ledger",
+      "group": "money",
+      "label": "Customer statements",
+      "description": "Customer balances and payment histories",
+      "icon": "M5 3h14v18H5z M8 8h8 M8 12h8 M8 16h5",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    },
+    {
+      "key": "billing_reports",
+      "group": "setup",
+      "label": "Billing reports",
+      "description": "Collections, aging and billing summaries",
+      "icon": "M4 3h16v18H4z M8 16v-3 M12 16V9 M16 16V6 M8 19h8",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    },
+    {
+      "key": "billing_notifications",
+      "group": "comm",
+      "label": "Reminders & receipts",
+      "description": "Customer billing reminders and delivery",
+      "icon": "M3 5h18v14H3z M3 5l9 7 9-7",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    },
+    {
+      "key": "construction_setup",
+      "group": "setup",
+      "label": "Building & site setup",
+      "description": "Project details and financial targets",
+      "icon": "M3 21h18 M5 21V7l7-4 7 4v14 M9 21v-6h6v6 M8 9h1 M15 9h1",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "construction"
+      ]
+    },
+    {
+      "key": "construction_budgets",
+      "group": "money",
+      "label": "Budget estimation",
+      "description": "Budgets by phase and cost head",
+      "icon": "M4 3h16v18H4z M8 7h8 M8 11h3 M15 11h1 M8 15h3 M15 15h1",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "construction"
+      ]
+    },
+    {
+      "key": "construction_boq",
+      "group": "money",
+      "label": "BOQ & cost allocation",
+      "description": "Quantities, rates and expense allocation",
+      "icon": "M3 4h18v17H3z M3 9h18 M9 4v17 M15 9v12 M3 15h18",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "construction"
+      ]
+    },
+    {
+      "key": "construction_contractors",
+      "group": "people",
+      "label": "Contractors",
+      "description": "Contracts, advances and retention",
+      "icon": "M6 3h12v18H6z M9 7h6 M9 11h6 M9 15l2 2 4-4",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "construction"
+      ]
+    },
+    {
+      "key": "construction_suppliers",
+      "group": "money",
+      "label": "Suppliers & bills",
+      "description": "Supplier invoices and payment histories",
+      "icon": "M3 8h11v10H3z M14 11h4l3 4v3h-7 M5 18a2 2 0 1 0 4 0 M16 18a2 2 0 1 0 4 0",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "construction"
+      ]
+    },
+    {
+      "key": "construction_materials",
+      "group": "money",
+      "label": "Materials & purchases",
+      "description": "Stock and site consumption movements",
+      "icon": "M3 9l9-6 9 6v12H3z M3 9h18 M7 13h10v8 M7 17h10",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "construction"
+      ]
+    },
+    {
+      "key": "construction_labor",
+      "group": "money",
+      "label": "Daily labor & wages",
+      "description": "Attendance, wages and labor payments",
+      "icon": "M6 11V8a6 6 0 0 1 12 0v3 M3 11h18 M8 13v3a4 4 0 0 0 8 0v-3 M5 22c0-3 3-4 7-4s7 1 7 4",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "construction"
+      ]
+    },
+    {
+      "key": "construction_running_bills",
+      "group": "money",
+      "label": "Running bills",
+      "description": "Certification and contractor payments",
+      "icon": "M5 3h14v18H5z M8 7h8 M8 11h8 M8 15h3 M14 15v3m-2-1 2 2 2-2",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "construction"
+      ]
+    },
+    {
+      "key": "construction_funding",
+      "group": "money",
+      "label": "Member funding",
+      "description": "Member contributions, dues and schedules",
+      "icon": "M12 3 3 8h18z M5 11v6 M9 11v6 M15 11v6 M19 11v6 M3 21h18 M8 18h8",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "construction"
+      ]
+    },
+    {
+      "key": "construction_changes",
+      "group": "money",
+      "label": "Change orders",
+      "description": "Budget revisions and contract changes",
+      "icon": "M5 3h14v18H5z M8 8h8 M8 12h8 M12 15v4 M10 17h4",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "construction"
+      ]
+    },
+    {
+      "key": "construction_reports",
+      "group": "setup",
+      "label": "Construction reports",
+      "description": "Budgets, liabilities and cash forecasts",
+      "icon": "M3 3h18v18H3z M6 17l4-5 3 2 5-7 M6 7h5 M6 10h2",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "construction"
+      ]
+    },
+    {
+      "key": "construction_payments",
+      "group": "money",
+      "label": "Construction payments",
+      "description": "Contractor, supplier and labor payments",
+      "icon": "M3 6h18v14H3z M3 10h18 M7 15h3 M16 14v4m-2-2 2 2 2-2",
+      "keywords": "",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor"
+      ],
+      "project_types": [
+        "construction"
+      ]
+    }
+  ],
+  "quick_add": [
+    {
+      "key": "add_member",
+      "label": "Member",
+      "icon": "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M2 21c0-4 3-6 7-6s7 2 7 6 M16 3.5a4 4 0 0 1 0 7.5 M22 21c0-3-1.5-5-4-5.7",
+      "group": "people",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant"
+      ],
+      "project_types": [
+        "fund_shares",
+        "construction"
+      ]
+    },
+    {
+      "key": "add_income",
+      "label": "Income",
+      "icon": "M12 3v12 M7 10l5 5 5-5 M4 17v3h16v-3",
+      "group": "money",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "add_expense",
+      "label": "Expense",
+      "icon": "M6 3h12v18l-3-2-3 2-3-2-3 2z M9 8h6 M9 12h6 M9 16h3",
+      "group": "money",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "add_notice",
+      "label": "Notice",
+      "icon": "M3 11v2a1 1 0 0 0 1 1h3l6 4V6L7 10H4a1 1 0 0 0-1 1z M17 9a4 4 0 0 1 0 6 M20 6a8 8 0 0 1 0 12",
+      "group": "comm",
+      "roles": [
+        "owner",
+        "admin"
+      ],
+      "project_types": [
+        "fund_shares",
+        "accounting",
+        "billing",
+        "construction"
+      ]
+    },
+    {
+      "key": "add_customer",
+      "label": "Customer",
+      "icon": "M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M2 21c0-4 2-6 6-6s6 2 6 6 M17 6h5 M17 10h5 M18 15h4",
+      "group": "people",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant"
+      ],
+      "project_types": [
+        "accounting",
+        "billing"
+      ]
+    },
+    {
+      "key": "add_sale",
+      "label": "Sale",
+      "icon": "M6 3h12v18l-3-2-3 2-3-2-3 2z M9 7h6 M12 10v6 M14 11h-3a1 1 0 0 0 0 2h2a1 1 0 0 1 0 2h-3",
+      "group": "money",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "cashier"
+      ],
+      "project_types": [
+        "accounting"
+      ]
+    },
+    {
+      "key": "add_invoice",
+      "label": "Invoice",
+      "icon": "M4 3h11l5 5v13H4z M14 3v6h6 M8 12h8 M8 16h5 M8 7h3",
+      "group": "money",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    },
+    {
+      "key": "add_collection",
+      "label": "Payment",
+      "icon": "M3 15h4l3-3h5a2 2 0 0 1 0 4h-4 M7 15v6h10l5-5 M3 14v8 M17 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
+      "group": "money",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "cashier"
+      ],
+      "project_types": [
+        "billing"
+      ]
+    }
+  ]
+}

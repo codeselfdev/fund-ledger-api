@@ -203,6 +203,7 @@ enum DepositApprovalRoute {
 }
 
 model Project {
+  shortcutPreferences ShortcutPreference[]
   fixedAssets FixedAsset[]
   fixedAssetOperations FixedAssetOperation[]
   fixedAssetEvents FixedAssetEvent[]
@@ -333,6 +334,7 @@ model OnboardingProgress {
 }
 
 model User {
+  shortcutPreferences ShortcutPreference[]
   notificationCampaigns NotificationCampaign[]
   id           String   @id @default(cuid())
   tenantId     String   @map("tenant_id")
@@ -2033,4 +2035,19 @@ model FixedAssetJournal {
   @@unique([assetId, kind, period, projectId])
   @@index([tenantId, projectId, period])
   @@map("fixed_asset_journals")
+}
+
+model ShortcutPreference {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  userId String @map("user_id")
+  pinned Json
+  version Int @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, projectId, userId])
+  @@map("shortcut_preferences")
 }

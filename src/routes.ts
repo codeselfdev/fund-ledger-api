@@ -1,3 +1,4 @@
+import { shortcutsRouter } from './modules/shortcuts/shortcuts.routes.js';
 import { fixedAssetsRouter } from './modules/fixed-assets/fixed-assets.routes.js';
 import { reportsRouter } from "./modules/reports/report.routes.js";
 import { integrationsRouter, telegramWebhookRouter } from "./modules/integrations/integrations.routes.js";
@@ -81,6 +82,7 @@ export function registerRoutes(app: Express) {
   app.use("/v1/billing", billingRouter);
   app.use("/v1/construction", constructionRouter);
   app.use("/v1/fixed-assets", fixedAssetsRouter);
+  app.use("/v1/shortcuts", shortcutsRouter);
   app.use("/v1/inventory-categories", inventoryCategoriesRouter);
   app.use("/v1/inventory", inventoryRouter);
   app.use("/v1/purchases", purchasesRouter);
