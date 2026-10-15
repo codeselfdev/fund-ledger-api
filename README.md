@@ -352,3 +352,5 @@ Billing projects now use `/v1/billing` for category-specific menus, customers, u
 ## Construction Financial Management
 
 `project_type: construction` opens saved construction budgets, BOQ cost allocation, contractors, certified running bills, supplier/labor payables, site material movements, change orders, financial reports and the existing member/share contribution ledger. See [Construction Financial Management](docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md) for menu, API, recognition and rollout details.
+
+See [Reports and integrations](docs/REPORTS_INTEGRATIONS.md) for the Excel reporting migration, admin schedule configuration, SMTP/Telegram setup and disabled-by-default automation.

@@ -1,3 +1,4 @@
+import { startReportsWorker, stopReportsWorker } from "./modules/reports/report.worker.js";
 import { startCampaignWorker, stopCampaignWorker } from "./modules/notification-campaigns/campaign.service.js";
 import { startBillingWorker, stopBillingWorker } from "./modules/billing/billing.worker.js";
 import { createApp } from "./app.js";
@@ -13,6 +14,7 @@ const app = createApp();
 startRecurringSchedulesCron();
 startBillingWorker();
 startCampaignWorker();
+startReportsWorker();
 startCommunityRemindersCron();
 startPaymentCommitmentsCron();
 
@@ -28,6 +30,7 @@ async function shutdown() {
   stopRecurringSchedulesCron();
   stopBillingWorker();
   stopCampaignWorker();
+  stopReportsWorker();
   stopCommunityRemindersCron();
   stopPaymentCommitmentsCron();
   server.close(async () => {

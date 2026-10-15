@@ -203,6 +203,11 @@ enum DepositApprovalRoute {
 }
 
 model Project {
+  reportSchedules ReportSchedule[]
+  reportExports ReportExport[]
+  telegramLinks TelegramLink[]
+  telegramConnections TelegramConnection[]
+  integrationPosts IntegrationPost[]
   notificationCampaigns NotificationCampaign[]
   id            String   @id @default(cuid())
   tenantId      String   @map("tenant_id")
@@ -1836,4 +1841,105 @@ model ConstructionChangeOrder {
   @@unique([projectId, requestKey])
   @@index([tenantId, projectId, status])
   @@map("construction_change_orders")
+}
+
+
+model ReportSchedule {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @unique @map("project_id")
+  enabled Boolean @default(false)
+  time String @default("21:00")
+  timezone String @default("Asia/Dhaka")
+  days Int[] @default([0,1,2,3,4,5,6])
+  sheets String[] @default(["summary","banks","ie"])
+  recipientIds String[] @map("recipient_ids")
+  email Boolean @default(true)
+  inbox Boolean @default(false)
+  telegram Boolean @default(false)
+  updatedById String @map("updated_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@index([enabled])
+  @@map("report_schedules")
+}
+
+model ReportExport {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  createdById String @map("created_by_id")
+  scheduleSlot String? @unique @map("schedule_slot")
+  status String @default("building")
+  config Json
+  preview Json?
+  files Json?
+  error String?
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deliveries ReportDelivery[]
+  @@index([tenantId, projectId, createdAt])
+  @@map("report_exports")
+}
+
+model ReportDelivery {
+  id String @id @default(cuid())
+  exportId String @map("export_id")
+  channel String
+  target String
+  status String @default("pending")
+  error String?
+  attempts Int @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  report ReportExport @relation(fields: [exportId], references: [id], onDelete: Cascade)
+  @@unique([exportId, channel, target])
+  @@map("report_deliveries")
+}
+
+model TelegramLink {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  userId String @map("user_id")
+  codeHash String @unique @map("code_hash")
+  chatId String? @map("chat_id")
+  chatTitle String? @map("chat_title")
+  expiresAt DateTime @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@index([tenantId, projectId])
+  @@map("telegram_links")
+}
+
+model TelegramConnection {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @unique @map("project_id")
+  chatId String @unique @map("chat_id")
+  chatTitle String @map("chat_title")
+  report Boolean @default(true)
+  notices Boolean @default(true)
+  reminders Boolean @default(false)
+  approvals Boolean @default(false)
+  connectedAt DateTime @default(now()) @map("connected_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@map("telegram_connections")
+}
+
+model IntegrationPost {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  dedupeKey String @unique @map("dedupe_key")
+  label String
+  status String @default("sending")
+  error String?
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@index([tenantId, projectId, createdAt])
+  @@map("integration_posts")
 }

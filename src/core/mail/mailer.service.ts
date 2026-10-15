@@ -87,7 +87,7 @@ export async function verifyMailTransport(): Promise<boolean> {
   }
 }
 
-export async function sendMail(input: { to: string; cc?: string[]; subject: string; text: string; html?: string; fromName?: string }): Promise<boolean> {
+export async function sendMail(input: { to: string; cc?: string[]; subject: string; text: string; html?: string; fromName?: string; attachments?: { filename: string; content: Buffer; contentType?: string }[] }): Promise<boolean> {
   const transport = getTransporter();
   if (!transport) return false;
 
@@ -98,7 +98,8 @@ export async function sendMail(input: { to: string; cc?: string[]; subject: stri
       cc: input.cc?.length ? input.cc : undefined,
       subject: input.subject,
       text: input.text,
-      html: input.html
+      html: input.html,
+      attachments: input.attachments
     });
     lastMailFailure = null;
   } catch (error) {

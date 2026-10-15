@@ -1,3 +1,5 @@
+import { reportsRouter } from "./modules/reports/report.routes.js";
+import { integrationsRouter, telegramWebhookRouter } from "./modules/integrations/integrations.routes.js";
 import { notificationCampaignRouter } from "./modules/notification-campaigns/campaign.routes.js";
 import { constructionRouter } from "./modules/construction/construction.routes.js";
 import { billingRouter } from "./modules/billing/billing.routes.js";
@@ -50,9 +52,12 @@ export function registerRoutes(app: Express) {
   app.use("/v1/onboarding", onboardingRouter);
 
   app.use("/v1/projects", projectsRouter);
+  app.use("/v1/integrations/telegram/webhook", telegramWebhookRouter);
   app.use(authenticate);
   app.use("/v1/subscription", subscriptionRouter);
   app.use(requireActiveSubscription);
+  app.use("/v1/reports", reportsRouter);
+  app.use("/v1/integrations", integrationsRouter);
   app.use("/v1/invitations", invitationsRouter);
   app.use("/v1/members", memberProfileRouter);
   app.use("/v1/members", membersRouter);
