@@ -86,7 +86,7 @@ GET /v1/auth/google?intent=login&redirect_uri=fundledger://auth
 Optional query parameters:
 
 - `intent`: `login` or `signup`
-- `tenant_slug`: use only when the same Google email can belong to multiple organizations
+- `tenant_slug`: optional legacy organization hint; apps should use the organization picker when no hint is provided
 - `redirect_uri`: the mobile deep link that receives the result
 
 The API redirects back to the app as one of:
@@ -104,6 +104,35 @@ Content-Type: application/json
 
 { "ticket": "<one-time-ticket>" }
 ```
+
+When a verified identity has multiple independent organization accounts, both
+`POST /v1/auth/login` and `POST /v1/auth/google/complete` return HTTP 200 with:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "kind": "account_selection",
+    "ticket": "<opaque-selection-ticket>",
+    "expires_at": "2026-10-15T12:00:00.000Z",
+    "accounts": [
+      { "account_id": "user-1", "tenant_id": "org-1", "tenant_name": "My organization", "tenant_slug": "my-org", "account_name": "Owner" }
+    ]
+  }
+}
+```
+
+Show organization names and let the user select one. Do not request a tenant slug
+or start signup. Submit the selected `account_id` and ticket to
+`POST /v1/auth/select-account`; its response is the usual login session. The ticket
+expires after five minutes and is consumed once. A 401 requires fresh sign-in;
+other errors can be retried. Selection revalidates the account and preserves its
+existing permissions without merging independent identities. Already linked
+identities still sign in directly with their existing project choices.
+
+Selection tickets, like existing Google OAuth tickets, are held in process memory.
+Multi-instance deployments require sticky routing or a shared ticket store; a
+server restart requires fresh sign-in.
 
 An existing user receives a session:
 

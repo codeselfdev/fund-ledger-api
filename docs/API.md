@@ -71,10 +71,11 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 | PATCH | `/v1/memberships/:id` | owner, admin | Change a project role or activate/deactivate the membership |
 | GET | `/v1/auth/google` | public | Start Google OAuth. Query: `intent` (`login` or `signup`), `redirect_uri`, optional `tenant_slug`. Google returns to `/v1/auth/google/callback`. |
 | GET | `/v1/auth/google/callback` | public | Google redirect target. Issues a short-lived identity `ticket` (includes ID token) and redirects to the app. |
-| POST | `/v1/auth/google/complete` | public | Exchange `{ ticket }`. Existing Gmail returns `{ kind: session, token, ... }`; unknown Gmail returns `{ kind: signup, signup_needed: true, email, name, ticket, id_token, signupFlow }`. |
+| POST | `/v1/auth/google/complete` | public | Exchange `{ ticket }`. A single account returns `{ kind: session, token, ... }`; multiple accounts return `{ kind: account_selection, ticket, expires_at, accounts }`; unknown Gmail returns `{ kind: signup, signup_needed: true, email, name, ticket, id_token, signupFlow }`. |
 | POST | `/v1/auth/google/signup` | public | Finish Google signup with `{ ticket, org_name, owner_name?, owner_mobile?, project_name?, total_shares? }`; returns token, memberships, onboarding, and subscription state. |
 | POST | `/v1/auth/otp/request` | public | Create one-time login code for registered mobile (legacy fallback) |
-| POST | `/v1/auth/login` | public | Login with `{ id_token }` (Google or Firebase phone) or `{ mobile, otp }`. Google users are matched by email. |
+| POST | `/v1/auth/login` | public | Login with `{ id_token }` (Google or Firebase phone) or `{ mobile, otp }`. Google users are matched by verified email. Multiple independent accounts return `{ kind: account_selection, ticket, expires_at, accounts }` for organization selection after verification. |
+| POST | `/v1/auth/select-account` | verified ticket | Complete organization selection with `{ ticket, account_id }`. Ticket is bound to the verified identity, expires after five minutes, and is consumed once. Returns the selected account session. |
 | POST | `/v1/auth/switch-project` | any | Set active project for current session |
 | GET | `/v1/auth/me` | any | Current user, tenant, active project, roles, linked member, `can_pay_for_members`, onboarding, subscription |
 | POST | `/v1/auth/logout` | any | Revoke current token |

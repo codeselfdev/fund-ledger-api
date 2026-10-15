@@ -95,8 +95,10 @@ test('Google signup uses verified email, not the body email, and still requires 
 test('invalid or unverified Google tokens cannot create an organization',async()=>{
  validToken=false;assert.equal((await request('/onboarding/signup',signup())).status,400);validToken=true;verified=false;assert.equal((await request('/onboarding/signup',signup())).status,400);assert.equal(writes,0);
 });
-test('duplicate organization slug is reported without a new account write',async()=>{
- const res=await request('/onboarding/signup',signup({org_name:'Existing',slug:'existing'}));assert.equal(res.status,409);assert.match(res.body.error,/slug/);assert.equal(writes,0);
+test('duplicate organization slug is allocated an available slug without modifying the existing organization',async()=>{
+ const before=structuredClone(tenants[0]);
+ const res=await request('/onboarding/signup',signup({org_name:'Existing',slug:'existing'}));
+ assert.equal(res.status,201);assert.equal(res.body.data.tenant.slug,'existing-2');assert.deepEqual(tenants[0],before);
 });
 test('Google ticket signup also accepts an existing contact mobile and retains the ticket after input rejection',async()=>{
  const id=await ticket();const complete=await request('/auth/google/complete',{ticket:id});assert.equal(complete.body.data.signup_needed,true);
@@ -111,4 +113,108 @@ test('shared contacts cannot receive email OTPs that authenticate another Google
 test('an older valid email OTP cannot cross into a newly created Google identity by specifying its tenant slug',async()=>{
  const created=await request('/onboarding/signup',signup());assert.equal(created.status,201);
  const res=await request('/auth/login',{mobile,otp:'123456',tenant_slug:created.body.data.tenant.slug});assert.equal(res.status,400);assert.match(res.body.error,/multiple accounts/);assert.equal(res.body.data,undefined);
+});
+
+function addSecondAccount({ linked = false, matchingEmail = true } = {}) {
+ email = 'EXISTING@example.com';
+ tenants.push({id:'second-tenant',slug:'second-org',name:'Second organization',contact:null});
+ users.push({id:'second-user',tenantId:'second-tenant',name:'Second Account',mobile:'+8801711000010',email:matchingEmail?'existing@example.com':'other@example.com',isActive:true,identityRootId:linked?'existing-user':null});
+ projects.push({id:'second-project',tenantId:'second-tenant',name:'Second project',projectType:'accounting',isActive:true});
+ memberships.push({id:'second-role',tenantId:'second-tenant',projectId:'second-project',userId:'second-user',role:'member',memberId:'second-member',isActive:true});
+}
+function assertSelection(response) {
+ assert.equal(response.status,200);
+ const selection=response.body.data;
+ assert.equal(selection.kind,'account_selection');assert.ok(selection.ticket);assert.ok(Date.parse(selection.expires_at)>Date.now());
+ assert.equal(selection.token,undefined);assert.equal(selection.signup_needed,undefined);
+ assert.deepEqual(selection.accounts.map(account=>account.tenant_id),['existing-tenant','second-tenant']);
+ return selection;
+}
+test('existing Google email with legacy organization accounts gets a picker, then only its selected session',async()=>{
+ addSecondAccount();const before=structuredClone(users);
+ const selection=assertSelection(await request('/auth/login',{id_token:token}));
+ const chosen=await request('/auth/select-account',{ticket:selection.ticket,account_id:'second-user'});
+ assert.equal(chosen.status,200);const session=chosen.body.data;
+ assert.equal(session.user.id,'second-user');assert.equal(session.tenant.id,'second-tenant');
+ assert.equal(verifyAccessToken(session.token).userId,'second-user');assert.equal(verifyAccessToken(session.token).tenantId,'second-tenant');
+ assert.deepEqual(session.memberships.map(row=>row.project_id),['second-project']);assert.equal(session.memberships[0].role,'member');
+ assert.deepEqual(users,before);assert.equal(writes,0);
+ assert.equal((await request('/auth/select-account',{ticket:selection.ticket,account_id:'existing-user'})).status,401);
+});
+test('browser Google OAuth ticket also returns organization choices without requiring another Google sign-in',async()=>{
+ addSecondAccount();const id=await ticket();
+ const selection=assertSelection(await request('/auth/google/complete',{ticket:id}));
+ assert.equal((await request('/auth/google/complete',{ticket:id})).status,401);
+ const chosen=await request('/auth/select-account',{ticket:selection.ticket,account_id:'existing-user'});
+ assert.equal(chosen.status,200);assert.equal(chosen.body.data.user.id,'existing-user');
+ assert.deepEqual(chosen.body.data.memberships.map(row=>row.project_id),['existing-project']);
+});
+test('an organization outside the verified identity is rejected and the user can retry a listed choice',async()=>{
+ addSecondAccount();const selection=assertSelection(await request('/auth/login',{id_token:token}));
+ assert.equal((await request('/auth/select-account',{ticket:selection.ticket,account_id:'foreign-user'})).status,400);
+ assert.equal((await request('/auth/select-account',{ticket:selection.ticket,account_id:'second-user'})).status,200);
+ assert.equal((await request('/auth/select-account',{ticket:'guessed-ticket',account_id:'second-user'})).status,401);
+});
+test('expired selection tickets require a fresh sign-in',async()=>{
+ addSecondAccount();const selection=assertSelection(await request('/auth/login',{id_token:token}));
+ const now=Date.now;try {
+  Date.now=()=>now()+6*60*1000;
+  const res=await request('/auth/select-account',{ticket:selection.ticket,account_id:'second-user'});
+  assert.equal(res.status,401);assert.match(res.body.error,/expired/);
+ } finally {Date.now=now;}
+});
+test('deactivation or changes to identity after verification cannot authorize the selected account',async()=>{
+ for(const change of [{isActive:false},{email:'changed@example.com'},{identityRootId:'other-user'},{tenantId:'other-tenant'},{mobile:'+8801711000999'}]) {
+  addSecondAccount();
+  const selection=assertSelection(await request('/auth/login',{id_token:token}));
+  Object.assign(users.find(row=>row.id==='second-user'),change);
+  assert.equal((await request('/auth/select-account',{ticket:selection.ticket,account_id:'second-user'})).status,401);
+  users=users.filter(row=>row.id!=='second-user');tenants=tenants.filter(row=>row.id!=='second-tenant');projects=projects.filter(row=>row.id!=='second-project');memberships=memberships.filter(row=>row.id!=='second-role');
+ }
+});
+test('already linked organization accounts still sign in directly with their existing project access',async()=>{
+ addSecondAccount({linked:true});const res=await request('/auth/login',{id_token:token});
+ assert.equal(res.status,200);assert.ok(res.body.data.token);assert.equal(res.body.data.kind,undefined);
+ assert.equal(res.body.data.identity_root_id,'existing-user');assert.equal(res.body.data.memberships.length,2);
+});
+test('a different Google email is never offered just because it shares a contact number',async()=>{
+ addSecondAccount({matchingEmail:false});users[1].mobile=mobile;
+ const res=await request('/auth/login',{id_token:token});
+ assert.equal(res.status,200);assert.ok(res.body.data.token);assert.equal(res.body.data.user.id,'existing-user');
+ assert.equal(res.body.data.memberships.length,1);
+});
+test('invalid Google verification cannot reveal organization choices',async()=>{
+ addSecondAccount();validToken=false;
+ assert.equal((await request('/auth/login',{id_token:token})).status,401);
+});
+test('concurrent choices cannot reuse the selection ticket',async()=>{
+ addSecondAccount();const selection=assertSelection(await request('/auth/login',{id_token:token}));
+ const replies=await Promise.all(['existing-user','second-user'].map(account_id=>request('/auth/select-account',{ticket:selection.ticket,account_id})));
+ assert.deepEqual(replies.map(row=>row.status).sort(),[200,401]);
+});
+
+test('verified email OTP sign-in can choose among accounts with the same email',async()=>{
+ addSecondAccount();users[1].mobile=mobile;
+ const selection=assertSelection(await request('/auth/login',{mobile,otp:'123456'}));
+ const chosen=await request('/auth/select-account',{ticket:selection.ticket,account_id:'second-user'});
+ assert.equal(chosen.status,200);assert.equal(chosen.body.data.user.id,'second-user');
+});
+test('multiple accounts in the same organization remain individually selectable',async()=>{
+ addSecondAccount();users[1].tenantId='existing-tenant';memberships[1].tenantId='existing-tenant';projects[1].tenantId='existing-tenant';
+ const res=await request('/auth/login',{id_token:token});assert.equal(res.status,200);
+ assert.equal(res.body.data.accounts.length,2);assert.equal(new Set(res.body.data.accounts.map(row=>row.account_id)).size,2);
+ const chosen=await request('/auth/select-account',{ticket:res.body.data.ticket,account_id:'second-user'});
+ assert.equal(chosen.status,200);assert.equal(chosen.body.data.user.id,'second-user');assert.deepEqual(chosen.body.data.memberships.map(row=>row.project_id),['second-project']);
+});
+test('a selected account with no active projects still gets its own session',async()=>{
+ addSecondAccount();memberships=memberships.filter(row=>row.userId!=='second-user');
+ const selection=assertSelection(await request('/auth/login',{id_token:token}));
+ const chosen=await request('/auth/select-account',{ticket:selection.ticket,account_id:'second-user'});
+ assert.equal(chosen.status,200);assert.equal(chosen.body.data.active_project_id,null);assert.deepEqual(chosen.body.data.memberships,[]);
+});
+
+test('a legacy organization hint still signs in directly when it resolves to one verified account',async()=>{
+ addSecondAccount();
+ const res=await request('/auth/login',{id_token:token,tenant_slug:'second-org'});
+ assert.equal(res.status,200);assert.equal(res.body.data.user.id,'second-user');assert.ok(res.body.data.token);
 });

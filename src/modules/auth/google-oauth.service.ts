@@ -17,6 +17,8 @@ import {
   type LoginSessionPayload
 } from "./auth.service.js";
 
+import { createAccountSelection, type AccountSelectionPayload } from "./account-selection.service.js";
+
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const IDENTITY_TICKET_TTL_MS = 30 * 60 * 1000;
@@ -36,6 +38,7 @@ export type GoogleIdentity = {
 };
 
 export type GoogleCompleteResult =
+  | AccountSelectionPayload
   | ({ kind: "session" } & LoginSessionPayload)
   | {
       kind: "signup";
@@ -272,8 +275,10 @@ export async function resolveGoogleAuthTicket(ticket: string): Promise<GoogleCom
   }
 
   const users = await findActiveUsersByEmail(row.identity.email, row.tenantSlug);
-  if (users.length > 1 && !row.tenantSlug) {
-    throw badRequest("tenant_slug is required when this Google account belongs to multiple tenants");
+  if (users.length > 1) {
+    const selection = createAccountSelection(users);
+    tickets.delete(ticket);
+    return selection;
   }
   const user = users[0];
   if (user) {

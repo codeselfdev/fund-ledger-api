@@ -18,6 +18,8 @@ import { summarizeOnboardingForClient } from "../../core/onboarding/onboarding.s
 import { hasDelegatedPayerAccess } from "../../core/security/deposit-delegate.service.js";
 import { summarizeProjectMemberships } from "../../core/security/project-access.js";
 
+import { completeAccountSelection, createAccountSelection } from "./account-selection.service.js";
+
 const router = Router();
 
 function isEmailOtpAmbiguous(users: Array<{ id: string; email: string | null }>) {
@@ -42,6 +44,11 @@ const loginSchema = z
 
 const switchProjectSchema = z.object({
   project_id: z.string().min(1)
+});
+
+const accountSelectionSchema = z.object({
+  ticket: z.string().min(8),
+  account_id: z.string().min(1)
 });
 
 const googleCompleteSchema = z.object({
@@ -76,6 +83,16 @@ router.get("/google/callback", asyncHandler(async (req, res) => {
 router.post("/google/complete", validateBody(googleCompleteSchema), asyncHandler(async (req, res) => {
   const body = req.body as z.infer<typeof googleCompleteSchema>;
   return ok(res, await resolveGoogleAuthTicket(body.ticket));
+}));
+
+router.post("/select-account", validateBody(accountSelectionSchema), asyncHandler(async (req, res) => {
+  const body = req.body as z.infer<typeof accountSelectionSchema>;
+  const payload = await completeAccountSelection(body.ticket, body.account_id);
+  await writeAudit({
+    tenantId: payload.tenant.id, projectId: payload.active_project_id, actorUserId: payload.user.id,
+    action: "auth.login", entityType: "session", after: { user_id: payload.user.id }
+  });
+  return ok(res, payload);
 }));
 
 router.post("/google/signup", validateBody(googleSignupSchema), asyncHandler(async (req, res) => {
@@ -171,8 +188,8 @@ router.post("/login", validateBody(loginSchema), asyncHandler(async (req, res) =
   }
 
   if (users.length === 0) throw unauthorized("Invalid login");
-  if (users.length > 1 && !body.tenant_slug) {
-    throw badRequest("tenant_slug is required when this login belongs to multiple tenants");
+  if (users.length > 1) {
+    return ok(res, createAccountSelection(users, body.project_id));
   }
 
   const user = users[0];
