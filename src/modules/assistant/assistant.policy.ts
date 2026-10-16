@@ -8,6 +8,13 @@ export const CHANNELS: AssistantChannel[] = ["ai_chat", "whatsapp_bot"];
 export function monthlyPeriod(now = new Date()) {
   return { start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)), end: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)) };
 }
+export function allowancePeriod(contact: unknown, now = new Date()) {
+  const period = monthlyPeriod(now);
+  const reset = (contact as { subscription?: { quota_reset_at?: string } } | null)?.subscription?.quota_reset_at;
+  const date = reset ? new Date(reset) : null;
+  if (date && date > period.start && date <= now) period.start = date;
+  return period;
+}
 export function featureLimit(channel: AssistantChannel) {
   const configured = Number(process.env[channel === "ai_chat" ? "BUSINESS_AI_REPLIES_PER_MONTH" : "BUSINESS_WHATSAPP_REPLIES_PER_MONTH"] ?? 1000);
   return Number.isSafeInteger(configured) && configured > 0 ? configured : 1000;

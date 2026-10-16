@@ -1,0 +1,57 @@
+import { prisma } from "../../core/prisma/client.js";
+import { Prisma } from "@prisma/client";
+import { evaluateSubscription, getStoredSubscription } from "../../core/subscription/subscription.service.js";
+import { packageId } from "../../core/subscription/packages.js";
+import { invoicesFromContact } from "../subscription/billing.service.js";
+
+const counters: Record<string, [string, Record<string, unknown>]> = {
+  projects: ["project", {}], members: ["member", {}], users: ["user", {}], expenses: ["expense", {}],
+  income_rows: ["accountTransaction", { referenceType: "income", direction: "money_in" }], fixed_assets: ["fixedAsset", {}], deposits: ["deposit", {}],
+  notices: ["projectNotice", {}], polls: ["poll", {}], votes: ["pollVote", {}], events: ["projectEvent", {}],
+  notification_campaigns: ["notificationCampaign", {}], inbox_notifications: ["notification", {}],
+  bank_accounts: ["account", { type: "bank" }], cash_accounts: ["account", { type: "cash" }],
+  documents: ["upload", { deletedAt: null }], retained_deleted_documents: ["upload", { deletedAt: { not: null } }],
+  receipt_attachments: ["upload", { deletedAt: null, purpose: "payment_proof" }],
+  profile_photos: ["upload", { deletedAt: null, purpose: { startsWith: "member_photo:" } }],
+  logos: ["upload", { deletedAt: null, purpose: "project_logo" }],
+  other_documents: ["upload", { deletedAt: null, OR: [{ purpose: null }, { NOT: { OR: [{ purpose: "payment_proof" }, { purpose: "project_logo" }, { purpose: { startsWith: "member_photo:" } }] } }] }],
+  report_exports: ["reportExport", {}], receipts: ["receipt", {}],
+  support_tickets: ["supportTicket", {}], support_screenshots: ["supportAttachment", {}],
+  app_installations_seen: ["appInstallation", { platform: { in: ["android", "ios"] } }], web_installations_seen: ["appInstallation", { platform: "web" }],
+};
+type CountModel = { count(args: { where: Record<string, unknown> }): Promise<number>; groupBy(args: { by: string[]; where: Record<string, unknown>; _count: true }): Promise<{ tenantId: string; _count: number }[]> };
+const models = prisma as unknown as Record<string, CountModel>;
+export async function overallUsage() {
+  const counts = Object.fromEntries(await Promise.all(Object.entries(counters).map(async ([key, [model, where]]) => [key, await models[model]!.count({ where })])));
+  const [tenants, deliveries, storage] = await Promise.all([prisma.tenant.count(), prisma.notificationDelivery.groupBy({ by: ["channel", "status"], _count: true }), prisma.upload.aggregate({ _sum: { size: true }, where: { deletedAt: null } })]);
+  return { generated_at: new Date().toISOString(), tenants, counts, notifications: deliveries.map(row => ({ channel: row.channel, status: row.status, count: row._count })), active_document_bytes: storage._sum.size ?? 0 };
+}
+export async function tenantSummaries(offset: number, search?: string) {
+  const where = search ? { OR: [{ name: { contains: search, mode: "insensitive" as const } }, { slug: { contains: search, mode: "insensitive" as const } }] } : {};
+  const tenants = await prisma.tenant.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: offset, take: 51 });
+  return { tenants: await summariesFor(tenants.slice(0, 50)), next_offset: tenants.length > 50 ? offset + 50 : null };
+}
+export async function summariesFor(tenants: Awaited<ReturnType<typeof prisma.tenant.findMany>>) {
+  if (!tenants.length) return [];
+  const ids = tenants.map(t => t.id), scope = { tenantId: { in: ids } };
+  const usage: Record<string,{tenantId:string;_count:number}[]> = Object.fromEntries(await Promise.all(Object.entries(counters).map(async ([key, [model, where]]) => [key, await models[model]!.groupBy({ by: ["tenantId"], where: { ...where, ...scope }, _count: true })])));
+  const [seen, paid, storage, sent] = await Promise.all([
+    prisma.appInstallation.groupBy({ by: ["tenantId"], where: { ...scope, platform: { in: ["android", "ios"] } }, _min: { firstSeenAt: true }, _max: { lastSeenAt: true } }),
+    prisma.platformPayment.groupBy({ by: ["tenantId"], where: scope, _max: { paidAt: true } }),
+    prisma.upload.groupBy({ by: ["tenantId"], where: { ...scope, deletedAt: null }, _sum: { size: true } }),
+    prisma.$queryRaw<{ tenant_id: string; channel: string; count: bigint }[]>`SELECT c.tenant_id, d.channel, count(*) FROM notification_deliveries d JOIN notification_campaigns c ON c.id=d.campaign_id WHERE c.tenant_id IN (${Prisma.join(ids)}) AND d.status='sent' GROUP BY c.tenant_id,d.channel`,
+  ]);
+  return tenants.map(tenant => {
+    const subscription = getStoredSubscription(tenant.contact), app = seen.find(s => s.tenantId === tenant.id);
+    const dates = [paid.find(p => p.tenantId === tenant.id)?._max.paidAt?.toISOString(), ...invoicesFromContact(tenant.contact).filter(i => i.status === "approved").map(i => i.approved_at)].filter((d): d is string => !!d).sort();
+    return { id: tenant.id, name: tenant.name, slug: tenant.slug, currency: tenant.currency, created_at: tenant.createdAt,
+      package: packageId(tenant.contact), subscription: evaluateSubscription(tenant.contact), trial_expires_at: subscription?.trial_ends_at ?? null,
+      paid_period_expires_at: subscription?.current_period_end_at ?? null, last_payment_at: dates.at(-1) ?? null,
+      install_date: null, first_app_seen_at: app?._min.firstSeenAt ?? null, last_app_seen_at: app?._max.lastSeenAt ?? null,
+      deletion_started_at: tenant.deletionStartedAt,
+      counts: Object.fromEntries(Object.entries(usage).map(([key, rows]) => [key, rows.find(r => r.tenantId === tenant.id)?._count ?? 0])),
+      active_document_bytes: storage.find(s => s.tenantId === tenant.id)?._sum.size ?? 0,
+      sent_notifications: Object.fromEntries(sent.filter(s => s.tenant_id === tenant.id).map(s => [s.channel, Number(s.count)])),
+    };
+  });
+}

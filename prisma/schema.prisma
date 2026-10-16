@@ -168,6 +168,10 @@ enum CallOutcome {
 }
 
 model Tenant {
+  supportTickets SupportTicket[]
+  appInstallations AppInstallation[]
+  platformPayments PlatformPayment[]
+  deletionStartedAt DateTime? @map("deletion_started_at")
   assistantReplies AssistantReply[]
   notificationCampaigns NotificationCampaign[]
   id            String     @id @default(cuid())
@@ -335,6 +339,8 @@ model OnboardingProgress {
 }
 
 model User {
+  supportTickets SupportTicket[]
+  appInstallations AppInstallation[]
   shortcutPreferences ShortcutPreference[]
   notificationCampaigns NotificationCampaign[]
   id           String   @id @default(cuid())
@@ -2071,7 +2077,7 @@ model AssistantReply {
   prompt String
   reply String?
   status String @default("queued")
-  periodStart DateTime @db.Date @map("period_start")
+  periodStart DateTime @map("period_start")
   leaseUntil DateTime? @map("lease_until")
   attempts Int @default(0)
   recipient String?
@@ -2086,4 +2092,120 @@ model AssistantReply {
   @@index([status, leaseUntil])
   @@index([tenantId, projectId, userId, channel, createdAt])
   @@map("assistant_replies")
+}
+
+model SupportTicket {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  requesterId String @map("requester_id")
+  requestKey String @map("request_key")
+  subject String
+  status String @default("open")
+  lastSender String @default("user") @map("last_sender")
+  lastMessageAt DateTime @default(now()) @map("last_message_at")
+  userReadAt DateTime? @map("user_read_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requester User @relation(fields: [requesterId], references: [id], onDelete: Cascade)
+  messages SupportMessage[]
+  @@unique([tenantId, requesterId, requestKey])
+  @@index([tenantId, requesterId, lastMessageAt])
+  @@index([status, lastMessageAt])
+  @@map("support_tickets")
+}
+
+model SupportMessage {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  ticketId String @map("ticket_id")
+  requestKey String @map("request_key")
+  payloadHash String @map("payload_hash")
+  sender String
+  author String
+  body String
+  createdAt DateTime @default(now()) @map("created_at")
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  attachments SupportAttachment[]
+  @@unique([ticketId, requestKey])
+  @@index([tenantId, ticketId, createdAt])
+  @@map("support_messages")
+}
+
+model SupportAttachment {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  messageId String @map("message_id")
+  fileName String @map("file_name")
+  mimeType String @map("mime_type")
+  size Int
+  storageKey String @unique @map("storage_key")
+  createdAt DateTime @default(now()) @map("created_at")
+  message SupportMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
+  @@map("support_attachments")
+}
+
+model AppInstallation {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  userId String @map("user_id")
+  installationId String @map("installation_id")
+  platform String
+  appVersion String? @map("app_version")
+  firstSeenAt DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, userId, installationId])
+  @@index([tenantId, firstSeenAt])
+  @@map("app_installations")
+}
+
+model PlatformPayment {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  requestKey String @map("request_key")
+  payloadHash String @map("payload_hash")
+  package String
+  billingCycle String @map("billing_cycle")
+  amount Int
+  currency String
+  method String
+  reference String
+  notes String?
+  paidAt DateTime @map("paid_at")
+  periodEndsAt DateTime @map("period_ends_at")
+  actor String
+  createdAt DateTime @default(now()) @map("created_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, requestKey])
+  @@index([tenantId, paidAt])
+  @@map("platform_payments")
+}
+
+// Operator audit survives organization deletion; metadata must omit contact data.
+model InternalAudit {
+  id String @id @default(cuid())
+  tenantId String? @map("tenant_id")
+  actor String
+  action String
+  metadata Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  @@index([tenantId, createdAt])
+  @@map("internal_audit")
+}
+
+model TenantDeletionJob {
+  id String @id @default(cuid())
+  tenantId String @unique @map("tenant_id")
+  actor String
+  status String @default("pending")
+  objectsDeleted Int @default(0) @map("objects_deleted")
+  leaseUntil DateTime? @map("lease_until")
+  error String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  completedAt DateTime? @map("completed_at")
+  @@map("tenant_deletion_jobs")
 }

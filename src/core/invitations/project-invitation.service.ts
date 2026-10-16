@@ -135,7 +135,7 @@ export async function sendProjectInvitationEmail(input: ProjectInvitationEmailIn
 
   return sendMail({
     to: input.to,
-    subject: `Join ${input.projectName} on FundLedger`,
+    subject: `Join ${input.projectName} on Fund Nesta`,
     text: [
       `Hi ${input.inviteeName},`,
       "",
@@ -153,7 +153,7 @@ export async function sendProjectInvitationEmail(input: ProjectInvitationEmailIn
     html: `
       <p>Hi ${safeName},</p>
       <p>You have been added to <strong>${safeProjectName}</strong> as <strong>${safeRole}</strong>.</p>
-      <p><a href="${safeDownloadLink}">Download or open the FundLedger app</a></p>
+      <p><a href="${safeDownloadLink}">Download or open the Fund Nesta app</a></p>
       <p><a href="${safeInvitationLink}">Open your invitation</a></p>
       <p>Sign in options:</p>
       <ul>

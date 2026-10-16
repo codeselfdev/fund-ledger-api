@@ -1,5 +1,5 @@
-import { DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
+import { mkdir, readFile, unlink, writeFile, readdir, lstat } from "node:fs/promises";
 import path from "node:path";
 import { env } from "../../config/env.js";
 
@@ -227,4 +227,32 @@ export async function purgeObject(storageKey: string) {
   }
   const config = getR2Config();
   await getR2Client().send(new DeleteObjectCommand({ Bucket: config.bucket, Key: storageKey }), { abortSignal: AbortSignal.timeout(10000) });
+}
+
+/** Only a validated organization prefix is accepted; drain bounded batches, including orphan objects. */
+export async function tenantObjectKeys(tenantId: string, limit = 25): Promise<string[]> {
+  if (!/^[a-zA-Z0-9_-]+$/.test(tenantId)) throw new Error("Invalid organization storage prefix");
+  const prefix = `${tenantId}/`;
+  if (getStorageMode() === "r2") {
+    const config = getR2Config();
+    const page = await getR2Client().send(new ListObjectsV2Command({ Bucket: config.bucket, Prefix: prefix, MaxKeys: Math.min(limit,1000) }), { abortSignal: AbortSignal.timeout(10000) });
+    return (page.Contents ?? []).map(object => object.Key!).filter(key => typeof key === "string" && key.startsWith(prefix));
+  }
+  const keys: string[] = [];
+  const walk = async (directory: string) => {
+    let entries;
+    try {
+      const folder=resolveLocalUploadPath(directory),info=await lstat(folder);
+      if(info.isSymbolicLink())throw new Error("Organization storage contains an unsupported symbolic link");
+      entries = await readdir(folder, { withFileTypes: true });
+    }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return; throw error; }
+    for (const entry of entries) {
+      if (keys.length >= limit) break;
+      if (entry.isDirectory()) await walk(`${directory}/${entry.name}`);
+      else if (entry.isFile()) keys.push(`${directory}/${entry.name}`);
+      else throw new Error("Organization storage contains an unsupported symbolic link");
+    }
+  };
+  await walk(tenantId); return keys;
 }

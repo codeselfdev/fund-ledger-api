@@ -1,0 +1,841 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Fund Nesta Internal Administration",
+    "version": "1.0.0",
+    "description": "Server-to-server APIs. Never expose INTERNAL_API_KEY in browser/mobile code. See INTERNAL_ADMIN_API.md for response definitions and guarded cleanup semantics."
+  },
+  "servers": [
+    {
+      "url": "https://api-fundnesta.appnesta.com/v1/internal"
+    }
+  ],
+  "security": [
+    {
+      "InternalApiKey": []
+    }
+  ],
+  "paths": {
+    "/summary": {
+      "get": {
+        "summary": "Global platform usage",
+        "operationId": "getSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        }
+      }
+    },
+    "/tenants": {
+      "get": {
+        "summary": "Organization summaries",
+        "operationId": "getTenants",
+        "parameters": [
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        }
+      }
+    },
+    "/tenants/{id}": {
+      "get": {
+        "summary": "Organization summary, quotas and allowances",
+        "operationId": "getTenantsId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        }
+      }
+    },
+    "/tenants/{id}/payments": {
+      "get": {
+        "summary": "Manual payment history",
+        "operationId": "getTenantsIdPayments",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        }
+      },
+      "post": {
+        "summary": "Record payment, activate plan and reset monthly counters",
+        "operationId": "postTenantsIdPayments",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Internal-Actor",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualPayment"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tenants/{id}/export.xlsx": {
+      "get": {
+        "summary": "Organization financial workbook",
+        "operationId": "getTenantsIdExportXlsx",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Internal-Actor",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Binary file",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        }
+      }
+    },
+    "/tenants/{id}/cleanup": {
+      "post": {
+        "summary": "Preview by default, or confirm and freeze an eligible organization",
+        "operationId": "postTenantsIdCleanup",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Internal-Actor",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Cleanup"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cleanup-jobs/{id}": {
+      "get": {
+        "summary": "Inspect cleanup job",
+        "operationId": "getCleanup-JobsId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        }
+      }
+    },
+    "/cleanup-jobs/{id}/run": {
+      "post": {
+        "summary": "Run one bounded cleanup batch; repeat until completed",
+        "operationId": "postCleanup-JobsIdRun",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Internal-Actor",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        }
+      }
+    },
+    "/support/tickets": {
+      "get": {
+        "summary": "Support conversations across organizations",
+        "operationId": "getSupportTickets",
+        "parameters": [
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "resolved"
+              ]
+            }
+          },
+          {
+            "name": "tenant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        }
+      }
+    },
+    "/support/tickets/{id}": {
+      "get": {
+        "summary": "Support conversation and message page",
+        "operationId": "getSupportTicketsId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        }
+      }
+    },
+    "/support/tickets/{id}/messages": {
+      "post": {
+        "summary": "Reply as Fund Nesta team",
+        "operationId": "postSupportTicketsIdMessages",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Internal-Actor",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/SupportMessage"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/support/tickets/{id}/status": {
+      "patch": {
+        "summary": "Resolve or reopen support conversation",
+        "operationId": "patchSupportTicketsIdStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Internal-Actor",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Status"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/support/attachments/{id}": {
+      "get": {
+        "summary": "Read private screenshot",
+        "operationId": "getSupportAttachmentsId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Binary file",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "InternalApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Internal-Api-Key"
+      }
+    },
+    "schemas": {
+      "ManualPayment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "request_key",
+          "package",
+          "billing_cycle",
+          "amount",
+          "method",
+          "reference",
+          "paid_at"
+        ],
+        "properties": {
+          "request_key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "package": {
+            "type": "string",
+            "enum": [
+              "starter",
+              "business",
+              "custom"
+            ]
+          },
+          "billing_cycle": {
+            "type": "string",
+            "enum": [
+              "monthly",
+              "yearly"
+            ]
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "default": "BDT"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "cash",
+              "bank",
+              "bkash",
+              "nagad",
+              "card",
+              "other"
+            ]
+          },
+          "reference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "paid_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        }
+      },
+      "SupportMessage": {
+        "type": "object",
+        "required": [
+          "request_key"
+        ],
+        "properties": {
+          "request_key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 10000,
+            "description": "Text or at least one file required"
+          },
+          "files": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "string",
+              "format": "binary"
+            }
+          }
+        }
+      },
+      "Status": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "resolved"
+            ]
+          }
+        }
+      },
+      "Cleanup": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean"
+          },
+          "preview_token": {
+            "type": "string"
+          },
+          "confirmation": {
+            "type": "string",
+            "description": "Exact DELETE <organization-slug> string from dry run"
+          }
+        }
+      },
+      "Envelope": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  }
+}

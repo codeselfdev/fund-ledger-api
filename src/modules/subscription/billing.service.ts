@@ -25,6 +25,7 @@ async function mutateBilling(tenantId: string, action: string, actorUserId: stri
     await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR NO KEY UPDATE`;
     const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant) throw notFound("Organization not found");
+    if (tenant.deletionStartedAt) throw conflict("Organization cleanup has started");
     const contact = record(tenant.contact);
     const invoices = structuredClone(invoicesFromContact(contact));
     const result = await mutate(contact, invoices, tx);

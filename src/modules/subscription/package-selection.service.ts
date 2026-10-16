@@ -9,6 +9,7 @@ import { invoicesFromContact, type SubscriptionInvoice } from "./billing.service
 export async function selectPackage(tenantId: string, userId: string, selected: "starter" | "business", cycle: BillingCycle) {
   return prisma.$transaction(async tx => {
     const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+    if (tenant.deletionStartedAt) throw conflict("Organization cleanup has started");
     const current = packageId(tenant.contact);
     if (current === "custom" || (current === "business" && selected === "starter")) throw badRequest("Contact support to change to a smaller package.");
     const contact = tenant.contact && typeof tenant.contact === "object" && !Array.isArray(tenant.contact) ? tenant.contact as Record<string, unknown> : {};

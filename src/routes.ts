@@ -1,4 +1,7 @@
 import { shortcutsRouter } from './modules/shortcuts/shortcuts.routes.js';
+import { memberInvitationRouter } from './modules/members/member-invitation.routes.js';
+import { supportRouter } from './modules/support/support.routes.js';
+import { internalRouter } from './modules/internal/internal.routes.js';
 import { fixedAssetsRouter } from './modules/fixed-assets/fixed-assets.routes.js';
 import { reportsRouter } from "./modules/reports/report.routes.js";
 import { integrationsRouter, telegramWebhookRouter } from "./modules/integrations/integrations.routes.js";
@@ -49,6 +52,8 @@ import { followupsRouter } from "./modules/follow-ups/followups.routes.js";
 import { assistantRouter } from "./modules/assistant/assistant.routes.js";
 
 export function registerRoutes(app: Express) {
+  app.use("/v1/internal", internalRouter);
+  app.use("/v1/support", supportRouter);
   app.use("/v1/platform/billing", platformBillingRouter);
   app.use("/v1/tenants", tenantsRouter);
   app.use("/v1/auth", accountDeletionRouter);
@@ -65,6 +70,7 @@ export function registerRoutes(app: Express) {
   app.use("/v1/integrations", integrationsRouter);
   app.use("/v1/invitations", invitationsRouter);
   app.use("/v1/members", memberProfileRouter);
+  app.use("/v1/members", memberInvitationRouter);
   app.use("/v1/members", membersRouter);
   app.use("/v1", depositDelegatesRouter);
   app.use("/v1", memberDocumentsRouter);

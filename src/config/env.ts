@@ -47,6 +47,7 @@ function resolveUploadStorage() {
 }
 
 export const env = {
+  internalApiKey: optional("INTERNAL_API_KEY"),
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? 4000),
   databaseUrl: required("DATABASE_URL"),

@@ -1,21 +1,22 @@
 import { createHash } from "node:crypto";
 import { prisma } from "../../core/prisma/client.js";
 import { ApiError, conflict, forbidden } from "../../core/http/api-error.js";
-import { aiConfigured, botConfigured, CHANNELS, featureLimit, hasBusinessAssistant, monthlyPeriod, type AssistantChannel } from "./assistant.policy.js";
+import { aiConfigured, botConfigured, CHANNELS, featureLimit, hasBusinessAssistant, allowancePeriod, type AssistantChannel } from "./assistant.policy.js";
 import { assistantContext } from "./assistant.context.js";
 import { generateAssistantReply } from "./assistant.provider.js";
 
 export async function assistantStatus(tenantId: string, now = new Date()) {
   const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { contact: true } });
-  const period = monthlyPeriod(now), enabled = hasBusinessAssistant(tenant.contact, now);
+  const period = allowancePeriod(tenant.contact, now), enabled = hasBusinessAssistant(tenant.contact, now);
   const usage = await prisma.assistantReply.groupBy({ by: ["channel"], where: { tenantId, periodStart: period.start, status: { not: "failed" } }, _count: true });
   return { resets_at: period.end.toISOString(), features: Object.fromEntries(CHANNELS.map(channel => [channel, { enabled, configured: channel === "ai_chat" ? aiConfigured() : botConfigured(), used: usage.find(row => row.channel === channel)?._count ?? 0, limit: featureLimit(channel) }])) };
 }
 export async function reserveReply(input: { tenantId: string; projectId: string; userId: string; channel: AssistantChannel; requestKey: string; prompt: string; recipient?: string; connectionId?: string }) {
-  const now = new Date(), period = monthlyPeriod(now), hash = createHash("sha256").update(input.prompt).digest("hex");
+  const now = new Date(), hash = createHash("sha256").update(input.prompt).digest("hex");
   return prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${input.tenantId} FOR NO KEY UPDATE`;
     const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: input.tenantId } });
+    const period = allowancePeriod(tenant.contact, now);
     if (!hasBusinessAssistant(tenant.contact)) throw new ApiError(403, "BUSINESS_REQUIRED", "AI Chat and WhatsApp Bot require an active paid Business package.");
     const key = { tenantId: input.tenantId, channel: input.channel, requestKey: input.requestKey };
     const existing = await tx.assistantReply.findUnique({ where: { tenantId_channel_requestKey: key } });

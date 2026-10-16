@@ -9,11 +9,12 @@ export const requireActiveSubscription: RequestHandler = async (req, _res, next)
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: req.auth.tenantId },
-      select: { contact: true }
+      select: { contact: true, deletionStartedAt: true }
     });
     if (!tenant) {
       return next(new ApiError(403, "FORBIDDEN", "Tenant not found"));
     }
+    if (tenant.deletionStartedAt) return next(new ApiError(403, "ORGANIZATION_CLEANUP_STARTED", "Organization cleanup has started"));
 
     const subscription = evaluateSubscription(tenant.contact);
     if (!subscription.has_access) {
