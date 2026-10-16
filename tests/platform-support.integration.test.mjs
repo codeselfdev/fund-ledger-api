@@ -114,10 +114,19 @@ test('isolated PostgreSQL: support, invitations, quota resets, exports and compl
      if(relation){const parent=parents.get(relation.type);assert.ok(parent,`${name} requires ${relation.type}`);data[field.name]=parent[relation.relationToFields[relation.relationFromFields.indexOf(field.name)]];continue;}
      data[field.name]=field.isList?[]:field.kind==='enum'?Prisma.dmmf.datamodel.enums.find(e=>e.name===field.type).values[0].name:field.type==='DateTime'?new Date():field.type==='Decimal'?'1':field.type==='Int'||field.type==='Float'?1:field.type==='Boolean'?true:field.type==='Json'?{}:`synthetic-${randomUUID()}`;
     }
-    if(name==='Upload'||name==='SupportAttachment')data.storageKey=`${target.id}/${name}/sample`;
+    // Valid financial fixtures are required when testing against real migrations
+    // (db push omits these CHECK constraints).
+    const values={
+     BillingPlan:{mode:'fixed',amount:100},BillingInvoice:{subtotal:100,discount:0,tax:0,total:100,status:'issued',invoiceDate:new Date('2026-01-01'),dueDate:new Date('2026-02-01')},
+     BillingPayment:{method:'bank'},BillingAssignment:{status:'active'},BillingAdjustment:{kind:'credit_note',status:'pending',invoiceId:parents.get('BillingInvoice')?.id},
+     ConstructionCostHead:{status:'pending'},ConstructionContract:{status:'active'},ConstructionRunningBill:{previousCertified:0,currentCertified:100,cumulativeCertified:100,retention:0,advanceRecovery:0,netPayable:100,status:'pending'},
+     ConstructionSupplierBill:{status:'pending'},ConstructionLaborEntry:{status:'pending'},ConstructionMaterialEntry:{kind:'consume'},ConstructionPayment:{kind:'advance',contractId:parents.get('ConstructionContract')?.id},
+     ConstructionChangeOrder:{status:'pending',budgetChange:1,costHeadId:parents.get('ConstructionCostHead')?.id},FixedAsset:{cost:100,residual:0},ShortcutPreference:{pinned:[]}
+    };Object.assign(data,values[name]??{});
+    if(name==='Upload'||name==='SupportAttachment'||name==='AssistantAttachment')data.storageKey=`${target.id}/${name}/sample`;
     const delegate=prisma[name[0].toLowerCase()+name.slice(1)],row=await delegate.create({data});parents.set(name,row);
    }
-   for(const name of ['Upload','SupportAttachment'])await storeObject({storageKey:parents.get(name).storageKey,buffer:Buffer.from('Synthetic tracked object')});
+   for(const name of ['Upload','SupportAttachment','AssistantAttachment'])await storeObject({storageKey:parents.get(name).storageKey,buffer:Buffer.from('Synthetic tracked object')});
    await storeObject({storageKey:`${target.id}/orphan-file`,buffer:Buffer.from('Synthetic orphan')});
    await storeObject({storageKey:`${foreign.id}/keep-file`,buffer:Buffer.from('Keep this synthetic foreign file')});
    const preview=await cleanupPreview(target.id);assert.equal(preview.eligibility.eligible,true);assert.ok(Object.values(preview.counts).every(n=>n>=1));

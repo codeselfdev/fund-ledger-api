@@ -14,7 +14,7 @@ import { notifyProjectMembers } from "../../core/notifications/notification.serv
 import { createScheduleWithUnitAmount } from "./schedule-creation.service.js";
 import { sendWhatsAppGroupMessage } from "../../core/whatsapp/whatsapp.service.js";
 
-import { scheduleCollectionData, summarizeSchedule, dueRemaining } from "./schedule-summary.service.js";
+import { scheduleCollectionData, summarizeSchedule, dueRemaining, openingScheduleView } from "./schedule-summary.service.js";
 
 const router = Router();
 
@@ -58,13 +58,17 @@ router.get("/", requireProject, requireRoles("any"), validateQuery(scheduleQuery
     orderBy: { createdAt: "desc" }
   }), scheduleCollectionData(auth.tenantId, auth.projectId)]);
 
+  const openingMembers = schedules.some(schedule => schedule.purpose === "previous_installment")
+    ? await prisma.member.findMany({ where: { tenantId: auth.tenantId, projectId: auth.projectId }, select: { id: true, profile: true } }) : [];
   return ok(res, schedules.map((schedule) => {
-    const totalPaid = schedule.dues.reduce((sum, due) => sum + due.paidAmount + due.penaltyPaid, 0);
-    const totalDue = schedule.dues.reduce((sum, due) => sum + due.amount - due.waivedAmount + due.penaltyDue, 0);
+    const dues = collection.dues.filter(d => d.scheduleId === schedule.id);
+    const opening = schedule.purpose === "previous_installment" ? openingScheduleView(dues,openingMembers,collection.pending) : null;
+    const summary = opening?.collection ?? summarizeSchedule(schedule.dues,dues.reduce((sum,d) => sum + (collection.pending.get(d.id)?.amount ?? 0),0));
     return {
       ...schedule,
-      collection: summarizeSchedule(schedule.dues, collection.dues.filter(d => d.scheduleId === schedule.id).reduce((sum, d) => sum + (collection.pending.get(d.id)?.amount ?? 0), 0)),
-      collected_percent: totalDue === 0 ? 0 : Math.round((totalPaid / totalDue) * 100)
+      collection: summary,
+      collected_percent: summary.collected_percent,
+      ...(opening ? { opening_balance: opening.opening_balance } : {})
     };
   }));
 }));
@@ -74,24 +78,30 @@ router.get("/:id/member-summary", requireProject, requireRoles("any"), validateP
   const { id } = req.params as z.infer<typeof idParamSchema>;
   const canManage = auth.roles.some(role => ["owner", "admin", "approver"].includes(role));
   const canInspectPayments = auth.roles.some(role => ["owner", "admin", "approver", "accountant", "auditor"].includes(role));
-  const schedule = await prisma.schedule.findFirst({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId, purpose: "contribution", ...(canManage ? {} : { status: { not: "draft" } }) } });
+  const schedule = await prisma.schedule.findFirst({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId, ...(canManage ? {} : { status: { not: "draft" } }) } });
   if (!schedule) throw notFound("Schedule not found");
   const [collection, members] = await Promise.all([
     scheduleCollectionData(auth.tenantId, auth.projectId),
     prisma.member.findMany({ where: { tenantId: auth.tenantId, projectId: auth.projectId, dues: { some: { scheduleId: id } } },
-      select: { id: true, name: true, mobile: true, shares: true, status: true, profile: true }, orderBy: { createdAt: "desc" } })
+      select: { id: true, mid: true, name: true, mobile: true, shares: true, status: true, profile: true }, orderBy: { createdAt: "desc" } })
   ]);
   const dues = collection.dues.filter(d => d.scheduleId === id);
+  const opening = schedule.purpose === "previous_installment" ? openingScheduleView(dues,members,collection.pending) : null;
+  const openingByMember = new Map(opening?.rows.map(row => [row.due.memberId,row]) ?? []);
   const items = members.flatMap(member => {
     const due = dues.find(d => d.memberId === member.id);
     if (!due) return [];
+    const openingRow = openingByMember.get(member.id);
+    if (opening && !openingRow) return [];
     const pending = collection.pending.get(due.id);
     const outstanding = dueRemaining(due);
     const photo = member.profile && typeof member.profile === "object" && !Array.isArray(member.profile) ? member.profile.photo_file_id : null;
     return [{ member: { ...member, mobile: canInspectPayments ? member.mobile : "", profile: typeof photo === "string" ? { photo_file_id: photo } : null }, due: { ...due, outstanding }, pending_amount: pending?.amount ?? 0,
-      pending_deposit_ids: canInspectPayments ? pending?.depositIds ?? [] : [], payment_state: outstanding === 0 ? "paid" : pending?.amount ? "pending" : "unpaid" }];
+      pending_deposit_ids: canInspectPayments ? pending?.depositIds ?? [] : [], payment_state: outstanding === 0 ? "paid" : pending?.amount ? "pending" : "unpaid",
+      ...(openingRow ? { opening_balance: openingRow.opening_balance } : {}) }];
   });
-  return ok(res, { schedule, collection: summarizeSchedule(dues, items.reduce((sum, row) => sum + row.pending_amount, 0)), items });
+  return ok(res, { schedule, collection: opening?.collection ?? summarizeSchedule(dues, items.reduce((sum, row) => sum + row.pending_amount, 0)), items,
+    ...(opening ? { opening_balance: opening.opening_balance } : {}) });
 }));
 
 router.post("/", requireProject, requireRoles("approver", "admin"), validateBody(scheduleBodySchema), asyncHandler(async (req, res) => {

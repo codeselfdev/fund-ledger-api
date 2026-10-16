@@ -13,7 +13,9 @@ import { prisma } from "./core/prisma/client.js";
 import { verifyObjectStorage } from "./core/storage/object-storage.service.js";
 
 import { startAssistantWorker, stopAssistantWorker } from "./modules/assistant/assistant.worker.js";
+import { startPlatformAlerts, stopPlatformAlerts } from "./modules/internal/alerts.service.js";
 const app = createApp();
+startPlatformAlerts();
 startAssistantWorker();
 startRecurringSchedulesCron();
 startDocumentRetentionCron();
@@ -33,6 +35,7 @@ const server = app.listen(env.port, () => {
 });
 
 async function shutdown() {
+  stopPlatformAlerts();
   stopAssistantWorker();
   stopRecurringSchedulesCron();
   stopDocumentRetentionCron();

@@ -1,3 +1,4 @@
+import { purgeObject } from "../../core/storage/object-storage.service.js";
 import { prisma } from "../../core/prisma/client.js";
 import { sendWhatsAppBotReply } from "../../core/whatsapp/whatsapp.service.js";
 import { assistantContext } from "./assistant.context.js";
@@ -6,7 +7,8 @@ import { processReply } from "./assistant.service.js";
 let timer: ReturnType<typeof setInterval> | null = null, running = false;
 export async function runAssistantJobs() {
   const now = new Date();
-  await prisma.assistantReply.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - 90 * 86400000) } } });
+  const expired=await prisma.assistantReply.findMany({where:{createdAt:{lt:new Date(now.getTime()-90*86400000)}},include:{attachments:true},take:25});
+  for(const row of expired){for(const file of row.attachments)await purgeObject(file.storageKey);await prisma.assistantReply.delete({where:{id:row.id}});}
   if (!botConfigured()) return;
   const rows = await prisma.assistantReply.findMany({ where: { channel: "whatsapp_bot", OR: [{ status: "queued" }, { status: "ready" }, { status: "processing", leaseUntil: { lt: now } }] }, orderBy: { createdAt: "asc" }, take: 10 });
   for (const row of rows) {

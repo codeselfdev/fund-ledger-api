@@ -168,6 +168,7 @@ enum CallOutcome {
 }
 
 model Tenant {
+  platformAlerts PlatformAlert[]
   supportTickets SupportTicket[]
   appInstallations AppInstallation[]
   platformPayments PlatformPayment[]
@@ -2066,6 +2067,7 @@ model ShortcutPreference {
 }
 
 model AssistantReply {
+  attachments AssistantAttachment[]
   id String @id @default(cuid())
   tenantId String @map("tenant_id")
   projectId String @map("project_id")
@@ -2208,4 +2210,42 @@ model TenantDeletionJob {
   updatedAt DateTime @updatedAt @map("updated_at")
   completedAt DateTime? @map("completed_at")
   @@map("tenant_deletion_jobs")
+}
+
+model AssistantAttachment {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  replyId String @map("reply_id")
+  fileName String @map("file_name")
+  mimeType String @map("mime_type")
+  size Int
+  contentHash String @map("content_hash")
+  storageKey String @unique @map("storage_key")
+  reply AssistantReply @relation(fields: [replyId], references: [id], onDelete: Cascade)
+  @@index([tenantId, replyId])
+  @@map("assistant_attachments")
+}
+model PlatformAlert {
+  id String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  kind String
+  userId String? @map("user_id")
+  ticketId String? @map("ticket_id")
+  eventKey String @unique @map("event_key")
+  createdAt DateTime @default(now()) @map("created_at")
+  readAt DateTime? @map("read_at")
+  telegramSentAt DateTime? @map("telegram_sent_at")
+  telegramAttempts Int @default(0) @map("telegram_attempts")
+  telegramNextAttemptAt DateTime @default(now()) @map("telegram_next_attempt_at")
+  telegramLeaseUntil DateTime? @map("telegram_lease_until")
+  emailSentAt DateTime? @map("email_sent_at")
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at")
+  leaseUntil DateTime? @map("lease_until")
+  tenant Tenant @relation(fields:[tenantId],references:[id],onDelete:Cascade)
+  @@index([createdAt,id])
+  @@index([emailSentAt,nextAttemptAt])
+  @@index([telegramSentAt,telegramNextAttemptAt])
+  @@index([tenantId,createdAt])
+  @@map("platform_alerts")
 }

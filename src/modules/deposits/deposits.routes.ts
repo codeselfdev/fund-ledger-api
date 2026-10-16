@@ -26,6 +26,12 @@ import { depositReview } from "./deposit-allocation-review.js";
 const router = Router();
 const MEMBER_RECEIPT_REQUIRED_MESSAGE = "Please upload a receipt before submitting this payment";
 
+function requiresMemberReceipt(roles: string[]) {
+  // A shareholder can also record payments in a staff/management role.
+  // Match the existing staff submission permissions even for mixed-role users.
+  return roles.includes("member") && !roles.some(role => ["owner", "admin", "accountant", "cashier"].includes(role));
+}
+
 async function announceConfirmedPayment(input: {
   tenantId: string;
   projectId: string;
@@ -379,7 +385,7 @@ router.post("/", requireProject, requireRoles("member", "cashier", "accountant",
   if (!(await canSubmitForMember(auth, body.member_id))) {
     throw forbidden("You are not allowed to submit deposit for this member");
   }
-  if (auth.roles.includes("member") && !body.proof_file_id) {
+  if (requiresMemberReceipt(auth.roles) && !body.proof_file_id) {
     throw badRequest(MEMBER_RECEIPT_REQUIRED_MESSAGE);
   }
 
@@ -476,7 +482,7 @@ router.post("/", requireProject, requireRoles("member", "cashier", "accountant",
       roles: ["accountant"],
       type: "deposit.submitted",
       title: "Deposit awaiting accountant review",
-      body: "A member payment was submitted with a receipt.",
+      body: body.proof_file_id ? "A member payment was submitted with a receipt." : "A member payment was submitted.",
       entityType: "deposit",
       entityId: deposit.id
     });
@@ -493,7 +499,7 @@ router.post("/advance", requireProject, requireRoles("member", "cashier", "accou
   if (!(await canSubmitForMember(auth, body.member_id))) {
     throw forbidden("You are not allowed to submit deposit for this member");
   }
-  if (auth.roles.includes("member") && !body.proof_file_id) {
+  if (requiresMemberReceipt(auth.roles) && !body.proof_file_id) {
     throw badRequest(MEMBER_RECEIPT_REQUIRED_MESSAGE);
   }
 

@@ -11,7 +11,7 @@ import { readObject, StorageObjectNotFoundError } from "../../core/storage/objec
 import { internalActor } from "../../core/security/internal-api-key.middleware.js";
 import { listTickets, sendSupport, supportTicket, ticketMessages, type SupportOwner } from "./support.service.js";
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5_000_000, files: 3, fields: 4, fieldSize: 40000 } }).array("files", 3);
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5_000_001, files: 3, fields: 4, fieldSize: 40000 } }).array("files", 3);
 const listSchema = z.object({ offset: z.coerce.number().int().min(0).max(100000).default(0), status: z.enum(["open", "resolved"]).optional(), tenant_id: z.string().max(100).optional() });
 const messageSchema = z.object({ request_key: z.string().uuid(), body: z.string().trim().max(10000).default(""), subject: z.string().trim().min(3).max(160).optional() }).strict();
 const ownerOf = (req: Request): SupportOwner => ({ tenantId: req.auth!.tenantId, userId: req.auth!.userId });
@@ -25,6 +25,7 @@ export function buildSupportRouter(internal = false) {
   router.post("/tickets/:id/read", asyncHandler(async (req, res) => {
     const ticket = await supportTicket(String(req.params.id), owner(req));
     if (!internal) await prisma.supportTicket.update({ where: { id: ticket.id }, data: { userReadAt: new Date() } });
+    else { internalActor(req); await prisma.platformAlert.updateMany({where:{ticketId:ticket.id,tenantId:ticket.tenantId,readAt:null},data:{readAt:new Date()}}); }
     return ok(res, { read: true });
   }));
   router.patch("/tickets/:id/status", asyncHandler(async (req, res) => {

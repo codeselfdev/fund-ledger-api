@@ -89,6 +89,63 @@ export function summarizeSchedule(dues: Balance[], pending: number) {
   };
 }
 
+type OpeningDue = Balance & { id: string; memberId: string };
+export interface OpeningBalance {
+  original_due: number;
+  historical_paid: number;
+  recovered: number;
+  as_of_date?: string;
+}
+/** Imported paid history stays in the ledger, but is not money to collect again. */
+export function openingDueView<T extends OpeningDue>(due: T, profile: unknown) {
+  const entry = (profile as {
+    opening_import?: { previous_paid?: unknown; as_of_date?: unknown };
+  } | null)?.opening_import;
+  const imported = entry?.previous_paid;
+  const historicalPaid =
+    typeof imported === "number" && Number.isSafeInteger(imported) && imported >= 0
+      ? Math.min(imported, due.amount, due.paidAmount)
+      : 0;
+  const adjusted = {
+    ...due,
+    amount: due.amount - historicalPaid,
+    paidAmount: due.paidAmount - historicalPaid,
+  };
+  return {
+    due: adjusted,
+    opening_balance: {
+      original_due: adjusted.amount,
+      historical_paid: historicalPaid,
+      recovered: adjusted.paidAmount + adjusted.penaltyPaid,
+      ...(typeof entry?.as_of_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry.as_of_date)
+        ? { as_of_date: entry.as_of_date }
+        : {}),
+    },
+  };
+}
+
+export function openingScheduleView<T extends OpeningDue>(
+  dues: T[],
+  members: { id: string; profile: unknown }[],
+  pending: Map<string, { amount: number }>,
+) {
+  const profiles = new Map(members.map(member => [member.id, member.profile]));
+  const all = dues.map(due => openingDueView(due, profiles.get(due.memberId)));
+  // Keep original debtors after settlement, but exclude shareholders who never owed.
+  const rows = all.filter(row => row.due.amount > 0 || row.due.penaltyDue > 0 || dueRemaining(row.due) > 0);
+  const pendingAmount = rows.reduce((sum, row) => sum + (pending.get(row.due.id)?.amount ?? 0), 0);
+  return {
+    rows,
+    collection: summarizeSchedule(rows.map(row => row.due), pendingAmount),
+    opening_balance: {
+      original_due: rows.reduce((sum, row) => sum + row.opening_balance.original_due, 0),
+      historical_paid: all.reduce((sum, row) => sum + row.opening_balance.historical_paid, 0),
+      recovered: rows.reduce((sum, row) => sum + row.opening_balance.recovered, 0),
+      as_of_date: all.find(row => row.opening_balance.as_of_date)?.opening_balance.as_of_date,
+    },
+  };
+}
+
 export async function scheduleCollectionData(
   tenantId: string,
   projectId: string,

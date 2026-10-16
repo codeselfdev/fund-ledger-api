@@ -1,3 +1,4 @@
+import { customerDetails } from "../internal/customers.service.js";
 import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "../../core/prisma/client.js";
 import { badRequest, conflict, notFound } from "../../core/http/api-error.js";
@@ -19,13 +20,13 @@ export async function supportTicket(id: string, owner?: SupportOwner) {
 }
 export async function listTickets(owner: SupportOwner | undefined, offset: number, status?: string, tenantId?: string) {
   const rows = await prisma.supportTicket.findMany({ where: { ...(owner ? { tenantId: owner.tenantId, requesterId: owner.userId } : tenantId ? { tenantId } : {}), ...(status ? { status } : {}) },
-    include: owner ? undefined : { tenant: { select: { name: true } }, requester: { select: { name: true, email: true } } }, orderBy: [{ lastMessageAt: "desc" }, { id: "desc" }], skip: offset, take: 31 });
+    include: owner ? undefined : { tenant: { select: { name: true } }, requester: { select: { id:true, name: true, email: true, mobile:true } } }, orderBy: [{ lastMessageAt: "desc" }, { id: "desc" }], skip: offset, take: 31 });
   return { tickets: rows.slice(0, 30), next_offset: rows.length > 30 ? offset + 30 : null };
 }
 export async function ticketMessages(id: string, owner: SupportOwner | undefined, offset: number) {
   const ticket = await supportTicket(id, owner);
   const rows = await prisma.supportMessage.findMany({ where: { ticketId: id, tenantId: ticket.tenantId }, include: messageInclude, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 31, skip: offset });
-  return { ticket, messages: rows.slice(0, 30).reverse(), next_offset: rows.length > 30 ? offset + 30 : null };
+  return { ticket, ...(!owner?{customer:await customerDetails(ticket.tenantId,ticket.requesterId)}:{}), messages: rows.slice(0, 30).reverse(), next_offset: rows.length > 30 ? offset + 30 : null };
 }
 /** Storage writes are rolled back on failure/replay; conversation creation and messages are idempotent. */
 export async function sendSupport(input: { owner?: SupportOwner; actor?: string; ticketId?: string; subject?: string; body: string; requestKey: string; files: Express.Multer.File[] }) {

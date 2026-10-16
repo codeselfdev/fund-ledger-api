@@ -72,9 +72,9 @@ export async function beginCleanup(tenantId:string, token:string, confirmation:s
     const users=await tx.user.findMany({where:{tenantId},select:{id:true}});
     if(await tx.user.count({where:{tenantId:{not:tenantId},identityRootId:{in:users.map(u=>u.id)}}}))throw conflict("This organization owns login identities linked to other organizations. Relink those accounts before cleanup.");
     await assertNoForeignReferences(tx,tenantId);
-    const [uploads,attachments,reports]=await Promise.all([tx.upload.findMany({where:{tenantId},select:{storageKey:true}}),tx.supportAttachment.findMany({where:{tenantId},select:{storageKey:true}}),tx.reportExport.findMany({where:{tenantId},select:{files:true}})]);
+    const [uploads,attachments,reports,aiImages]=await Promise.all([tx.upload.findMany({where:{tenantId},select:{storageKey:true}}),tx.supportAttachment.findMany({where:{tenantId},select:{storageKey:true}}),tx.reportExport.findMany({where:{tenantId},select:{files:true}}),tx.assistantAttachment.findMany({where:{tenantId},select:{storageKey:true}})]);
     const reportKeys=reports.flatMap(r=>Array.isArray(r.files)?r.files.flatMap(f=>f&&typeof f==="object"&&!Array.isArray(f)&&typeof f.storage_key==="string"?[f.storage_key]:[]):[]);
-    if([...uploads.map(u=>u.storageKey),...attachments.map(u=>u.storageKey),...reportKeys].some(key=>!key.startsWith(`${tenantId}/`)))throw conflict("Legacy storage keys are outside this organization's prefix. Migrate them before cleanup.");
+    if([...uploads.map(u=>u.storageKey),...attachments.map(u=>u.storageKey),...aiImages.map(u=>u.storageKey),...reportKeys].some(key=>!key.startsWith(`${tenantId}/`)))throw conflict("Legacy storage keys are outside this organization's prefix. Migrate them before cleanup.");
     deletionModels();
     await tx.tenant.update({where:{id:tenantId},data:{deletionStartedAt:new Date()}});
     await tx.user.updateMany({where:{tenantId},data:{isActive:false}});
