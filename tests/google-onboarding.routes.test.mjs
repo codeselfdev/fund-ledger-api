@@ -66,7 +66,7 @@ after(async()=>{globalThis.fetch=nativeFetch;await new Promise(resolve=>server.c
 async function request(path,body) { const response=await fetch(url+path,{method:'POST',headers:{'content-type':'application/json','x-forwarded-for':`192.0.2.${clientId}`},body:JSON.stringify(body)});return{status:response.status,body:await response.json()}; }
 const signup = extra => ({org_name:'New organization',project_name:'New project',owner_name:'Chosen Owner',owner_mobile:mobile,project_type:'fund_shares',total_shares:20,id_token:token,...extra});
 async function ticket() {
- const authorization = buildGoogleAuthorizationUrl({query:{intent:'login',redirect_uri:'fundledger://auth'},protocol:'http',get:name=>name==='host'?'127.0.0.1:4000':undefined});
+ const authorization = buildGoogleAuthorizationUrl({query:{intent:'login',redirect_uri:'fundnesta://auth'},protocol:'http',get:name=>name==='host'?'127.0.0.1:4000':undefined});
  const state=new URL(authorization).searchParams.get('state');
  const response=await fetch(`${url}/auth/google/callback?code=isolated-code&state=${encodeURIComponent(state)}`);
  const html=await response.text();assert.equal(response.status,200);const match=html.match(/ticket=([A-Za-z0-9_-]+)/);assert.ok(match);return match[1];

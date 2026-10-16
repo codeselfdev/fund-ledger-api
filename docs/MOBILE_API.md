@@ -80,7 +80,7 @@ The response also contains `roles`, `memberships`, `member_id`, and
 Open this URL in the system browser or an auth session:
 
 ```text
-GET /v1/auth/google?intent=login&redirect_uri=fundledger://auth
+GET /v1/auth/google?intent=login&redirect_uri=fundnesta://auth
 ```
 
 Optional query parameters:
@@ -92,8 +92,8 @@ Optional query parameters:
 The API redirects back to the app as one of:
 
 ```text
-fundledger://auth?ticket=<one-time-ticket>&status=identity
-fundledger://auth?error=<message>
+fundnesta://auth?ticket=<one-time-ticket>&status=identity
+fundnesta://auth?error=<message>
 ```
 
 Exchange the ticket:
@@ -246,7 +246,7 @@ snake_case aliases for the links:
 
 ```json
 {
-  "invitation_link": "fundledger://invite?...",
+  "invitation_link": "fundnesta://invite?...",
   "app_download_link": "https://...",
   "invitationEmail": { "sent": true, "to": "member@gmail.com" },
   "signInOptions": [
@@ -266,7 +266,7 @@ The invite deep link can include:
 - `invitation_id` or `member_id`
 - `api_url`
 
-On `fundledger://invite`, persist the project context temporarily and show the two sign-in
+On `fundnesta://invite`, persist the project context temporarily and show the two sign-in
 options. Google must use the invited email. Phone sign-in must use the invited mobile. After
 login, use the returned `active_project_id` and memberships as the source of truth.
 

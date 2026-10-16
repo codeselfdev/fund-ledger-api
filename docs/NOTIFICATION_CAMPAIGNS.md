@@ -7,7 +7,7 @@ Admins and owners can send project-scoped in-app notifications with optional FCM
 1. Deploy the matching API and run `npx prisma migrate deploy` followed by `npx prisma generate` and `npm run build`.
 2. Restart the API. The campaign worker starts automatically, polls every five seconds, and processes up to 100 pending deliveries per pass. Pending work persists across restarts.
 3. Configure the existing `FCM_SERVICE_ACCOUNT_JSON` / `FIREBASE_SERVICE_ACCOUNT_JSON` and SMTP settings on the API. Missing provider configuration produces failed channel attempts, never successful delivery counts.
-4. Ship the matching mobile build. Email links use the registered `fundledger://notification` app scheme; the app must be installed to open those links.
+4. Ship the matching mobile build. Email links use the registered `fundnesta://notification` app scheme; the app must be installed to open those links.
 
 The additive migration is `20261014230000_notification_campaigns`. It creates campaigns and delivery rows and adds nullable `notifications.destination`. Do not run the new worker against an unmigrated database.
 

@@ -128,7 +128,7 @@ async function processCampaignQueue() {
           // Re-resolve current address; never send to an address removed after composition.
           const email = member?.email || user?.user.email;
           if (!email) throw new Error('No email address');
-          const link = c.destination === 'none' ? '' : `\n\nOpen in FundLedger: fundledger://notification?project_id=${encodeURIComponent(c.projectId)}&tenant_id=${encodeURIComponent(c.tenantId)}&destination=${c.destination}`;
+          const link = c.destination === 'none' ? '' : `\n\nOpen in FundLedger: fundnesta://notification?project_id=${encodeURIComponent(c.projectId)}&tenant_id=${encodeURIComponent(c.tenantId)}&destination=${c.destination}`;
           const accepted = await transports.sendEmail({ to: email, fromName: `${project.name} via FundLedger`, subject: row.title.replace(/[\r\n]/g, ' '), text: row.body + link });
           if (!accepted) throw new Error('Email delivery is not configured');
         }

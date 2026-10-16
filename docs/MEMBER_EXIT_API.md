@@ -425,7 +425,7 @@ HTTP/1.1 201 Created
     },
     "transferred_shares": 2,
     "user_created": true,
-    "invitation_link": "fundledger://invite?tenant_id=tenant_01&project_id=project_01&role=member&mobile=%2B8801711000022&email=nadia%40gmail.com&member_id=mem_02",
+    "invitation_link": "fundnesta://invite?tenant_id=tenant_01&project_id=project_01&role=member&mobile=%2B8801711000022&email=nadia%40gmail.com&member_id=mem_02",
     "app_download_link": "https://example.com/download-fundledger",
     "invitation_email": {
       "sent": true,
@@ -484,7 +484,7 @@ fresh OTP and returns:
   "ok": true,
   "data": {
     "member_id": "mem_02",
-    "invitation_link": "fundledger://invite?tenant_id=tenant_01&project_id=project_01&role=member&member_id=mem_02",
+    "invitation_link": "fundnesta://invite?tenant_id=tenant_01&project_id=project_01&role=member&member_id=mem_02",
     "app_download_link": "https://example.com/download-fundledger",
     "invitation_email": {
       "sent": true,

@@ -3381,7 +3381,7 @@
         "security": [],
         "parameters": [
           { "name": "intent", "in": "query", "schema": { "type": "string", "enum": ["login", "signup"], "default": "login" } },
-          { "name": "redirect_uri", "in": "query", "required": true, "schema": { "type": "string", "example": "fundledger://auth" } },
+          { "name": "redirect_uri", "in": "query", "required": true, "schema": { "type": "string", "example": "fundnesta://auth" } },
           { "name": "tenant_slug", "in": "query", "schema": { "type": "string" } }
         ],
         "responses": {

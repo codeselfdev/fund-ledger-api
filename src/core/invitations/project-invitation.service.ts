@@ -82,7 +82,7 @@ function escapeHtml(value: string): string {
 }
 
 export function buildProjectInvitationLink(req: Request | undefined, input: ProjectInvitationLinkInput) {
-  const base = env.app.inviteUrl ?? env.app.downloadUrl ?? "fundledger://invite";
+  const base = env.app.inviteUrl ?? env.app.downloadUrl ?? "fundnesta://invite";
   return appendQueryParams(base, {
     tenant_id: input.tenantId,
     project_id: input.projectId,

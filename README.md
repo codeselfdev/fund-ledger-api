@@ -251,7 +251,7 @@ The bearer token identifies the tenant and user. `X-Project-Id` selects the acti
 
 The mobile app opens the API; Google OAuth runs on this service.
 
-1. `GET /v1/auth/google?intent=login|signup&redirect_uri=fundledger://auth`
+1. `GET /v1/auth/google?intent=login|signup&redirect_uri=fundnesta://auth`
 2. Google returns to `GET /v1/auth/google/callback`
 3. The API redirects to the app with a one-time `ticket`
 4. The app calls `POST /v1/auth/google/complete` `{ ticket }`
