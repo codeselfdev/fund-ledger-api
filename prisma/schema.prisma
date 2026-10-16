@@ -1047,12 +1047,12 @@ model MemberCallLog {
   outcome     CallOutcome
   summary     String?
   calledAt    DateTime    @default(now()) @map("called_at")
-  createdById String      @map("created_by_id")
+  createdById String?      @map("created_by_id")
   createdAt   DateTime    @default(now()) @map("created_at")
 
   project    Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   member     Member             @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  createdBy  User               @relation("MemberCallLogCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy  User?               @relation("MemberCallLogCreator", fields: [createdById], references: [id], onDelete: SetNull)
   commitment PaymentCommitment?
 
   @@index([tenantId, projectId, memberId, calledAt])
@@ -1075,14 +1075,14 @@ model PaymentCommitment {
   resolvedById        String?          @map("resolved_by_id")
   resolvedDepositId   String?          @map("resolved_deposit_id")
   resolveReason       String?          @map("resolve_reason")
-  createdById         String           @map("created_by_id")
+  createdById         String?           @map("created_by_id")
   createdAt           DateTime         @default(now()) @map("created_at")
   updatedAt           DateTime         @updatedAt @map("updated_at")
 
   project         Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
   member          Member              @relation(fields: [memberId], references: [id], onDelete: Cascade)
   callLog         MemberCallLog?      @relation(fields: [callLogId], references: [id], onDelete: SetNull)
-  createdBy       User                @relation("PaymentCommitmentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy       User?                @relation("PaymentCommitmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
   resolvedBy      User?               @relation("PaymentCommitmentResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
   resolvedDeposit Deposit?            @relation("CommitmentResolvedDeposit", fields: [resolvedDepositId], references: [id], onDelete: SetNull)
   supersededBy    PaymentCommitment?  @relation("CommitmentSupersession", fields: [supersededById], references: [id], onDelete: SetNull)
@@ -1101,12 +1101,12 @@ model MemberReminder {
   reminderDate   DateTime @db.Date @map("reminder_date")
   outstanding    Int
   deliveredCount Int      @map("delivered_count")
-  sentById       String   @map("sent_by_id")
+  sentById       String?   @map("sent_by_id")
   sentAt         DateTime @default(now()) @map("sent_at")
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  sentBy  User    @relation("MemberReminderSender", fields: [sentById], references: [id], onDelete: Restrict)
+  sentBy  User?    @relation("MemberReminderSender", fields: [sentById], references: [id], onDelete: SetNull)
 
   @@unique([projectId, memberId, reminderDate])
   @@index([tenantId, projectId, memberId, sentAt])
@@ -1122,12 +1122,12 @@ model Poll {
   expiresAt      DateTime  @map("expires_at")
   closedAt       DateTime? @map("closed_at")
   lastReminderAt DateTime? @map("last_reminder_at")
-  createdById    String    @map("created_by_id")
+  createdById    String?    @map("created_by_id")
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
   project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdBy User         @relation("PollCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy User?         @relation("PollCreator", fields: [createdById], references: [id], onDelete: SetNull)
   options   PollOption[]
   votes     PollVote[]
 
@@ -1182,12 +1182,12 @@ model ProjectEvent {
   reminderOneHourSentAt  DateTime? @map("reminder_one_hour_sent_at")
   reminderTenMinSentAt   DateTime? @map("reminder_ten_min_sent_at")
   cancelledAt            DateTime? @map("cancelled_at")
-  createdById            String    @map("created_by_id")
+  createdById            String?    @map("created_by_id")
   createdAt              DateTime  @default(now()) @map("created_at")
   updatedAt              DateTime  @updatedAt @map("updated_at")
 
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdBy User    @relation("ProjectEventCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy User?    @relation("ProjectEventCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([tenantId, projectId, startsAt, cancelledAt])
   @@map("project_events")
@@ -1222,11 +1222,11 @@ model ProjectNotice {
   imageFileId String?  @map("image_file_id")
   expiresAt   DateTime @map("expires_at")
   deletedAt   DateTime? @map("deleted_at")
-  createdById String   @map("created_by_id")
+  createdById String?   @map("created_by_id")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdBy   User @relation("ProjectNoticeCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy   User? @relation("ProjectNoticeCreator", fields: [createdById], references: [id], onDelete: SetNull)
   @@index([tenantId, projectId, expiresAt, deletedAt])
   @@map("project_notices")
 }

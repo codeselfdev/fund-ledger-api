@@ -27,7 +27,7 @@ before(async () => {
   prisma.paymentCommitment.create = async ({data}) => {const row={id:`c${commitments.length+1}`,status:'pending',createdAt:new Date(),updatedAt:new Date(),resolvedAt:null,resolveReason:null,resolvedById:null,resolvedDepositId:null,supersededById:null,...data};commitments.unshift(row);return row;};
   prisma.paymentCommitment.update = async ({where,data}) => Object.assign(commitments.find(row=>row.id===where.id),data);
   prisma.paymentCommitment.updateMany = async ({where,data}) => {const rows=commitments.filter(row=>where.id.in.includes(row.id));rows.forEach(row=>Object.assign(row,data));return {count:rows.length};};
-  prisma.memberCallLog.findMany = async ({where}) => callLogs.filter(row => row.memberId === where.memberId).map(row => ({...row,createdBy:{name:'Staff User'},commitment:row.outcome==='committed'?{id:commitments.find(item=>item.callLogId===row.id)?.id}:null}));
+  prisma.memberCallLog.findMany = async ({where}) => callLogs.filter(row => row.memberId === where.memberId).map(row => ({...row,createdBy:row.createdById === null ? null : {name:'Staff User'},commitment:row.outcome==='committed'?{id:commitments.find(item=>item.callLogId===row.id)?.id}:null}));
   prisma.memberCallLog.create = async ({data}) => {const row={calledAt:new Date(),createdAt:new Date(),...data};callLogs.push(row);return row;};
   prisma.$queryRaw = async () => [];
   prisma.$transaction = async callback => callback(prisma);
@@ -115,4 +115,26 @@ test('missing or invalid member photo metadata returns null for the initials fal
   } finally {
     memberProfile={photo_file_id:'member-photo'};
   }
+});
+
+test('follow-up history remains readable after its staff account is deleted', async () => {
+  const now = new Date();
+  commitments = [{id:'deleted-author-commitment',tenantId:'tenant',projectId:'project',memberId:'member',amount:100,promisedDate:new Date(`${plusDays(5)}T00:00:00Z`),summary:'Promise retained',status:'pending',outstandingAtCreate:100,createdById:null,createdAt:now,updatedAt:now,callLogId:'deleted-author-call',resolvedAt:null,resolvedById:null,resolvedDepositId:null,resolveReason:null,supersededById:null}];
+  callLogs = [{id:'deleted-author-call',memberId:'member',outcome:'committed',createdById:null,calledAt:now,createdAt:now},{id:'deleted-author-note',memberId:'member',outcome:'no_answer',summary:'Note retained',createdById:null,calledAt:now,createdAt:now}];
+  reminders = [{id:'deleted-author-reminder',memberId:'member',sentById:null,sentBy:null,sentAt:now}];
+  dueAmount = 100;
+  const result = await request('/members/member/follow-up','GET');
+  assert.equal(result.status,200);
+  assert.equal(result.body.data.timeline.length,3);
+  assert.deepEqual(new Set(result.body.data.timeline.map(item => item.kind)),new Set(['commitment','call_log','reminder']));
+  result.body.data.timeline.forEach(item => assert.equal(item.created_by_name,'Deleted user'));
+});
+
+test('an existing standalone commitment is not attributed to a deleted user', async () => {
+  commitments = [{id:'standalone',tenantId:'tenant',projectId:'project',memberId:'member',amount:100,promisedDate:new Date(`${plusDays(5)}T00:00:00Z`),summary:'Existing promise',status:'pending',outstandingAtCreate:100,createdById:'admin',createdAt:new Date(),updatedAt:new Date(),callLogId:null}];
+  callLogs=[]; reminders=[]; dueAmount=100;
+  const result=await request('/members/member/follow-up','GET');
+  assert.equal(result.status,200);
+  assert.equal(result.body.data.timeline[0].kind,'commitment');
+  assert.equal(result.body.data.timeline[0].created_by_name,undefined);
 });

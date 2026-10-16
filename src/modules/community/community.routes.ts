@@ -87,7 +87,7 @@ function eventPayload(event: {
   place: string;
   startsAt: Date;
   cancelledAt: Date | null;
-  createdById: string;
+  createdById: string | null;
   createdAt: Date;
   updatedAt: Date;
 }) {
