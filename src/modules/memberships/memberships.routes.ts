@@ -1,3 +1,4 @@
+import { assertPersonCapacity } from "../../core/subscription/quota.service.js";
 import { Router } from "express";
 import { z } from "zod";
 import { Role } from "@prisma/client";
@@ -69,6 +70,7 @@ router.get("/", requireProject, requireRoles("owner", "admin"), asyncHandler(asy
 router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(createMembershipSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const body = req.body as z.infer<typeof createMembershipSchema>;
+  await assertPersonCapacity(auth.tenantId, body);
 
   const project = await prisma.project.findFirstOrThrow({
     where: { id: auth.projectId, tenantId: auth.tenantId }

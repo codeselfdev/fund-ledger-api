@@ -1,3 +1,4 @@
+import { addCalendarMonths } from "../../core/subscription/packages.js";
 import { assertImageUploadSize } from "../../core/storage/upload-image-policy.js";
 import { Router } from "express";
 import multer from "multer";
@@ -86,6 +87,9 @@ router.post("/:id/photo", requireProject, requireRoles("any"), validateParams(id
       await tx.$queryRaw`SELECT id FROM members WHERE id = ${member.id} FOR UPDATE`;
       const current = await tx.member.findUniqueOrThrow({ where: { id: member.id } });
       const profile = current.profile && typeof current.profile === "object" && !Array.isArray(current.profile) ? current.profile : {};
+      if (typeof profile.photo_file_id === "string") {
+        await tx.upload.updateMany({ where: { id: profile.photo_file_id, tenantId: auth.tenantId, projectId: auth.projectId, deletedAt: null, purpose: `member_photo:${member.id}` }, data: { deletedAt: new Date(), purgeAfterAt: addCalendarMonths(new Date(), 3) } });
+      }
       const record = await tx.upload.create({ data: { tenantId: auth.tenantId, projectId: auth.projectId, userId: auth.userId,
         fileName: file.originalname, mimeType, size: file.size, storageKey, purpose: `member_photo:${member.id}` } });
       return tx.member.update({ where: { id: member.id }, data: { profile: { ...profile, photo_file_id: record.id } } });
@@ -99,7 +103,7 @@ router.get("/:id/photo", requireProject, requireRoles("any"), validateParams(idP
   const { auth, member } = await memberFor(req, false, true);
   const photoId = (member.profile as Record<string, unknown> | null)?.photo_file_id;
   if (typeof photoId !== "string") throw notFound("Member photo not found");
-  const record = await prisma.upload.findFirst({ where: { id: photoId, tenantId: auth.tenantId, projectId: auth.projectId, purpose: `member_photo:${member.id}` } });
+  const record = await prisma.upload.findFirst({ where: { id: photoId, deletedAt: null, tenantId: auth.tenantId, projectId: auth.projectId, purpose: `member_photo:${member.id}` } });
   if (!record) throw notFound("Member photo not found");
   try {
     const object = await readObject(record.storageKey);

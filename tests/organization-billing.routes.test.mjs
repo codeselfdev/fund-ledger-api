@@ -58,6 +58,7 @@ before(async () => {
   await mkdir(assetRoot, { recursive: true });
   await writeFile(`${assetRoot}/test-logo.png`, Buffer.from([137, 80, 78, 71]));
   prisma.upload.findFirst = async ({ where }) => where.id === 'owned-logo' && where.tenantId === projects.find(p => p.logoFileId === 'owned-logo')?.tenantId && where.projectId === projects.find(p => p.logoFileId === 'owned-logo')?.id && where.purpose === 'project_logo' ? { id: 'owned-logo', storageKey: 'test-logo.png', mimeType: 'image/png' } : null;
+  prisma.$queryRaw = async () => [];
   prisma.$transaction = async fn => fn(prisma);
   prisma.user.findUniqueOrThrow = async ({ where }) => { const row = users.find(row => matches(row, where)); if (!row) throw new Error('User not found'); return userRow(row); };
   prisma.user.findMany = async ({ where }) => users.filter(row => matches(row, where)).map(userRow);
@@ -75,6 +76,7 @@ before(async () => {
   prisma.project.create = async ({ data }) => { const row = { id: `project-${++nextId}`, isActive: true, portalSettings: null, logoFileId: null, ...data }; projects.push(row); return copy(row); };
   prisma.project.findFirst = async ({ where }) => copy(projects.find(row => matches(row, where)) ?? null);
   prisma.project.update = async ({ where, data }) => { const row = projects.find(row => matches(row, where)); Object.assign(row, Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined))); return copy(row); };
+  prisma.member.findMany = async ({ where }) => members.filter(row => matches(row, where)).map(copy);
   prisma.member.aggregate = async () => ({ _sum: { shares: 0 } });
   prisma.member.findFirst = async () => null;
   prisma.member.create = async ({ data }) => { const row = { id: `member-${++nextId}`, ...data }; members.push(row); return copy(row); };

@@ -112,7 +112,7 @@ router.get("/deposit-delegates/payable-members/:id/dues", requireProject, requir
   const auth = requireProjectContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
   const staffAccess = auth.roles.some((role) => role === "admin" || role === "accountant" || role === "cashier");
-  if (!staffAccess && auth.memberId !== id) {
+  if (!staffAccess && auth.memberId !== id && !auth.memberIds?.includes(id)) {
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: auth.tenantId }, select: { contact: true, updatedAt: true } });
     if (!canUserPayOnBehalf(tenant.contact, auth.projectId, auth.userId, id)) throw forbidden();
   }

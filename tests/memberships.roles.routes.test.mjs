@@ -29,6 +29,7 @@ function matchesMembership(where, membership) {
 }
 
 before(() => {
+  prisma.tenant.findUniqueOrThrow = async () => ({ contact: { subscription: { package: "free" } } });
   prisma.project.findFirstOrThrow = async () => ({ id: 'project', tenantId: 'tenant', name: 'Fund Nesta' });
   prisma.user.findMany = async () => [user];
   prisma.user.findFirstOrThrow = async () => user;

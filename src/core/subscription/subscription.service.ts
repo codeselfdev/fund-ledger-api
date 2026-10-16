@@ -1,9 +1,12 @@
 import type { Prisma } from "@prisma/client";
+import { packageId, addCalendarMonths, type PackageId, type BillingCycle } from "./packages.js";
 
 export type SubscriptionStatus = "trial" | "active" | "expired";
 
 type StoredSubscription = {
   status: SubscriptionStatus;
+  package: PackageId;
+  billing_cycle: BillingCycle;
   trial_starts_at: string | null;
   trial_ends_at: string | null;
   current_period_start_at: string | null;
@@ -60,6 +63,8 @@ export function getStoredSubscription(contact: unknown): StoredSubscription | nu
 
   return {
     status,
+    package: packageId(contact),
+    billing_cycle: raw.billing_cycle === "monthly" ? "monthly" : "yearly",
     trial_starts_at: typeof raw.trial_starts_at === "string" ? raw.trial_starts_at : null,
     trial_ends_at: typeof raw.trial_ends_at === "string" ? raw.trial_ends_at : null,
     current_period_start_at: typeof raw.current_period_start_at === "string" ? raw.current_period_start_at : null,
@@ -96,7 +101,7 @@ export function evaluateSubscription(contact: unknown, now = new Date()) {
   const periodEndsAt = parseDate(stored.current_period_end_at);
   const nowMs = now.getTime();
 
-  if (trialEndsAt && trialEndsAt.getTime() >= nowMs) {
+  if (stored.status !== "active" && trialEndsAt && trialEndsAt.getTime() >= nowMs) {
     return {
       managed: true,
       status: "trial" as SubscriptionStatus,
@@ -139,6 +144,8 @@ export function createTrialSubscription(trialDays: number, now = new Date()) {
   const trialEnd = safeDays > 0 ? addDays(now, safeDays) : now;
   const stored: StoredSubscription = {
     status: safeDays > 0 ? "trial" : "expired",
+    package: "free",
+    billing_cycle: "yearly",
     trial_starts_at: toIso(now),
     trial_ends_at: toIso(trialEnd),
     current_period_start_at: null,
@@ -159,15 +166,20 @@ export function createThreeMonthTrial(now = new Date()) {
   return { ...createTrialSubscription(0, now), status: "trial" as const, trial_ends_at: end.toISOString() };
 }
 
-export function renewTenantSubscription(contact: unknown, now = new Date()) {
+export function renewTenantSubscription(contact: unknown, now = new Date(), selection?: { package: PackageId; billing_cycle: BillingCycle }) {
   const existing = getStoredSubscription(contact);
   const renewalYears = DEFAULT_RENEWAL_TERM_YEARS;
-  const currentPeriodEnd = parseDate(existing?.current_period_end_at ?? existing?.trial_ends_at);
-  const baseStart = currentPeriodEnd && currentPeriodEnd.getTime() > now.getTime() ? currentPeriodEnd : now;
-  const nextEnd = addYears(baseStart, renewalYears);
+  const selectedPackage = selection?.package ?? (existing?.package === "free" ? "starter" : existing?.package ?? "starter");
+  const cycle = selection?.billing_cycle ?? existing?.billing_cycle ?? "yearly";
+  const currentPeriodEnd = parseDate(existing?.current_period_end_at ?? null);
+  // Paid upgrades and renewals preserve remaining prepaid time; the new package activates immediately.
+  const baseStart = currentPeriodEnd && currentPeriodEnd > now ? currentPeriodEnd : now;
+  const nextEnd = addCalendarMonths(baseStart, cycle === "monthly" ? 1 : 12);
 
   const stored: StoredSubscription = {
     status: "active",
+    package: selectedPackage,
+    billing_cycle: cycle,
     trial_starts_at: existing?.trial_starts_at ?? null,
     trial_ends_at: existing?.trial_ends_at ?? null,
     current_period_start_at: toIso(baseStart),

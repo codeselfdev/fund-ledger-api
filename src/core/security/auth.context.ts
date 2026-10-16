@@ -13,6 +13,6 @@ export function requireProjectContext(req: Request) {
   return auth as typeof auth & { projectId: string };
 }
 
-export function isSelfOrRole(auth: { memberId: string | null; roles: Role[] }, memberId: string, roles: Role[]) {
-  return auth.memberId === memberId || auth.roles.some((role) => roles.includes(role));
+export function isSelfOrRole(auth: { memberId: string | null; memberIds?: string[]; roles: Role[] }, memberId: string, roles: Role[]) {
+  return auth.memberId === memberId || auth.memberIds?.includes(memberId) === true || auth.roles.some((role) => roles.includes(role));
 }

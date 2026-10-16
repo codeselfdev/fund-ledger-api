@@ -56,7 +56,9 @@ router.get("/me/summary", requireProject, requireRoles("member"), asyncHandler(a
     getMemberOutstanding(auth.tenantId, auth.projectId, memberId)
   ]);
 
-  const verifiedContribution = deposits
+  const opening = member.profile && typeof member.profile === "object" && !Array.isArray(member.profile) ? member.profile.opening_import : null;
+  const openingPaid = opening && typeof opening === "object" && !Array.isArray(opening) && typeof opening.total_paid === "number" ? opening.total_paid : 0;
+  const verifiedContribution = openingPaid + deposits
     .filter((deposit) => deposit.status === "confirmed")
     .reduce((sum, deposit) => sum + Math.max(0, deposit.amount - deposit.refundedAmount), 0);
   const pending = deposits

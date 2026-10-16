@@ -168,6 +168,7 @@ enum CallOutcome {
 }
 
 model Tenant {
+  assistantReplies AssistantReply[]
   notificationCampaigns NotificationCampaign[]
   id            String     @id @default(cuid())
   name          String
@@ -394,6 +395,7 @@ model ProjectMembership {
 }
 
 model Member {
+  mid       String?
   id        String       @id @default(cuid())
   tenantId  String       @map("tenant_id")
   projectId String       @map("project_id")
@@ -419,7 +421,8 @@ model Member {
   commitments PaymentCommitment[]
   reminders   MemberReminder[]
 
-  @@unique([tenantId, projectId, mobile])
+  @@unique([tenantId, projectId, mid])
+  @@index([tenantId, projectId, mobile])
   @@index([tenantId, projectId])
   @@map("members")
 }
@@ -946,6 +949,8 @@ model AccountTransaction {
 }
 
 model Upload {
+  deletedAt DateTime? @map("deleted_at")
+  purgeAfterAt DateTime? @map("purge_after_at")
   id         String   @id @default(cuid())
   tenantId   String   @map("tenant_id")
   projectId  String   @map("project_id")
@@ -960,6 +965,8 @@ model Upload {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, projectId])
+  @@index([tenantId, deletedAt])
+  @@index([purgeAfterAt])
   @@map("uploads")
 }
 
@@ -2050,4 +2057,33 @@ model ShortcutPreference {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([tenantId, projectId, userId])
   @@map("shortcut_preferences")
+}
+
+model AssistantReply {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  userId String @map("user_id")
+  channel String
+  requestKey String @map("request_key")
+  promptHash String @map("prompt_hash")
+  authorizationHash String? @map("authorization_hash")
+  prompt String
+  reply String?
+  status String @default("queued")
+  periodStart DateTime @db.Date @map("period_start")
+  leaseUntil DateTime? @map("lease_until")
+  attempts Int @default(0)
+  recipient String?
+  connectionId String? @map("connection_id")
+  deliveredAt DateTime? @map("delivered_at")
+  errorCode String? @map("error_code")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, channel, requestKey])
+  @@index([tenantId, channel, periodStart, status])
+  @@index([status, leaseUntil])
+  @@index([tenantId, projectId, userId, channel, createdAt])
+  @@map("assistant_replies")
 }

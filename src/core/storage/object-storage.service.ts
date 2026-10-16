@@ -217,3 +217,14 @@ export async function deleteObject(storageKey: string) {
     Key: storageKey
   })).catch(() => undefined);
 }
+
+/** Retention cleanup must confirm deletion; ordinary best-effort rollback cleanup uses deleteObject. */
+export async function purgeObject(storageKey: string) {
+  if (getStorageMode() === "local") {
+    try { await unlink(resolveLocalUploadPath(storageKey)); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    return;
+  }
+  const config = getR2Config();
+  await getR2Client().send(new DeleteObjectCommand({ Bucket: config.bucket, Key: storageKey }), { abortSignal: AbortSignal.timeout(10000) });
+}

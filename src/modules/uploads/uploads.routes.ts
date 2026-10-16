@@ -13,10 +13,13 @@ import { validateParams } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { deleteObject, getStorageMode, publicObjectUrl, readObject, StorageObjectNotFoundError, storeObject } from "../../core/storage/object-storage.service.js";
 
+import { MAX_DOCUMENT_BYTES } from "../../core/subscription/packages.js";
+import { assertDocumentCapacity, assertDocumentSize } from "../../core/subscription/quota.service.js";
 const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }
+  // Busboy treats its limit as exclusive; the explicit size check permits exactly 5 MB.
+  limits: { fileSize: MAX_DOCUMENT_BYTES + 1 }
 });
 
 function sanitizeFilename(value: string) {
@@ -35,6 +38,7 @@ function purposeFolder(value: string | undefined) {
 router.post("/", requireProject, requireRoles("any"), upload.single("file"), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   if (!req.file) throw badRequest("file is required");
+  assertDocumentSize(req.file.size);
   assertImageUploadSize(req.file);
   const purpose = typeof req.body.purpose === "string" ? req.body.purpose : undefined;
 
@@ -54,6 +58,7 @@ router.post("/", requireProject, requireRoles("any"), upload.single("file"), asy
   }
 
   const storageKey = `${auth.tenantId}/${auth.projectId}/${purposeFolder(purpose)}/${nanoid()}-${sanitizeFilename(req.file.originalname)}`;
+  await assertDocumentCapacity(auth.tenantId);
   await storeObject({
     storageKey,
     buffer: req.file.buffer,
@@ -108,6 +113,7 @@ router.get("/:id/view", requireProject, requireRoles("any"), validateParams(idPa
   const record = await prisma.upload.findFirst({
     where: {
       id,
+      deletedAt: null,
       tenantId: auth.tenantId,
       projectId: auth.projectId
     }
@@ -123,7 +129,7 @@ router.get("/:id/view", requireProject, requireRoles("any"), validateParams(idPa
   if (record.purpose?.startsWith("member_photo:") || record.purpose?.startsWith("member_document:")) {
     const memberId = record.purpose.split(":")[1];
     const staff = auth.roles.some(role => ["owner", "admin", "accountant", "approver", "auditor", "cashier"].includes(role));
-    if (!staff && auth.memberId !== memberId) throw forbidden();
+    if (!staff && auth.memberId !== memberId && !auth.memberIds?.includes(memberId)) throw forbidden();
   }
 
   let fileBuffer: Buffer;

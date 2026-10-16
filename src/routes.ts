@@ -46,6 +46,8 @@ import { noticesRouter } from "./modules/community/notices.routes.js";
 import { eventsRouter, pollsRouter } from "./modules/community/community.routes.js";
 import { followupsRouter } from "./modules/follow-ups/followups.routes.js";
 
+import { assistantRouter } from "./modules/assistant/assistant.routes.js";
+
 export function registerRoutes(app: Express) {
   app.use("/v1/platform/billing", platformBillingRouter);
   app.use("/v1/tenants", tenantsRouter);
@@ -58,6 +60,7 @@ export function registerRoutes(app: Express) {
   app.use(authenticate);
   app.use("/v1/subscription", subscriptionRouter);
   app.use(requireActiveSubscription);
+  app.use("/v1/assistant", assistantRouter);
   app.use("/v1/reports", reportsRouter);
   app.use("/v1/integrations", integrationsRouter);
   app.use("/v1/invitations", invitationsRouter);

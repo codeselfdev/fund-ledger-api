@@ -15,10 +15,13 @@ import { writeAudit } from "../../core/audit/audit.service.js";
 import { z } from "zod";
 import { deleteObject, readObject, StorageObjectNotFoundError, storeObject } from "../../core/storage/object-storage.service.js";
 
+import { MAX_DOCUMENT_BYTES, addCalendarMonths } from "../../core/subscription/packages.js";
+import { assertDocumentCapacity, assertDocumentSize } from "../../core/subscription/quota.service.js";
 const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }
+  // Busboy treats its limit as exclusive; the explicit size check permits exactly 5 MB.
+  limits: { fileSize: MAX_DOCUMENT_BYTES + 1 }
 });
 
 const titleCreateSchema = z.object({
@@ -48,9 +51,13 @@ function sanitizeFilename(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-function hasMemberDocumentAccess(auth: { memberId: string | null; roles: string[] }, targetMemberId: string) {
-  if (auth.memberId === targetMemberId) return true;
+function hasMemberDocumentAccess(auth: { memberId: string | null; memberIds?: string[]; roles: string[] }, targetMemberId: string) {
+  if (auth.memberId === targetMemberId || auth.memberIds?.includes(targetMemberId)) return true;
   return auth.roles.some((role) => ["owner", "admin", "accountant", "approver", "auditor", "cashier"].includes(role));
+}
+
+function hasMemberDocumentWriteAccess(auth: { memberId: string | null; memberIds?: string[]; roles: string[] }, memberId: string) {
+  return auth.memberId === memberId || auth.memberIds?.includes(memberId) || auth.roles.some(role => ["owner", "admin", "accountant", "cashier"].includes(role));
 }
 
 function readTitles(contact: unknown): MemberDocumentTitle[] {
@@ -179,8 +186,9 @@ router.post("/members/:id/documents", requireProject, requireRoles("any"), valid
   const auth = requireProjectContext(req);
   const { id: memberId } = req.params as z.infer<typeof idParamSchema>;
   const body = memberDocumentUploadSchema.parse(req.body);
-  if (!hasMemberDocumentAccess(auth, memberId)) throw forbidden();
+  if (!hasMemberDocumentWriteAccess(auth, memberId)) throw forbidden();
   if (!req.file) throw badRequest("file is required");
+  assertDocumentSize(req.file.size);
   assertImageUploadSize(req.file);
 
   const [member, tenant] = await Promise.all([
@@ -200,6 +208,7 @@ router.post("/members/:id/documents", requireProject, requireRoles("any"), valid
   if (!title) throw badRequest("Invalid title_id");
 
   const storageKey = `${auth.tenantId}/${auth.projectId}/member_document/${memberId}-${title.id}-${nanoid()}-${sanitizeFilename(req.file.originalname)}`;
+  await assertDocumentCapacity(auth.tenantId);
   await storeObject({
     storageKey,
     buffer: req.file.buffer,
@@ -270,6 +279,7 @@ router.get("/members/:id/documents", requireProject, requireRoles("any"), valida
     where: {
       tenantId: auth.tenantId,
       projectId: auth.projectId,
+      deletedAt: null,
       purpose: { startsWith: `member_document:${memberId}:` }
     },
     orderBy: { createdAt: "desc" }
@@ -305,6 +315,7 @@ router.get("/members/:id/documents/:documentId/view", requireProject, requireRol
       id: documentId,
       tenantId: auth.tenantId,
       projectId: auth.projectId,
+      deletedAt: null,
       purpose: { startsWith: `member_document:${memberId}:` }
     }
   });
@@ -329,4 +340,18 @@ router.get("/members/:id/documents/:documentId/view", requireProject, requireRol
   return res.status(200).send(fileBuffer);
 }));
 
+router.delete("/members/:id/documents/:documentId", requireProject, requireRoles("any"), validateParams(z.object({ id: z.string().min(1), documentId: z.string().min(1) })), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  const { id: memberId, documentId } = req.params as { id: string; documentId: string };
+  if (!hasMemberDocumentWriteAccess(auth, memberId)) throw forbidden();
+  const result = await prisma.$transaction(async tx => {
+    const record = await tx.upload.findFirst({ where: { id: documentId, tenantId: auth.tenantId, projectId: auth.projectId, deletedAt: null, purpose: { startsWith: `member_document:${memberId}:` } } });
+    if (!record) throw notFound("Member document not found");
+    const now = new Date();
+    await tx.upload.update({ where: { id: record.id }, data: { deletedAt: now, purgeAfterAt: addCalendarMonths(now, 3) } });
+    await tx.activity.create({ data: { tenantId: auth.tenantId, projectId: auth.projectId, actorUserId: auth.userId, action: "member_document.deleted", entityType: "upload", entityId: record.id } });
+    return { deleted: true };
+  });
+  return ok(res, result);
+}));
 export { router as memberDocumentsRouter };

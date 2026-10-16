@@ -12,7 +12,21 @@ import { evaluateSubscription, renewTenantSubscription, startTenantTrial } from 
 import { validateBody } from "../../core/validation/validate.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
 
+import { PACKAGES, packageId } from "../../core/subscription/packages.js";
+import { tenantQuota, assertDocumentCapacity, assertProjectCapacity, assertPersonCapacity } from "../../core/subscription/quota.service.js";
+import { selectPackage } from "./package-selection.service.js";
 const router = Router();
+router.get("/packages", requireRoles("any"), (_req, res) => ok(res, Object.values(PACKAGES)));
+router.get("/quota", requireRoles("any"), asyncHandler(async (req, res) => ok(res, await tenantQuota(requireAuthContext(req).tenantId))));
+router.post("/upload-check", requireRoles("any"), asyncHandler(async (req, res) => ok(res, await assertDocumentCapacity(requireAuthContext(req).tenantId))));
+router.post("/project-check", requireRoles("owner", "admin"), requireOrganizationManagement, asyncHandler(async (req, res) => ok(res, await assertProjectCapacity(requireAuthContext(req).tenantId))));
+const personSchema = z.object({ user_id: z.string().optional(), mobile: z.string().optional(), email: z.string().optional() }).strict();
+router.post("/person-check", requireRoles("owner", "admin", "accountant"), validateBody(personSchema), asyncHandler(async (req, res) => ok(res, await assertPersonCapacity(requireAuthContext(req).tenantId, personSchema.parse(req.body)))));
+const packageSchema = z.object({ package: z.enum(["starter", "business"]), billing_cycle: z.enum(["monthly", "yearly"]) }).strict();
+router.post("/upgrade", requireRoles("owner", "admin"), requireOrganizationManagement, validateBody(packageSchema), asyncHandler(async (req, res) => {
+  const auth = requireAuthContext(req), body = packageSchema.parse(req.body);
+  return ok(res, await selectPackage(auth.tenantId, auth.userId, body.package, body.billing_cycle));
+}));
 
 const trialBodySchema = z.object({
   trial_days: z.number().int().min(1).max(365)
@@ -30,7 +44,7 @@ router.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
     tenant_id: tenant.id,
     tenant_name: tenant.name,
     can_manage_billing: auth.roles.includes("owner") || auth.roles.includes("admin"),
-    plan: tenant.plan,
+    plan: packageId(tenant.contact),
     ...summary
   });
 }));

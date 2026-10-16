@@ -11,6 +11,7 @@ declare global {
         sessionProjectId?: string | null;
         roles: Role[];
         memberId: string | null;
+        memberIds?: string[];
       };
     }
   }

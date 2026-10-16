@@ -1,3 +1,4 @@
+import { assertPersonCapacity } from "../../core/subscription/quota.service.js";
 import { Router } from "express";
 import { z } from "zod";
 import multer from "multer";
@@ -29,7 +30,13 @@ import {
   settleMemberBalance
 } from "./member-settlement.service.js";
 
+import { fundImportRouter } from "./fund-import.routes.js";
 const router = Router();
+router.use("/import-fund", fundImportRouter);
+router.get("/mine/records", requireProject, requireRoles("member"), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  return ok(res, await prisma.member.findMany({ where: { tenantId: auth.tenantId, projectId: auth.projectId, userId: auth.userId, status: "active" }, select: { id: true, mid: true, name: true, mobile: true, shares: true }, orderBy: { createdAt: "asc" } }));
+}));
 const importUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024 }
@@ -335,6 +342,7 @@ router.get("/due-overview", requireProject, requireRoles("owner", "staff"), asyn
         member: {
           select: {
             id: true,
+            mid: true,
             name: true,
             mobile: true,
             shares: true,
@@ -347,6 +355,7 @@ router.get("/due-overview", requireProject, requireRoles("owner", "staff"), asyn
 
   const memberBalances = new Map<string, {
     member_id: string;
+    mid: string | null;
     name: string;
     mobile: string;
     shares: number;
@@ -361,6 +370,7 @@ router.get("/due-overview", requireProject, requireRoles("owner", "staff"), asyn
     if (outstanding === 0) continue;
     const balance = memberBalances.get(due.member.id) ?? {
       member_id: due.member.id,
+      mid: due.member.mid,
       name: due.member.name,
       mobile: due.member.mobile,
       shares: due.member.shares,
@@ -448,6 +458,7 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
   ]);
 
   const existingByMobile = new Map(existingMembers.map((member) => [member.mobile, member]));
+  if (existingByMobile.size !== existingMembers.length) throw badRequest("This fund has separate share records using the same mobile. Edit those records by MID; the basic member importer cannot identify them by mobile alone.");
   const replacedActiveShares = existingMembers
     .filter((member) => member.status === "active")
     .reduce((sum, member) => sum + member.shares, 0);
@@ -773,6 +784,7 @@ router.get("/:id", requireProject, requireRoles("any"), validateParams(idParamSc
 router.post("/", requireProject, requireRoles("owner", "accountant", "admin"), validateBody(memberBodySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const body = req.body as z.infer<typeof memberBodySchema>;
+  await assertPersonCapacity(auth.tenantId, body);
   const project = await assertShareCap({ tenantId: auth.tenantId, projectId: auth.projectId, shares: body.shares });
 
   const result = await prisma.$transaction(async (tx) => {

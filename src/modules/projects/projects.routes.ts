@@ -1,3 +1,4 @@
+import { assertProjectCapacity } from "../../core/subscription/quota.service.js";
 import { constructionMenus } from "../construction/construction.menu.js";
 import { billingMenus } from "../billing/billing.menu.js";
 import { readObject, StorageObjectNotFoundError } from "../../core/storage/object-storage.service.js";
@@ -209,6 +210,7 @@ projectsRouter.post("/owned-organization", requireRoles("any"), validateBody(req
 projectsRouter.post("/", authenticate, requireActiveSubscription, requireProject, requireRoles("owner", "admin"), validateBody(requireFundShares(createProjectSchema.omit({ organization_name: true }))), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const body = req.body as z.infer<typeof createProjectSchema>;
+  await assertProjectCapacity(auth.tenantId);
   const actor = await prisma.user.findUniqueOrThrow({
     where: { id: auth.userId },
     select: { id: true, name: true, mobile: true, email: true }

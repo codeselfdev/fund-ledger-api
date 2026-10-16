@@ -1,0 +1,30 @@
+import { Router } from "express";
+import { rateLimit } from "express-rate-limit";
+import { asyncHandler } from "../../core/http/async-handler.js";
+import { ApiError, forbidden } from "../../core/http/api-error.js";
+import { ok } from "../../core/http/response.js";
+import { prisma } from "../../core/prisma/client.js";
+import { requireProject, requireRoles } from "../../core/security/auth.middleware.js";
+import { requireProjectContext } from "../../core/security/auth.context.js";
+import { validateBody } from "../../core/validation/validate.js";
+import { aiConfigured, chatSchema } from "./assistant.policy.js";
+import { assistantStatus, publicReply, reserveReply, processReply } from "./assistant.service.js";
+import { assistantContext } from "./assistant.context.js";
+const router = Router();
+router.use(requireProject, requireRoles("any"));
+router.get("/status", asyncHandler(async (req, res) => ok(res, await assistantStatus(requireProjectContext(req).tenantId))));
+router.get("/messages", asyncHandler(async (req, res) => {
+  const a = requireProjectContext(req);
+  const context = await assistantContext(a.tenantId, a.projectId, a.userId);
+  const rows = await prisma.assistantReply.findMany({ where: { tenantId: a.tenantId, projectId: a.projectId, userId: a.userId, channel: "ai_chat", OR: [{ authorizationHash: context.authorization_hash }, { status: { in: ["queued", "processing"] } }] }, orderBy: { createdAt: "desc" }, take: 30 });
+  return ok(res, rows.reverse().map(publicReply));
+}));
+router.post("/messages", rateLimit({ windowMs: 60000, limit: 12, standardHeaders: true, legacyHeaders: false }), validateBody(chatSchema), asyncHandler(async (req, res) => {
+  const a = requireProjectContext(req), b = chatSchema.parse(req.body);
+  if (!aiConfigured()) throw new ApiError(503, "AI_NOT_CONFIGURED", "AI Chat needs server setup. Contact your administrator.");
+  const context = await assistantContext(a.tenantId, a.projectId, a.userId);
+  const row = await reserveReply({ tenantId: a.tenantId, projectId: a.projectId, userId: a.userId, channel: "ai_chat", requestKey: b.request_key, prompt: b.message });
+  if (row.status === "completed" && row.authorizationHash !== context.authorization_hash) throw forbidden("Your project access has changed. Ask a new question.");
+  return ok(res, publicReply(row.status === "completed" ? row : await processReply(row.id)));
+}));
+export { router as assistantRouter };

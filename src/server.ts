@@ -1,3 +1,4 @@
+import { startDocumentRetentionCron, stopDocumentRetentionCron } from "./core/cron/document-retention.cron.js";
 import { startFixedAssetsWorker, stopFixedAssetsWorker } from './modules/fixed-assets/fixed-assets.worker.js';
 import { startReportsWorker, stopReportsWorker } from "./modules/reports/report.worker.js";
 import { startCampaignWorker, stopCampaignWorker } from "./modules/notification-campaigns/campaign.service.js";
@@ -11,8 +12,11 @@ import { verifyMailTransport } from "./core/mail/mailer.service.js";
 import { prisma } from "./core/prisma/client.js";
 import { verifyObjectStorage } from "./core/storage/object-storage.service.js";
 
+import { startAssistantWorker, stopAssistantWorker } from "./modules/assistant/assistant.worker.js";
 const app = createApp();
+startAssistantWorker();
 startRecurringSchedulesCron();
+startDocumentRetentionCron();
 startBillingWorker();
 startCampaignWorker();
 startReportsWorker();
@@ -29,7 +33,9 @@ const server = app.listen(env.port, () => {
 });
 
 async function shutdown() {
+  stopAssistantWorker();
   stopRecurringSchedulesCron();
+  stopDocumentRetentionCron();
   stopBillingWorker();
   stopCampaignWorker();
   stopReportsWorker();

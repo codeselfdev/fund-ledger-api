@@ -22,6 +22,8 @@ function reset() {
  progress={tenantId:'tenant',projectId:'project',status:'in_progress',organizationStepStatus:'done',accountantStepStatus:'pending',accountsStepStatus:'pending',shareholdersStepStatus:'pending',accountantUserId:null,incomeApprovalFlow:'accountant_and_approver',expenseApprovalFlow:'accountant_and_approver',completedAt:null};
 }
 before(async () => {
+ prisma.upload.count=async()=>0; prisma.project.count=async()=>1;
+ prisma.$queryRaw=async()=>[];
  prisma.$transaction=async fn=>fn(prisma);
  prisma.project.findFirst=async ({where})=>matches(project,where)?structuredClone(project):null;
  prisma.project.findFirstOrThrow=async ({where})=>{scopeQueries.push(where);if(!matches(project,where)) throw new Error('Project not found');return structuredClone(project);};
@@ -66,7 +68,7 @@ before(async () => {
  prisma.deposit.updateMany=async({where,data})=>{const rows=deposits.filter(row=>matches(row,where));rows.forEach(row=>Object.assign(row,data));return{count:rows.length};};
  prisma.deposit.update=async({where,data})=>{const row=deposits.find(row=>matches(row,where));return Object.assign(row,data);};
  prisma.depositAllocation.createMany=async()=>({count:1});
- prisma.depositAllocation.findMany=async()=>[{due:structuredClone(due)}];
+ prisma.depositAllocation.findMany=async()=>[{due:{...structuredClone(due),schedule:{name:"Schedule"}}}];
  prisma.depositAllocation.updateMany=async()=>({count:1});
  prisma.receipt.create=async({data})=>{const row={id:`receipt-${receipts.length}`,...data};receipts.push(row);return row;};
  prisma.accountTransaction.create=async({data})=>({id:'transaction',...data});

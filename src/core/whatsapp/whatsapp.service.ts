@@ -33,6 +33,7 @@ async function graphRequest<T>(input: {
 }): Promise<T> {
   const response = await fetch(`https://graph.facebook.com/${input.version}/${input.path.replace(/^\//, "")}`, {
     method: input.method ?? "GET",
+    signal: AbortSignal.timeout(15000),
     headers: {
       Authorization: `Bearer ${input.token}`,
       Accept: "application/json",
@@ -172,4 +173,12 @@ function publicConnection(connection: {
     group: connection.groupId ? { id: connection.groupId, name: connection.groupName } : null,
     last_verified_at: connection.lastVerifiedAt
   };
+}
+
+export async function sendWhatsAppBotReply(input: { tenantId: string; projectId: string; connectionId: string; recipient: string; message: string }) {
+  if (!env.whatsapp.enabled) throw badRequest("WhatsApp integration is disabled");
+  const connection = await prisma.whatsAppConnection.findFirst({ where: { id: input.connectionId, tenantId: input.tenantId, projectId: input.projectId, isActive: true } });
+  if (!connection) throw badRequest("WhatsApp connection is no longer active");
+  return graphRequest<{ messages?: { id: string }[] }>({ version: connection.graphApiVersion, path: `${connection.phoneNumberId}/messages`, token: decrypt(connection.encryptedAccessToken), method: "POST",
+    body: { messaging_product: "whatsapp", recipient_type: "individual", to: input.recipient, type: "text", text: { body: input.message.slice(0, 4000), preview_url: false } } });
 }

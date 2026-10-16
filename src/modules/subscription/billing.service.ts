@@ -1,3 +1,5 @@
+import { tenantQuota } from "../../core/subscription/quota.service.js";
+import { PACKAGES, type PackageId, type BillingCycle } from "../../core/subscription/packages.js";
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../core/prisma/client.js";
@@ -5,6 +7,7 @@ import { badRequest, conflict, notFound } from "../../core/http/api-error.js";
 import { renewTenantSubscription } from "../../core/subscription/subscription.service.js";
 
 export interface SubscriptionInvoice {
+  package?: PackageId; billing_cycle?: BillingCycle;
   id: string; amount: number; currency: string; status: "open" | "submitted" | "approved" | "rejected";
   instructions: string; issued_at: string; payment_reference: string | null; submitted_at: string | null;
   approved_at: string | null; rejection_reason: string | null; period_ends_at: string | null;
@@ -17,13 +20,14 @@ export function invoicesFromContact(contact: unknown): SubscriptionInvoice[] {
 
 /** Compare-and-swap protects concurrent approvals without granting customer-controlled renewals. */
 async function mutateBilling(tenantId: string, action: string, actorUserId: string | null,
-  mutate: (contact: Record<string, unknown>, invoices: SubscriptionInvoice[]) => { contact?: unknown; invoice: SubscriptionInvoice }) {
+  mutate: (contact: Record<string, unknown>, invoices: SubscriptionInvoice[], tx: Prisma.TransactionClient) => { contact?: unknown; invoice: SubscriptionInvoice } | Promise<{ contact?: unknown; invoice: SubscriptionInvoice }>) {
   return prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR NO KEY UPDATE`;
     const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant) throw notFound("Organization not found");
     const contact = record(tenant.contact);
     const invoices = structuredClone(invoicesFromContact(contact));
-    const result = mutate(contact, invoices);
+    const result = await mutate(contact, invoices, tx);
     const next = { ...record(result.contact ?? contact), billing: { ...record(contact.billing), invoices } };
     const updated = await tx.tenant.updateMany({ where: { id: tenant.id, updatedAt: tenant.updatedAt },
       data: { contact: JSON.parse(JSON.stringify(next)) as Prisma.InputJsonValue } });
@@ -33,10 +37,10 @@ async function mutateBilling(tenantId: string, action: string, actorUserId: stri
     return result.invoice;
   });
 }
-export function issueInvoice(tenantId: string, amount: number, currency: string, instructions: string) {
+export function issueInvoice(tenantId: string, amount: number, currency: string, instructions: string, selection?: { package: PackageId; billing_cycle: BillingCycle }) {
   return mutateBilling(tenantId, "subscription.invoice_issued", null, (_contact, invoices) => {
     if (invoices.some(row => row.status !== "approved")) throw conflict("An unpaid invoice already exists");
-    const invoice: SubscriptionInvoice = { id: randomUUID(), amount, currency, instructions, status: "open", issued_at: new Date().toISOString(),
+    const invoice: SubscriptionInvoice = { ...selection, id: randomUUID(), amount, currency, instructions, status: "open", issued_at: new Date().toISOString(),
       payment_reference: null, submitted_at: null, approved_at: null, rejection_reason: null, period_ends_at: null };
     invoices.push(invoice); return { invoice };
   });
@@ -52,7 +56,7 @@ export function submitInvoicePayment(tenantId: string, invoiceId: string, userId
   });
 }
 export function reviewInvoicePayment(tenantId: string, invoiceId: string, decision: "approve" | "reject", reason?: string) {
-  return mutateBilling(tenantId, `subscription.payment_${decision}d`, null, (contact, invoices) => {
+  return mutateBilling(tenantId, `subscription.payment_${decision}d`, null, async (contact, invoices, tx) => {
     const invoice = invoices.find(row => row.id === invoiceId);
     if (!invoice) throw notFound("Invoice not found");
     if (invoice.status === "approved" && decision === "approve") return { invoice }; // Idempotent; period never extends twice.
@@ -61,7 +65,12 @@ export function reviewInvoicePayment(tenantId: string, invoiceId: string, decisi
       if (!reason?.trim()) throw badRequest("A rejection reason is required");
       Object.assign(invoice, { status: "rejected", rejection_reason: reason.trim() }); return { invoice };
     }
-    const renewed = renewTenantSubscription(contact);
+    if (invoice.package) {
+      const usage = await tenantQuota(tenantId, tx), plan = PACKAGES[invoice.package];
+      if ((plan.users !== null && usage.users.used > plan.users) || (plan.documents !== null && usage.documents.used > plan.documents) || (plan.projects !== null && usage.projects.used > plan.projects))
+        throw conflict("Organization usage no longer fits this package. Resolve its usage or issue a larger package before approval.");
+    }
+    const renewed = renewTenantSubscription(contact, new Date(), invoice.package ? { package: invoice.package, billing_cycle: invoice.billing_cycle ?? "yearly" } : undefined);
     Object.assign(invoice, { status: "approved", approved_at: new Date().toISOString(), period_ends_at: renewed.subscription.current_period_end_at });
     return { contact: renewed.contact, invoice };
   });

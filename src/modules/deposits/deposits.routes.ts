@@ -117,6 +117,7 @@ async function lockReviewedDeposit(tx: Prisma.TransactionClient, input: {
 }
 
 async function canSubmitForMember(auth: {
+  memberIds?: string[];
   roles: string[];
   memberId: string | null;
   userId: string;
@@ -126,7 +127,7 @@ async function canSubmitForMember(auth: {
   if (auth.roles.includes("admin") || auth.roles.includes("owner")) return true;
   if (auth.roles.includes("accountant")) return true;
   if (auth.roles.includes("cashier")) return true;
-  if (auth.roles.includes("member") && auth.memberId === memberId) return true;
+  if (auth.roles.includes("member") && (auth.memberId === memberId || auth.memberIds?.includes(memberId))) return true;
   if (!auth.roles.includes("member")) return false;
 
   const beneficiary = await prisma.member.findFirst({

@@ -41,6 +41,7 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
       const requestedProjectId = resolveProject ? (req.header("x-project-id") ?? session.activeProjectId) : null;
       let roles: Role[] = [];
       let memberId: string | null = null;
+      let memberIds: string[] = [];
 
       if (requestedProjectId) {
         const memberships = await prisma.projectMembership.findMany({
@@ -79,6 +80,16 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
           memberId = ensured.memberId;
         }
 
+        if (hasMemberRole) {
+          const owned = await prisma.member.findMany({ where: { tenantId: session.tenantId, projectId: requestedProjectId, userId: session.userId, status: "active" }, select: { id: true } });
+          memberIds = owned.map(row => row.id);
+          const requestedMemberId = req.header("x-member-id");
+          if (requestedMemberId) {
+            if (!memberIds.includes(requestedMemberId)) throw forbidden("This share record does not belong to your account");
+            memberId = requestedMemberId;
+          }
+        }
+
         // Permissions belong only to the requested project's active memberships.
         roles = effectiveProjectRoles(roles);
       }
@@ -90,6 +101,7 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
         projectId: requestedProjectId ?? null,
         sessionProjectId: session.activeProjectId ?? null,
         roles,
+        memberIds,
         memberId
       };
 

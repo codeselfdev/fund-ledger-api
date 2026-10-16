@@ -222,6 +222,22 @@
       ]
     },
     {
+      "key": "fund_import",
+      "group": "people",
+      "label": "Import existing fund",
+      "description": "Start from an old spreadsheet with members and opening balances",
+      "icon": "M4 3h11l5 5v13H4V3 M14 3v6h6 M8 13h8 M8 17h5",
+      "keywords": "excel xlsx csv spreadsheet migration opening balance history shares MID template sample",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant"
+      ],
+      "project_types": [
+        "fund_shares"
+      ]
+    },
+    {
       "key": "notices",
       "group": "comm",
       "label": "Notices",

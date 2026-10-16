@@ -26,6 +26,7 @@ function model(table){return {
  update:async({where,data})=>{const row=db[table].find(r=>matches(r,where));assert.ok(row);for(const[k,v]of Object.entries(data))row[k]=v&&typeof v==='object'&&'increment'in v?row[k]+v.increment:clone(v);return clone(row);}
 };}
 before(async()=>{
+ prisma.member.findMany=async({where})=>db.memberships.filter(row=>row.tenantId===where.tenantId&&row.projectId===where.projectId&&row.userId===where.userId&&row.role==='member'&&row.isActive).map(row=>({id:row.memberId}));
  for(const[name,table]of Object.entries({project:'projects',shortcutPreference:'preferences',projectMembership:'memberships',session:'sessions'}))Object.assign(prisma[name],model(table));
  prisma.$transaction=async fn=>{const previous=queue;let release;queue=new Promise(r=>release=r);await previous;const snapshot=clone(db);try{return await fn(prisma);}catch(e){db=snapshot;throw e;}finally{release();}};
  const app=express();app.use(express.json());app.use(authenticate);app.use('/v1/shortcuts',shortcutsRouter);app.use(errorHandler);server=app.listen(0,'127.0.0.1');await new Promise((resolve,reject)=>{server.once('listening',resolve);server.once('error',reject);});base=`http://127.0.0.1:${server.address().port}/v1/shortcuts`;
