@@ -24,7 +24,10 @@ export function buildSupportRouter(internal = false) {
   router.get("/tickets/:id", asyncHandler(async (req, res) => { const q = listSchema.parse(req.query); return ok(res, await ticketMessages(String(req.params.id), owner(req), q.offset)); }));
   router.post("/tickets/:id/read", asyncHandler(async (req, res) => {
     const ticket = await supportTicket(String(req.params.id), owner(req));
-    if (!internal) await prisma.supportTicket.update({ where: { id: ticket.id }, data: { userReadAt: new Date() } });
+    if (!internal) await prisma.$transaction([
+      prisma.supportTicket.update({ where: { id: ticket.id }, data: { userReadAt: new Date() } }),
+      prisma.notification.updateMany({ where: { tenantId: ticket.tenantId, recipientUserId: ticket.requesterId, type: "support.replied", entityType: "support_ticket", entityId: ticket.id, readAt: null }, data: { readAt: new Date() } })
+    ]);
     else { internalActor(req); await prisma.platformAlert.updateMany({where:{ticketId:ticket.id,tenantId:ticket.tenantId,readAt:null},data:{readAt:new Date()}}); }
     return ok(res, { read: true });
   }));

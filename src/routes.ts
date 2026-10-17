@@ -16,7 +16,7 @@ import type { Express } from "express";
 import { authenticate } from "./core/security/auth.middleware.js";
 import { requireActiveSubscription } from "./core/security/subscription.middleware.js";
 import { accountsRouter } from "./modules/accounts/accounts.routes.js";
-import { activityRouter } from "./modules/activity/activity.routes.js";
+import { activityRouter, accountNotificationsRouter } from "./modules/activity/activity.routes.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { dashboardRouter } from "./modules/dashboard/dashboard.routes.js";
 import { depositDelegatesRouter } from "./modules/deposit-delegates/deposit-delegates.routes.js";
@@ -64,6 +64,8 @@ export function registerRoutes(app: Express) {
   app.use("/v1/integrations/telegram/webhook", telegramWebhookRouter);
   app.use(authenticate);
   app.use("/v1/subscription", subscriptionRouter);
+  // Account notifications include private support replies, even after subscription expiry.
+  app.use("/v1", accountNotificationsRouter);
   app.use(requireActiveSubscription);
   app.use("/v1/assistant", assistantRouter);
   app.use("/v1/reports", reportsRouter);

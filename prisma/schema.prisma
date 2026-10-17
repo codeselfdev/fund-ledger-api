@@ -2129,6 +2129,7 @@ model SupportMessage {
   createdAt DateTime @default(now()) @map("created_at")
   ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   attachments SupportAttachment[]
+  replyDeliveries SupportReplyDelivery[]
   @@unique([ticketId, requestKey])
   @@index([tenantId, ticketId, createdAt])
   @@map("support_messages")
@@ -2248,4 +2249,25 @@ model PlatformAlert {
   @@index([telegramSentAt,telegramNextAttemptAt])
   @@index([tenantId,createdAt])
   @@map("platform_alerts")
+}
+
+// One independently retryable delivery per team reply and external channel.
+model SupportReplyDelivery {
+  id String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  messageId String @map("message_id")
+  channel String
+  status String @default("pending")
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at")
+  leaseUntil DateTime? @map("lease_until")
+  leaseToken String? @map("lease_token")
+  sentAt DateTime? @map("sent_at")
+  lastError String? @map("last_error")
+  createdAt DateTime @default(now()) @map("created_at")
+  message SupportMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  @@unique([messageId, channel])
+  @@index([status, nextAttemptAt, leaseUntil])
+  @@index([tenantId])
+  @@map("support_reply_deliveries")
 }

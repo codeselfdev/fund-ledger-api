@@ -91,6 +91,43 @@ This is an explicit API operation, not an automatically scheduled bulk purge. It
 
 ## Mobile endpoints
 
+### Customer notifications for support replies
+
+Apply `20261017010000_support_reply_notifications`, regenerate Prisma Client,
+and restart the API before using this feature. New team replies atomically save
+one private in-app notification for the ticket requester plus independent push
+and email delivery rows. Customer messages and idempotent reply retries do not
+create duplicate customer notifications. Historical team replies are not backfilled.
+
+The API's support notification worker runs at startup and every 15 seconds.
+Each external channel has its own lease, retry schedule, five-attempt limit, and
+success marker. A mail outage cannot resend a successful push or prevent the
+reply/inbox item from being saved. Missing customer email or device token skips
+that channel while preserving the in-app notification. SMTP and Firebase Admin
+configuration are reused; no new notification credentials are required. Push
+requires a registered device and OS notification permission. Provider acceptance
+is recorded, not guaranteed inbox/device delivery. A provider accepting a message
+before a worker crash can still cause an at-least-once duplicate on recovery.
+
+Push/in-app metadata uses `type=support.replied`, `entity_type=support_ticket`,
+`entity_id=<ticket id>`, and the customer's `tenant_id`; there is no project scope.
+Email includes the reply text, an attachment count, instructions to open Support,
+and `fundnesta://support?ticket_id=...&tenant_id=...`. Screenshots stay behind the
+authenticated support attachment API and are not attached or linked publicly.
+The matching mobile build opens the private thread from push, inbox, and email
+links. Reading the thread acknowledges its unread reply notifications.
+
+Notification list/read/device-registration endpoints remain authenticated and
+recipient/tenant scoped but are available after subscription expiry and without
+a project role. Financial and project actions retain their subscription guards.
+Queued deliveries are skipped when the recipient is inactive or cleanup has
+started; the outbox is included in organization cleanup.
+
+Verification: `tests/support-reply-notifications.integration.test.mjs` is opt-in
+(`RUN_SUPPORT_REPLY_INTEGRATION=true`) and only accepts the disposable localhost
+database `fundnesta_support_reply_verify`. Providers are mocked and no actual
+customer email, push, or production database is used.
+
 User support endpoints use `/v1/support` and the normal Bearer token, without an active project or subscription requirement. Users can list/read/reply only to their own conversations, including screenshots. `POST /tickets` accepts the same multipart message fields plus a 3–160-character `subject`; `POST /tickets/:id/messages` replies; GET/list/status/attachment paths match the team API. `POST /tickets/:id/read` acknowledges replies. `POST /installations` accepts `installation_id` UUID, `platform` (`android`, `ios`, `web`) and optional `app_version`, preserving the first observation on retries.
 
 Member profile: `GET /v1/members/:id/invitation` returns saved email, first native app observation and the last invitation status. `POST` accepts `{ "request_key": "UUID" }`. Owner/admin and active project membership are required; ordinary members/accountants cannot send. The member must be active and have a saved valid email. The linked account and member role are ensured before emailing. A replay does not send twice; resending requires a new key and at least one minute between requests. `sent` means accepted by the configured mail transport, not confirmed inbox delivery or installation. `sending` after an interrupted server request needs an operator check before a new send, because SMTP cannot provide an atomic exactly-once guarantee.

@@ -1,3 +1,4 @@
+import { queueSupportReply } from "./support-reply-notifications.service.js";
 import { customerDetails } from "../internal/customers.service.js";
 import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "../../core/prisma/client.js";
@@ -61,6 +62,7 @@ export async function sendSupport(input: { owner?: SupportOwner; actor?: string;
       const message = await tx.supportMessage.create({ data: { tenantId, ticketId: ticket.id, requestKey: input.requestKey, payloadHash, sender, author, body: input.body,
         attachments: { create: fileInfo.map((info, i) => ({ tenantId, fileName: info.file.originalname.slice(0, 180), mimeType: info.mime, size: info.file.size, storageKey: keys[i]! })) } }, include: messageInclude });
       const updated = await tx.supportTicket.update({ where: { id: ticket.id }, data: { status: "open", lastSender: sender, lastMessageAt: message.createdAt, ...(input.owner ? { userReadAt: message.createdAt } : {}) } });
+      if (sender === "team") await queueSupportReply(tx, ticket, message);
       if (input.actor) await tx.internalAudit.create({ data: { tenantId, actor: input.actor, action: "support.replied", metadata: { ticket_id: ticket.id, message_id: message.id } } });
       return { ticket: updated, message, replayed: false };
     }, { timeout: 20000 });

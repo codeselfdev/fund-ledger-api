@@ -14,6 +14,7 @@ import { writeAudit } from "../../core/audit/audit.service.js";
 import { sendWhatsAppGroupMessage } from "../../core/whatsapp/whatsapp.service.js";
 
 const router = Router();
+const accountNotificationsRouter = Router();
 const notificationDeviceTokenSchema = z.object({
   fcm_token: z.string().min(20).max(2048)
 });
@@ -49,7 +50,7 @@ router.get("/activity", requireProject, requireRoles("any"), asyncHandler(async 
   return ok(res, activity);
 }));
 
-router.get("/notifications", requireRoles("any"), asyncHandler(async (req, res) => {
+accountNotificationsRouter.get("/notifications", asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const notifications = await prisma.notification.findMany({
     where: {
@@ -63,7 +64,7 @@ router.get("/notifications", requireRoles("any"), asyncHandler(async (req, res) 
   return ok(res, notifications);
 }));
 
-router.patch("/notifications/:id/read", requireRoles("any"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
+accountNotificationsRouter.patch("/notifications/:id/read", validateParams(idParamSchema), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const { id } = req.params as z.infer<typeof idParamSchema>;
   const notification = await prisma.notification.findFirst({
@@ -83,7 +84,7 @@ router.patch("/notifications/:id/read", requireRoles("any"), validateParams(idPa
   return ok(res, updated);
 }));
 
-router.post("/notifications/device-token", requireRoles("any"), validateBody(notificationDeviceTokenSchema), asyncHandler(async (req, res) => {
+accountNotificationsRouter.post("/notifications/device-token", validateBody(notificationDeviceTokenSchema), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const body = req.body as z.infer<typeof notificationDeviceTokenSchema>;
   await prisma.user.updateMany({
@@ -93,7 +94,7 @@ router.post("/notifications/device-token", requireRoles("any"), validateBody(not
   return ok(res, { registered: true });
 }));
 
-router.delete("/notifications/device-token", requireRoles("any"), asyncHandler(async (req, res) => {
+accountNotificationsRouter.delete("/notifications/device-token", asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   await prisma.user.updateMany({
     where: { id: auth.userId, tenantId: auth.tenantId },
@@ -148,4 +149,4 @@ router.post("/notifications/broadcast", requireProject, requireRoles("owner", "a
   });
 }));
 
-export { router as activityRouter };
+export { router as activityRouter, accountNotificationsRouter };

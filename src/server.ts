@@ -1,3 +1,4 @@
+import { startSupportReplyNotifications, stopSupportReplyNotifications } from "./modules/support/support-reply-notifications.service.js";
 import { startDocumentRetentionCron, stopDocumentRetentionCron } from "./core/cron/document-retention.cron.js";
 import { startFixedAssetsWorker, stopFixedAssetsWorker } from './modules/fixed-assets/fixed-assets.worker.js';
 import { startReportsWorker, stopReportsWorker } from "./modules/reports/report.worker.js";
@@ -16,6 +17,7 @@ import { startAssistantWorker, stopAssistantWorker } from "./modules/assistant/a
 import { startPlatformAlerts, stopPlatformAlerts } from "./modules/internal/alerts.service.js";
 const app = createApp();
 startPlatformAlerts();
+startSupportReplyNotifications();
 startAssistantWorker();
 startRecurringSchedulesCron();
 startDocumentRetentionCron();
@@ -36,6 +38,7 @@ const server = app.listen(env.port, () => {
 
 async function shutdown() {
   stopPlatformAlerts();
+  stopSupportReplyNotifications();
   stopAssistantWorker();
   stopRecurringSchedulesCron();
   stopDocumentRetentionCron();
