@@ -72,3 +72,34 @@ test('a requested share context is accepted only within the signed-in user, tena
   if(allowed){assert.equal(error,undefined);assert.equal(req.auth.memberId,'m2');assert.deepEqual(req.auth.memberIds,['m1','m2']);}else assert.equal(error.statusCode,403);
  }
 });
+
+test('saved owner and accountant are updated by member ID while only remaining CSV members are created',async()=>{
+ db.members=[{id:'owner-member',mid:null,mobile:'+8801711000002',shares:1,status:'active',updatedAt:new Date('2026-01-01')},{id:'accountant-member',mid:null,mobile:'+8801711000003',shares:1,status:'active',updatedAt:new Date('2026-01-01')}];
+ const input=body();input.rows=[{...row('OWNER'),member_id:'owner-member',mobile:'+8801711000002'},{...row('ACC'),member_id:'accountant-member',mobile:'+8801711000003'}, {...row('N1'),mobile:'+8801711000004'}, {...row('N2'),mobile:'+8801711000005'}, {...row('N3'),mobile:'+8801711000006'}];
+ const preview=await previewFundImport(context,input);assert.deepEqual(preview.matched_member_ids,['owner-member','accountant-member']);assert.equal(preview.existing_members,2);
+ await commitFundImport(context,input,preview.review_token);assert.equal(db.members.length,5);assert.equal(db.members.filter(m=>m.id==='owner-member').length,1);assert.equal(db.members.filter(m=>m.id==='accountant-member').length,1);
+ assert.equal(db.dues.filter(d=>d.memberId==='owner-member').length,2);assert.equal(db.dues.filter(d=>d.memberId==='accountant-member').length,2);
+});
+test('duplicate, unknown or changed saved member bindings fail before writing',async()=>{
+ db.members=[{id:'saved',mid:null,mobile:'+8801711000001',shares:1,status:'active',updatedAt:new Date('2026-01-01')}];
+ for(const mutate of [input=>{input.rows[0].member_id='missing';},input=>{input.rows[0].member_id='saved';input.rows[0].shares=2;},input=>{input.rows[0].member_id='saved';input.rows[0].mobile='+8801711000009';},input=>{input.rows[0].member_id='saved';input.rows[1].member_id='saved';}]){
+  const input=body();mutate(input);await assert.rejects(previewFundImport(context,input));assert.equal(db.members.length,1);assert.equal(db.dues.length,0);
+ }
+});
+test('opening advance is usable credit and creates no account transaction or receipt, including on retry',async()=>{
+ const deposits=[];prisma.deposit.create=async({data})=>{deposits.push(data);return{id:'opening-advance',...data};};prisma.receipt.create=async()=>{throw Error('Opening advance must not create a payment receipt');};
+ const input=body();input.rows[0].advance_amount=750;const preview=await previewFundImport(context,input);assert.equal(preview.summary.advance,750);
+ await commitFundImport(context,input,preview.review_token);assert.equal(deposits.length,1);assert.equal(deposits[0].amount,750);assert.equal(deposits[0].allocate,'advance');assert.equal(deposits[0].status,'confirmed');assert.match(deposits[0].reference,/Opening advance/);
+ await commitFundImport(context,input,preview.review_token);assert.equal(deposits.length,1);
+});
+test('a zero-share accountant can receive opening history only when explicitly bound to its saved record',async()=>{
+ db.members=[{id:'accountant',mid:null,mobile:'+8801711000001',shares:0,status:'active',updatedAt:new Date('2026-01-01')}];
+ const input=body();input.rows=[{...row('ACC'),member_id:'accountant',shares:0}];const preview=await previewFundImport(context,input);await commitFundImport(context,input,preview.review_token);assert.equal(db.members.length,1);assert.equal(db.members[0].shares,0);
+});
+
+
+test('a saved member with a national phone retains its member and user identities',async()=>{
+ db.members=[{id:'owner-member',userId:'owner-user',mid:null,mobile:'01711000001',shares:1,status:'active',updatedAt:new Date('2026-01-01')}];
+ const input=body();input.rows=[{...row('OWNER'),member_id:'owner-member'}];const preview=await previewFundImport(context,input);await commitFundImport(context,input,preview.review_token);
+ assert.equal(db.members.length,1);assert.equal(db.members[0].userId,'owner-user');assert.equal(db.members[0].mobile,'01711000001');assert.equal(db.users.length,0);
+});

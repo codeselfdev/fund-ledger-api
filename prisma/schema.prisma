@@ -1248,6 +1248,8 @@ model AccountDeletionRequest {
   dueAt          DateTime  @map("due_at")
   completedAt    DateTime? @map("completed_at")
   resolutionNote String?   @map("resolution_note")
+  processingLeaseUntil DateTime? @map("processing_lease_until")
+  processingError String? @map("processing_error")
 
   @@index([status, dueAt])
   @@map("account_deletion_requests")

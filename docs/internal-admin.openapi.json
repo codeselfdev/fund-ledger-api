@@ -684,6 +684,301 @@
           }
         }
       }
+    },
+    "/account-deletion-requests": {
+      "get": {
+        "summary": "List account deletion requests by deadline",
+        "operationId": "listAccountDeletionRequests",
+        "parameters": [
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "in_review",
+                "needs_information",
+                "processing",
+                "processing_failed",
+                "completed",
+                "rejected"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        }
+      }
+    },
+    "/account-deletion-requests/{id}": {
+      "get": {
+        "summary": "Request, customer and operator history",
+        "operationId": "getAccountDeletionRequest",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        }
+      }
+    },
+    "/account-deletion-requests/{id}/preview": {
+      "get": {
+        "summary": "Preview account deletion and blockers",
+        "operationId": "previewAccountDeletion",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        }
+      }
+    },
+    "/account-deletion-requests/{id}/review": {
+      "post": {
+        "summary": "Review a deletion request with concurrency control",
+        "operationId": "reviewAccountDeletionRequest",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "X-Internal-Actor",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "status",
+                  "expected_status",
+                  "note"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "in_review",
+                      "needs_information"
+                    ]
+                  },
+                  "expected_status": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "in_review",
+                      "needs_information"
+                    ]
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 2000
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/account-deletion-requests/{id}/delete": {
+      "post": {
+        "summary": "Permanently delete the reviewed account; repeat for remaining file batches",
+        "operationId": "executeAccountDeletion",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "X-Internal-Actor",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal key"
+          },
+          "409": {
+            "description": "Stale or conflicting operation"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "identity_verified",
+                  "confirmation",
+                  "retention_note"
+                ],
+                "properties": {
+                  "identity_verified": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "confirmation": {
+                    "type": "string",
+                    "description": "Exactly DELETE followed by a space and the request ID"
+                  },
+                  "retention_note": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 2000
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

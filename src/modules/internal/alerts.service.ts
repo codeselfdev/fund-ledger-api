@@ -4,7 +4,7 @@ import { customerDetails } from "./customers.service.js";
 export async function platformAlerts(offset = 0, unread = false, kind?: string) {
     const where = { ...(unread ? { readAt: null } : {}), ...(kind ? { kind } : {}) };
     const [rows, count] = await Promise.all([prisma.platformAlert.findMany({ where, include: { tenant: { select: { name: true, slug: true } } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 31, skip: offset }), prisma.platformAlert.count({ where: { readAt: null } })]);
-    return { alerts: await Promise.all(rows.slice(0, 30).map(async (row) => ({ ...row, customer: await customerDetails(row.tenantId, row.userId) }))), unread: count, next_offset: rows.length > 30 ? offset + 30 : null };
+    return { alerts: await Promise.all(rows.slice(0, 30).map(async (row) => ({ ...row, deletion_request_id: row.kind === 'account_deletion' ? row.eventKey.slice('account_deletion:'.length) : null, customer: await customerDetails(row.tenantId, row.userId) }))), unread: count, next_offset: rows.length > 30 ? offset + 30 : null };
 }
 let timer: ReturnType<typeof setInterval> | undefined, running = false;
 async function alertText(row: {
@@ -12,12 +12,22 @@ async function alertText(row: {
     userId: string | null;
     ticketId: string | null;
     kind: string;
+    eventKey: string;
 }) {
     const [customer, tenant] = await Promise.all([customerDetails(row.tenantId, row.userId), prisma.tenant.findUnique({ where: { id: row.tenantId } })]);
     if (!tenant)
         return null;
-    const root = process.env.ADMIN_WEB_URL?.replace(/\/$/, ""), link = root ? `${root}/?view=${row.ticketId ? 'support&ticket=' + encodeURIComponent(row.ticketId) : 'organizations&organization=' + encodeURIComponent(row.tenantId)}` : '';
-    return { subject: `Fund Nesta · ${row.kind === 'signup' ? 'New signup' : 'New support message'} · ${tenant.name}`, text: [tenant.name, customer ? `Customer: ${customer.name}\nMobile: ${customer.mobile}\nEmail: ${customer.email ?? 'Not supplied'}\nShares: ${customer.shares}\n${customer.members.map(m => `${m.project.name}${m.mid ? ' #' + m.mid : ''}: ${m.shares} shares`).join('\n')}` : 'Customer details unavailable', link ? 'Open and reply: ' + link : 'Open the super-admin panel to view details and reply.'].join("\n\n") };
+    const requestId = row.kind === 'account_deletion' ? row.eventKey.slice('account_deletion:'.length) : null;
+    const request = requestId ? await prisma.accountDeletionRequest.findUnique({ where: { id: requestId } }) : null;
+    const root = process.env.ADMIN_WEB_URL?.replace(/\/$/, ''), query = requestId ? 'deletions&request=' + encodeURIComponent(requestId) : row.ticketId ? 'support&ticket=' + encodeURIComponent(row.ticketId) : 'organizations&organization=' + encodeURIComponent(row.tenantId);
+    const link = root ? `${root}/?view=${query}` : '';
+    const label = requestId ? 'Review deletion request' : 'Open and reply';
+    return { subject: `Fund Nesta · ${requestId ? 'Account deletion requested' : row.kind === 'signup' ? 'New signup' : 'New support message'} · ${tenant.name}`,
+      text: [tenant.name, request ? `Request: ${request.id}\nRequested: ${request.requestedAt.toISOString()}\nDue: ${request.dueAt.toISOString()}\nStatus: ${request.status}\nAction required: verify the requester and review account deletion in the control room.` : '',
+        customer ? `Customer: ${customer.name}\nMobile: ${customer.mobile}\nEmail: ${customer.email ?? 'Not supplied'}\nShares: ${customer.shares}\n${customer.members.map(m => `${m.project.name}${m.mid ? ' #' + m.mid : ''}: ${m.shares} shares`).join('\n')}` : 'Customer details unavailable',
+        link ? label + ': ' + link : 'Open the super-admin panel to review this request.'].filter(Boolean).join('\n\n'),
+      ...(requestId && /^https:\/\//.test(link) ? { reply_markup: { inline_keyboard: [[{ text: label, url: link }]] } } : {}),
+    };
 }
 export async function deliverPlatformAlerts() {
     const emails = (process.env.PLATFORM_ALERT_EMAILS ?? "").split(",").map(s => s.trim()).filter(s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)), chatId = process.env.PLATFORM_ALERT_TELEGRAM_CHAT_ID, botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -55,7 +65,7 @@ export async function deliverPlatformAlerts() {
                 const content = await alertText(row);
                 if (!content)
                     throw new Error();
-                const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: chatId, text: (content.subject + "\n\n" + content.text).slice(0, 4096), link_preview_options: { is_disabled: true } }), signal: AbortSignal.timeout(20000) });
+                const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: chatId, text: (content.subject + "\n\n" + content.text).slice(0, 4096), link_preview_options: { is_disabled: true }, ...(content.reply_markup ? { reply_markup: content.reply_markup } : {}) }), signal: AbortSignal.timeout(20000) });
                 const result = await response.json() as {
                     ok?: boolean;
                 };

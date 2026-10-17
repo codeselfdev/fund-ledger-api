@@ -1,5 +1,27 @@
 # Fund Nesta support and internal administration
 
+## Account deletion requests
+
+Apply `20261017230000_account_deletion_admin`, regenerate Prisma Client, and deploy both the API and `fund-nesta-admin-web`. Existing open requests are backfilled into the activity/notification outbox once. The mobile request endpoint is unchanged.
+
+| Method | Path | Result |
+| --- | --- | --- |
+| GET | `/account-deletion-requests?offset=0&status=pending` | Up to 30 requests, earliest deadline first; omit status for all open states |
+| GET | `/account-deletion-requests/:id` | Request, organization, current requester contacts and the latest 50 operator audit entries |
+| POST | `/account-deletion-requests/:id/review` | `{status: "in_review" or "needs_information", expected_status, note}`; optimistic concurrency and audited operator identity |
+| GET | `/account-deletion-requests/:id/preview` | Personal-file/profile counts, retained-data explanation, blockers and exact typed confirmation |
+| POST | `/account-deletion-requests/:id/delete` | `{identity_verified: true, confirmation: "DELETE <request-id>", retention_note: "..."}`; requires prior review and a 20–2000 character retention/notification plan |
+
+Only the internal API key grants access. An ordinary account, project administrator or provisioning key cannot list or process requests. Write operations require `X-Internal-Actor` from the authenticated control-room proxy. No requester-supplied user or organization ID chooses the deletion target.
+
+Deletion applies to the request's account in its organization. It disables access and revokes sessions after explicit confirmation, purges up to 25 personal files per call, removes linked personal member profile/contact fields, conversations, authentication sessions, notification associations and account access. Further batches are run from the panel. Financial ledger records, payment proof and other shared organization/audit records remain under the operator's documented retention basis. Member rows keep shares and ledger links; unrelated records sharing a phone number are not scrubbed. Other organization accounts remain intact. A Firebase identity used by another account is retained; otherwise app-specific Firebase identities are removed, without deleting the person's Google account.
+
+The final owner of a project cannot be deleted until ownership is transferred. A login root with linked organization accounts must be relinked first. Legacy personal-file paths outside the organization prefix block cleanup. Storage/provider failures keep the request in `processing_failed` with retryable metadata and no completion timestamp. Leases prevent concurrent execution; already completed deletion retries are idempotent. The administrator records how the requester will be notified and receives a reminder to send that completion notice through their verified contact channel.
+
+New requests create one transactionally committed `account_deletion` activity alert. The existing platform worker sends a separate email/Telegram text with request reference and deadline. Telegram includes **Review deletion request**, linking to `ADMIN_WEB_URL/?view=deletions&request=<id>` and requiring normal admin sign-in. Reuse backend `PLATFORM_ALERT_TELEGRAM_CHAT_ID`, `TELEGRAM_BOT_TOKEN`, and HTTPS `ADMIN_WEB_URL`; no bot credential reaches the browser. Email and Telegram retry independently, and request retries do not create additional alerts.
+
+Validation uses a disposable PostgreSQL database with `DELETION_ADMIN_TEST_DATABASE_URL`; all email, Telegram and erasure-provider calls in the new tests are mocked. Do not point these tests at production.
+
 ## Deployment
 
 Apply migration `20261016140000_platform_support`, regenerate Prisma Client and deploy the API before distributing the matching mobile build. The migration adds support conversations/messages/screenshots, app-use observations, manual organization payments, operator audit and cleanup jobs. It also adds a tenant deletion marker and changes assistant allowance periods from DATE to TIMESTAMP(3), preserving old dates at midnight so more than one reset per day works.

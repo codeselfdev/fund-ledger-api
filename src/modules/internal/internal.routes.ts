@@ -15,11 +15,26 @@ import { organizationWorkbook } from "./export.service.js";
 import { beginCleanup, cleanupPreview, runCleanup } from "./cleanup.service.js";
 import { customerDetails } from "./customers.service.js";
 import { platformAlerts } from "./alerts.service.js";
+import { deletionRequests, deletionRequest, reviewDeletionRequest, deletionPreview, executeAccountDeletion } from './account-deletion.service.js';
 const router = Router();
 router.use(requireInternalApiKey, rateLimit({ windowMs: 60000, limit: 120, standardHeaders: true, legacyHeaders: false }));
 const page = z.object({ offset: z.coerce.number().int().min(0).max(100000).default(0), search: z.string().trim().max(120).optional() });
 router.use("/support", buildSupportRouter(true));
-router.get("/alerts", asyncHandler(async (req, res) => { const q = z.object({ offset: z.coerce.number().int().min(0).max(100000).default(0), unread: z.enum(["true", "false"]).optional(), kind: z.enum(["signup", "support_message"]).optional() }).parse(req.query); return ok(res, await platformAlerts(q.offset, q.unread === "true", q.kind)); }));
+router.get('/account-deletion-requests', asyncHandler(async (req, res) => {
+    const q = z.object({ offset: z.coerce.number().int().min(0).max(100000).default(0), status: z.enum(['pending', 'in_review', 'needs_information', 'processing', 'processing_failed', 'completed', 'rejected']).optional() }).parse(req.query);
+    return ok(res, await deletionRequests(q.offset, q.status));
+}));
+router.get('/account-deletion-requests/:id', asyncHandler(async (req, res) => ok(res, await deletionRequest(String(req.params.id)))));
+router.get('/account-deletion-requests/:id/preview', asyncHandler(async (req, res) => ok(res, await deletionPreview(String(req.params.id)))));
+router.post('/account-deletion-requests/:id/delete', asyncHandler(async (req, res) => {
+    const input = z.object({ identity_verified: z.literal(true), confirmation: z.string().max(200), retention_note: z.string().trim().min(20).max(2000) }).strict().parse(req.body);
+    return ok(res, await executeAccountDeletion(String(req.params.id), input, internalActor(req)));
+}));
+router.post('/account-deletion-requests/:id/review', asyncHandler(async (req, res) => {
+    const input = z.object({ status: z.enum(['in_review', 'needs_information']), expected_status: z.enum(['pending', 'in_review', 'needs_information']), note: z.string().trim().min(3).max(2000) }).strict().parse(req.body);
+    return ok(res, await reviewDeletionRequest(String(req.params.id), input, internalActor(req)));
+}));
+router.get("/alerts", asyncHandler(async (req, res) => { const q = z.object({ offset: z.coerce.number().int().min(0).max(100000).default(0), unread: z.enum(["true", "false"]).optional(), kind: z.enum(["signup", "support_message", "account_deletion"]).optional() }).parse(req.query); return ok(res, await platformAlerts(q.offset, q.unread === "true", q.kind)); }));
 router.post("/alerts/:id/read", asyncHandler(async (req, res) => { internalActor(req); const row = await prisma.platformAlert.updateMany({ where: { id: String(req.params.id) }, data: { readAt: new Date() } }); if (!row.count)
     throw notFound("Alert not found"); return ok(res, { read: true }); }));
 router.get("/summary", asyncHandler(async (_req, res) => ok(res, await overallUsage())));
