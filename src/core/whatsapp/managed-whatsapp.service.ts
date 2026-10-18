@@ -3,19 +3,10 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../prisma/client.js';
 import { ApiError, conflict, forbidden, serviceUnavailable } from '../http/api-error.js';
 import { hasBusinessAssistant } from '../../modules/assistant/assistant.policy.js';
+import { managedWhatsAppConfiguration as settings } from './whatsapp.configuration.js';
 import { encryptWhatsAppCredential } from './whatsapp.service.js';
 
 export const createGroupSchema = z.object({ name: z.string().trim().min(2).max(128) }).strict();
-const settingsSchema = z.object({
-  waba: z.string().min(1), phone: z.string().min(1), token: z.string().min(20),
-  version: z.string().regex(/^v\d+\.\d+$/),
-});
-function settings() {
-  if (process.env.WHATSAPP_ENABLED !== 'true' || process.env.WHATSAPP_GROUPS_ENABLED !== 'true') return null;
-  if (!process.env.WHATSAPP_APP_SECRET || !process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || !process.env.WHATSAPP_CREDENTIALS_KEY || !process.env.AI_SERVICE_URL || (process.env.AI_SERVICE_SHARED_SECRET?.length ?? 0) < 32) return null;
-  const parsed = settingsSchema.safeParse({ waba: process.env.WHATSAPP_WABA_ID, phone: process.env.WHATSAPP_PHONE_NUMBER_ID, token: process.env.WHATSAPP_ACCESS_TOKEN, version: process.env.WHATSAPP_GRAPH_API_VERSION ?? 'v23.0' });
-  return parsed.success ? parsed.data : null;
-}
 type Scope = { tenantId: string; projectId: string; userId: string };
 async function entitlement(scope: Pick<Scope, 'tenantId' | 'projectId'>) {
   const [tenant, project] = await Promise.all([

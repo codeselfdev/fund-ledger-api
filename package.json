@@ -19,7 +19,8 @@
     "privacy:requests:prod": "node dist/scripts/list-account-deletion-requests.js",
     "billing": "tsx src/scripts/subscription-billing.ts",
     "billing:prod": "node dist/scripts/subscription-billing.js",
-    "construction:migration:recover": "node scripts/recover-construction-migration.mjs"
+    "construction:migration:recover": "node scripts/recover-construction-migration.mjs",
+    "whatsapp:check": "node scripts/check-whatsapp.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",

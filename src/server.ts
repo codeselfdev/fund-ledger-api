@@ -15,7 +15,9 @@ import { verifyObjectStorage } from "./core/storage/object-storage.service.js";
 
 import { startAssistantWorker, stopAssistantWorker } from "./modules/assistant/assistant.worker.js";
 import { startPlatformAlerts, stopPlatformAlerts } from "./modules/internal/alerts.service.js";
+import { logWhatsAppConfiguration } from "./core/whatsapp/whatsapp.configuration.js";
 const app = createApp();
+logWhatsAppConfiguration();
 startPlatformAlerts();
 startSupportReplyNotifications();
 startAssistantWorker();

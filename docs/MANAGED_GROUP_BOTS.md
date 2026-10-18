@@ -48,6 +48,20 @@ Set Telegram's callback to `https://YOUR_API/v1/integrations/telegram/webhook`, 
 
 A missing platform configuration shows a customer-facing unavailable state. It never falls back to a credentials form. Existing per-project WhatsApp connections are preserved and require operator migration to the shared bot; the new screen does not silently replace their group.
 
+### Coolify / Docker Compose configuration
+
+The `ledger-api-service.environment` section explicitly forwards the WhatsApp, Telegram and AI service variables from the deployment environment into the API container. Values saved in Coolify must be available for Compose substitution; build arguments alone do not configure the running API. Redeploy the API after updating this file or its variables so the container is recreated.
+
+In the **running API container terminal**, run:
+
+```sh
+npm run whatsapp:check
+```
+
+This prints `READY` or the exact variable names that are missing or invalid, without printing credentials. `npm run whatsapp:check -- --json` returns machine-readable checks and exits with status 1 when unavailable. The same configuration gate controls the customer setup response. Startup logs also report invalid settings when either WhatsApp flag is enabled.
+
+Both `WHATSAPP_ENABLED` and `WHATSAPP_GROUPS_ENABLED` must be exactly `true`. `AI_SERVICE_SHARED_SECRET` needs at least 32 characters and must match the AI service. Use a deployed AI service URL reachable from the API container; `127.0.0.1` only works when the AI service runs inside that same container. The diagnostic checks configuration only; verify provider eligibility, webhook callbacks and AI connectivity separately before rollout. After it reports ready, tap **Refresh status** in the app; a new mobile build is not required for this configuration fix.
+
 ## Operations and verification
 
 One durable creation claim per project prevents duplicate groups from repeated taps. Uncertain creation outcomes are not retried automatically. If a creation times out before its provider request ID is saved, an operator must reconcile it with Meta and the signed creation-event inbox before allowing another attempt. The callback inbox also handles a callback arriving before the creation response. If the callback contains only a group ID, the API retrieves the invitation using Meta's read-only invitation endpoint. Refresh status can retry that lookup safely.
