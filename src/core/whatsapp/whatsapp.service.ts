@@ -9,7 +9,7 @@ function encryptionKey() {
   return createHash("sha256").update(secret).digest();
 }
 
-function encrypt(value: string) {
+export function encryptWhatsAppCredential(value: string) {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
   const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
@@ -69,7 +69,7 @@ export async function connectWhatsApp(input: {
       displayPhoneNumber: phone.display_phone_number,
       verifiedName: phone.verified_name,
       graphApiVersion: input.graphApiVersion,
-      encryptedAccessToken: encrypt(input.accessToken),
+      encryptedAccessToken: encryptWhatsAppCredential(input.accessToken),
       isActive: true,
       lastVerifiedAt: new Date()
     },
@@ -81,7 +81,7 @@ export async function connectWhatsApp(input: {
       displayPhoneNumber: phone.display_phone_number,
       verifiedName: phone.verified_name,
       graphApiVersion: input.graphApiVersion,
-      encryptedAccessToken: encrypt(input.accessToken),
+      encryptedAccessToken: encryptWhatsAppCredential(input.accessToken),
       isActive: true,
       lastVerifiedAt: new Date(),
       createdById: input.actorUserId
@@ -119,7 +119,9 @@ export async function getWhatsAppConnection(tenantId: string, projectId: string)
 }
 
 export async function disconnectWhatsApp(tenantId: string, projectId: string) {
-  const result = await prisma.whatsAppConnection.deleteMany({ where: { tenantId, projectId } });
+  const connection = await prisma.whatsAppConnection.findFirst({ where: { tenantId, projectId } });
+  if (connection?.managedByFundNesta) throw badRequest("Contact Fund Nesta support to disconnect a managed WhatsApp group");
+  const result = await prisma.whatsAppConnection.deleteMany({ where: { tenantId, projectId, managedByFundNesta: false } });
   return { disconnected: result.count > 0 };
 }
 

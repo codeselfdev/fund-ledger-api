@@ -1,3 +1,5 @@
+import multer from 'multer';
+import { billingPaymentSchema, sendBillingReceipt } from './billing-proof.service.js';
 import { forbidden } from "../../core/http/api-error.js";
 import { invoicesFromContact, submitInvoicePayment } from "./billing.service.js";
 import { Router } from "express";
@@ -52,14 +54,18 @@ router.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
 // Customer organization roles never grant authority to approve their own subscription.
 router.post("/renew", asyncHandler(async () => { throw forbidden("Only the billing service can approve a paid renewal"); }));
 router.post("/trial", asyncHandler(async () => { throw forbidden("Trial periods cannot be reset by customers"); }));
-const paymentSchema = z.object({ payment_reference: z.string().trim().min(3).max(200) });
+const paymentUpload = multer({ storage: multer.memoryStorage(), limits: { files: 1, fileSize: 5_000_001, fields: 3, fieldSize: 1000 } }).single('receipt');
 router.get("/invoices", requireRoles("owner", "admin"), requireOrganizationManagement, asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: auth.tenantId } });
   return ok(res, invoicesFromContact(tenant.contact));
 }));
-router.post("/invoices/:invoiceId/payment", requireRoles("owner", "admin"), requireOrganizationManagement, validateBody(paymentSchema), asyncHandler(async (req, res) => {
+router.post("/invoices/:invoiceId/payment", requireRoles("owner", "admin"), requireOrganizationManagement, paymentUpload, validateBody(billingPaymentSchema), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
-  return ok(res, await submitInvoicePayment(auth.tenantId, req.params.invoiceId!, auth.userId, paymentSchema.parse(req.body).payment_reference));
+  return ok(res, await submitInvoicePayment(auth.tenantId, req.params.invoiceId!, auth.userId, billingPaymentSchema.parse(req.body), req.file));
+}));
+router.get('/invoices/:invoiceId/receipts/:receiptId', requireRoles('owner', 'admin'), requireOrganizationManagement, asyncHandler(async (req,res) => {
+  const auth = requireAuthContext(req);
+  return sendBillingReceipt(req,res,auth.tenantId,String(req.params.invoiceId),String(req.params.receiptId));
 }));
 export { router as subscriptionRouter };

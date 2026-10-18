@@ -14,8 +14,9 @@ import { manualPaymentSchema, recordManualPayment } from "./payments.service.js"
 import { organizationWorkbook } from "./export.service.js";
 import { beginCleanup, cleanupPreview, runCleanup } from "./cleanup.service.js";
 import { customerDetails } from "./customers.service.js";
-import { platformAlerts } from "./alerts.service.js";
+import { platformAlerts, retryPlatformAlert } from "./alerts.service.js";
 import { deletionRequests, deletionRequest, reviewDeletionRequest, deletionPreview, executeAccountDeletion } from './account-deletion.service.js';
+import { billingRequests, billingRequestCounts } from './billing-requests.service.js';
 const router = Router();
 router.use(requireInternalApiKey, rateLimit({ windowMs: 60000, limit: 120, standardHeaders: true, legacyHeaders: false }));
 const page = z.object({ offset: z.coerce.number().int().min(0).max(100000).default(0), search: z.string().trim().max(120).optional() });
@@ -34,9 +35,15 @@ router.post('/account-deletion-requests/:id/review', asyncHandler(async (req, re
     const input = z.object({ status: z.enum(['in_review', 'needs_information']), expected_status: z.enum(['pending', 'in_review', 'needs_information']), note: z.string().trim().min(3).max(2000) }).strict().parse(req.body);
     return ok(res, await reviewDeletionRequest(String(req.params.id), input, internalActor(req)));
 }));
-router.get("/alerts", asyncHandler(async (req, res) => { const q = z.object({ offset: z.coerce.number().int().min(0).max(100000).default(0), unread: z.enum(["true", "false"]).optional(), kind: z.enum(["signup", "support_message", "account_deletion"]).optional() }).parse(req.query); return ok(res, await platformAlerts(q.offset, q.unread === "true", q.kind)); }));
+router.get('/billing-requests/counts', asyncHandler(async (_req, res) => ok(res, await billingRequestCounts())));
+router.get('/billing-requests', asyncHandler(async (req, res) => {
+    const q = page.extend({ status: z.enum(['open', 'submitted']).optional() }).parse(req.query);
+    return ok(res, await billingRequests(q.offset, q.status, q.search));
+}));
+router.get("/alerts", asyncHandler(async (req, res) => { const q = z.object({ offset: z.coerce.number().int().min(0).max(100000).default(0), unread: z.enum(["true", "false"]).optional(), kind: z.enum(["signup", "support_message", "account_deletion", "billing_upgrade", "billing_payment"]).optional() }).parse(req.query); return ok(res, await platformAlerts(q.offset, q.unread === "true", q.kind)); }));
 router.post("/alerts/:id/read", asyncHandler(async (req, res) => { internalActor(req); const row = await prisma.platformAlert.updateMany({ where: { id: String(req.params.id) }, data: { readAt: new Date() } }); if (!row.count)
     throw notFound("Alert not found"); return ok(res, { read: true }); }));
+router.post("/alerts/:id/retry", asyncHandler(async(req,res) => { internalActor(req); return ok(res,await retryPlatformAlert(String(req.params.id))); }));
 router.get("/summary", asyncHandler(async (_req, res) => ok(res, await overallUsage())));
 router.get("/tenants", asyncHandler(async (req, res) => { const q = page.parse(req.query); return ok(res, await tenantSummaries(q.offset, q.search)); }));
 router.get("/tenants/:id", asyncHandler(async (req, res) => {

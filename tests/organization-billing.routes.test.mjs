@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { before, after, beforeEach, test } from 'node:test';
 import express from 'express';
@@ -58,6 +59,10 @@ before(async () => {
   await mkdir(assetRoot, { recursive: true });
   await writeFile(`${assetRoot}/test-logo.png`, Buffer.from([137, 80, 78, 71]));
   prisma.upload.findFirst = async ({ where }) => where.id === 'owned-logo' && where.tenantId === projects.find(p => p.logoFileId === 'owned-logo')?.tenantId && where.projectId === projects.find(p => p.logoFileId === 'owned-logo')?.id && where.purpose === 'project_logo' ? { id: 'owned-logo', storageKey: 'test-logo.png', mimeType: 'image/png' } : null;
+  const proofRows = [];
+  prisma.subscriptionPaymentReceipt.create = async ({data}) => {proofRows.push(data);return data;};
+  prisma.subscriptionPaymentReceipt.findFirst = async ({where}) => proofRows.find(row=>Object.entries(where).every(([k,v])=>row[k]===v))??null;
+  prisma.platformAlert.upsert = async ({create}) => create;
   prisma.$queryRaw = async () => [];
   prisma.$transaction = async fn => fn(prisma);
   prisma.user.findUniqueOrThrow = async ({ where }) => { const row = users.find(row => matches(row, where)); if (!row) throw new Error('User not found'); return userRow(row); };
@@ -98,7 +103,9 @@ before(async () => {
 });
 beforeEach(() => reset()); after(async () => { await new Promise(resolve => server.close(resolve)); await prisma.$disconnect(); await rm(assetRoot, { recursive: true, force: true }); });
 async function request(path, { token, body, method = body === undefined ? 'GET' : 'POST', projectId, platformKey } = {}) {
-  const res = await fetch(base + path, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...(projectId ? { 'x-project-id': projectId } : {}), ...(platformKey ? { 'x-api-key': platformKey } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  let form;
+  if (/\/subscription\/invoices\/[^/]+\/payment$/.test(path) && body) { form = new FormData();form.append('payment_reference',body.payment_reference);form.append('payment_amount','2500');form.append('request_key',randomUUID());form.append('receipt',new Blob(['%PDF-1.4 synthetic receipt'],{type:'application/pdf'}),'receipt.pdf'); }
+  const res = await fetch(base + path, { method, headers: { ...(!form ? {'content-type': 'application/json'} : {}), ...(token ? { authorization: `Bearer ${token}` } : {}), ...(projectId ? { 'x-project-id': projectId } : {}), ...(platformKey ? { 'x-api-key': platformKey } : {}) }, ...(body === undefined ? {} : { body: form ?? JSON.stringify(body) }) });
   return { status: res.status, body: await res.json() };
 }
 const create = token => request('/projects/owned-organization', { token, body: { organization_name: 'Owned business', name: 'Owned fund', total_shares: 10, tenant_id: 'spoofed', role: 'owner', identity_root_id: 'someone-else' } });

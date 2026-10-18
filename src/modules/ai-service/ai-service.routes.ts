@@ -14,6 +14,8 @@ import { hasBusinessAssistant, allowancePeriod, featureLimit } from '../assistan
 import { assistantContext } from '../assistant/assistant.context.js';
 import { screenshotType } from '../support/support.service.js';
 import { aiServiceWhatsAppCredential } from '../../core/whatsapp/whatsapp.service.js';
+import { startTelegramIdentityLink, confirmTelegramIdentityLink } from '../integrations/telegram-assistant.service.js';
+import { telegramLinkStatus } from '../integrations/telegram.service.js';
 const router=Router();
 const permitted=(roles:string[])=>roles.some(r=>['owner','admin','accountant'].includes(r));
 const hash=(s:string)=>createHash('sha256').update(s).digest('hex');
@@ -33,20 +35,36 @@ router.post('/whatsapp/resolve',asyncHandler(async(req,res)=>{
   const user=users.length===1?users[0]:null;
   return ok(res,{tenant_id:c.tenantId,project_id:c.projectId,user_id:user?.id??null,permitted:!!user&&permitted(user.memberships.map(m=>m.role)),connection:{graph_api_version:c.graphApiVersion,access_token:await aiServiceWhatsAppCredential(c.id)}});
 }));
+const telegramResolveSchema=z.object({chat_id:z.string().regex(/^-\d+$/).max(30),sender:z.string().regex(/^\d+$/).max(30)}).strict();
+router.post('/telegram/resolve',asyncHandler(async(req,res)=>{
+  const expected=process.env.AI_SERVICE_SHARED_SECRET,actual=req.header('X-AI-Service-Key');
+  if(!expected||expected.length<32||!actual||!timingSafeEqual(Buffer.from(hash(expected)),Buffer.from(hash(actual))))throw forbidden();
+  const b=telegramResolveSchema.parse(req.body);
+  const connection=await prisma.telegramConnection.findUnique({where:{chatId:b.chat_id}});
+  if(!connection||!process.env.TELEGRAM_BOT_TOKEN||!process.env.TELEGRAM_BOT_USERNAME)return ok(res,null);
+  const tenant=await prisma.tenant.findUnique({where:{id:connection.tenantId}});
+  const project=await prisma.project.findFirst({where:{id:connection.projectId,tenantId:connection.tenantId,isActive:true}});
+  if(!tenant||tenant.deletionStartedAt||!hasBusinessAssistant(tenant.contact)||!project)return ok(res,null);
+  const identity=await prisma.telegramBotIdentity.findUnique({where:{projectId_telegramUserId:{projectId:connection.projectId,telegramUserId:b.sender}}});
+  const user=identity?.tenantId===connection.tenantId?await prisma.user.findFirst({where:{id:identity.userId,tenantId:connection.tenantId,isActive:true},include:{memberships:{where:{tenantId:connection.tenantId,projectId:connection.projectId,isActive:true}}}}):null;
+  return ok(res,{tenant_id:connection.tenantId,project_id:connection.projectId,user_id:user?.id??null,permitted:!!user&&permitted(user.memberships.map(m=>m.role)),connection:{bot_token:process.env.TELEGRAM_BOT_TOKEN,bot_username:process.env.TELEGRAM_BOT_USERNAME.replace(/^@/,'')}});
+}));
 router.use(authenticate,requireProject,requireRoles('owner','admin','accountant'),requireActiveSubscription);
-router.use(asyncHandler(async(req,_res,next)=>{const a=requireProjectContext(req);const t=await prisma.tenant.findUniqueOrThrow({where:{id:a.tenantId}});if(!hasBusinessAssistant(t.contact))throw new ApiError(403,'BUSINESS_REQUIRED','AI Chat and WhatsApp Bot require an active paid Business package.');next();}));
+router.use(asyncHandler(async(req,_res,next)=>{const a=requireProjectContext(req);const t=await prisma.tenant.findUniqueOrThrow({where:{id:a.tenantId}});if(!hasBusinessAssistant(t.contact))throw new ApiError(403,'BUSINESS_REQUIRED','AI Chat and group bots require an active paid Business package.');next();}));
 
 router.get('/context',asyncHandler(async(req,res)=>{
   const a=requireProjectContext(req);
-  const [user,progress,wa,deposit]=await Promise.all([
+  const [user,progress,wa,deposit,tg,identity]=await Promise.all([
     prisma.user.findUniqueOrThrow({where:{id:a.userId},select:{mobile:true}}),
     prisma.onboardingProgress.findUnique({where:{tenantId:a.tenantId},select:{incomeApprovalFlow:true,expenseApprovalFlow:true}}),
     prisma.whatsAppConnection.findFirst({where:{tenantId:a.tenantId,projectId:a.projectId,isActive:true},select:{wabaId:true,phoneNumberId:true,groupId:true}}),
-    projectDepositRoute(a.tenantId,a.projectId)
+    projectDepositRoute(a.tenantId,a.projectId),
+    prisma.telegramConnection.findFirst({where:{tenantId:a.tenantId,projectId:a.projectId}}),
+    prisma.telegramBotIdentity.findUnique({where:{projectId_userId:{projectId:a.projectId,userId:a.userId}}})
   ]);
-  return ok(res,{tenant_id:a.tenantId,project_id:a.projectId,user_id:a.userId,mobile:user.mobile,roles:a.roles,member_id:a.memberId,member_ids:a.memberIds,policy:{income:progress?.incomeApprovalFlow??'accountant_only',expense:progress?.expenseApprovalFlow??'accountant_and_approver',deposit},whatsapp:wa?{waba_id:wa.wabaId,phone_number_id:wa.phoneNumberId,group_id:wa.groupId}:null});
+  return ok(res,{tenant_id:a.tenantId,project_id:a.projectId,user_id:a.userId,mobile:user.mobile,roles:a.roles,member_id:a.memberId,member_ids:a.memberIds,policy:{income:progress?.incomeApprovalFlow??'accountant_only',expense:progress?.expenseApprovalFlow??'accountant_and_approver',deposit},whatsapp:wa?{waba_id:wa.wabaId,phone_number_id:wa.phoneNumberId,group_id:wa.groupId}:null,telegram:tg&&identity&&identity.tenantId===a.tenantId?{chat_id:tg.chatId,sender_id:identity.telegramUserId,bot_username:process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/,'')??null}:null});
 }));
-const usageSchema=z.object({request_key:z.string().min(1).max(200),channel:z.string().regex(/^(ai_chat|whatsapp_bot(?::[^\s]{1,300})?)$/),prompt_hash:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
+const usageSchema=z.object({request_key:z.string().min(1).max(200),channel:z.string().regex(/^(ai_chat|(?:whatsapp_bot|telegram_bot)(?::[^\s]{1,300})?)$/),prompt_hash:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
 router.post('/usage',asyncHandler(async(req,res)=>{
   const a=requireProjectContext(req),b=usageSchema.parse(req.body),channel=b.channel.startsWith('whatsapp_bot')?'whatsapp_bot':'ai_chat';
   const context=await assistantContext(a.tenantId,a.projectId,a.userId);
@@ -72,14 +90,16 @@ async function serviceRequest(req:import('express').Request,path:string,body?:un
   const exchange=await fetch(new URL('/session',url),{method:'POST',redirect:'error',signal:AbortSignal.timeout(15000),headers:{Authorization:req.header('Authorization')!,'X-Project-Id':a.projectId}});
   const session=await exchange.json() as {token?:string;error?:{code?:string;message?:string}};
   if(!exchange.ok||!session.token)throw new ApiError(exchange.status,session.error?.code??'AI_SESSION_FAILED',session.error?.message??'Could not connect your AI session.');
+  let retainSession=false;
   try {
     const response=await fetch(new URL(path,url),{method,redirect:'error',signal:AbortSignal.timeout(90000),headers:{Authorization:`Bearer ${session.token}`,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
     const data=await response.json() as {error?:{code?:string;message?:string}};
     if(!response.ok)throw new ApiError(response.status,data.error?.code??'AI_SERVICE_FAILED',data.error?.message??'AI service request failed.');
+    retainSession=['/whatsapp/link','/telegram/link'].includes(path);
     return data;
   }finally{
-    // WhatsApp pairing intentionally retains the service session until expiry.
-    if(path!=='/whatsapp/link') await fetch(new URL('/session',url),{method:'DELETE',redirect:'error',signal:AbortSignal.timeout(5000),headers:{Authorization:`Bearer ${session.token}`}}).catch(()=>{});
+    // Only successful bot pairing retains the encrypted service session until expiry.
+    if(!retainSession) await fetch(new URL('/session',url),{method:'DELETE',redirect:'error',signal:AbortSignal.timeout(5000),headers:{Authorization:`Bearer ${session.token}`}}).catch(()=>{});
   }
 }
 const upload=multer({storage:multer.memoryStorage(),limits:{files:3,fileSize:5000001,fields:2,fieldSize:10000}}).array('files',3);
@@ -97,6 +117,13 @@ router.get('/messages',asyncHandler(async(req,res)=>{
   const rows=await prisma.assistantReply.findMany({where:{tenantId:a.tenantId,projectId:a.projectId,userId:a.userId,channel:'ai_chat',requestKey:{startsWith:'action:'},authorizationHash:context.authorization_hash,createdAt:{gt:new Date(Date.now()-90*86400000)}},orderBy:{createdAt:'desc'},take:30});
   return ok(res,rows.reverse().map(row=>{let result:unknown=null;try{result=JSON.parse(row.reply??'null');}catch{}return{id:row.id,message:row.prompt,reply:result?null:row.reply,status:row.status,request_key:row.requestKey.slice(7),created_at:row.createdAt,action_result:result};}));
 }));
+router.post('/telegram/links',asyncHandler(async(req,res)=>ok(res,await startTelegramIdentityLink(requireProjectContext(req)))));
+router.get('/telegram/links/:id',asyncHandler(async(req,res)=>ok(res,await telegramLinkStatus(requireProjectContext(req),String(req.params.id)))));
+router.post('/telegram/links/:id/confirm',asyncHandler(async(req,res)=>{
+  await confirmTelegramIdentityLink(requireProjectContext(req),String(req.params.id));
+  return ok(res,await serviceRequest(req,'/telegram/link',{}));
+}));
+router.post('/telegram/link',asyncHandler(async(req,res)=>ok(res,await serviceRequest(req,'/telegram/link',{}))));
 router.post('/whatsapp/link',asyncHandler(async(req,res)=>ok(res,await serviceRequest(req,'/whatsapp/link',{}))));
 router.get('/drafts/:id',asyncHandler(async(req,res)=>ok(res,await serviceRequest(req,`/drafts/${encodeURIComponent(req.params.id!)}`))));
 router.post('/drafts/:id/confirm',asyncHandler(async(req,res)=>{

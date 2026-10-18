@@ -96,11 +96,11 @@ test('organization package enforcement against PostgreSQL', { skip: !url }, asyn
       assert.equal((await selectPackage(a.id, u.id, 'starter', 'monthly')).id, invoice.id);
       assert.equal((await tenantQuota(a.id)).package, 'free');
       await assert.rejects(selectPackage(a.id, u.id, 'business', 'yearly'), /unpaid invoice/);
-      await submitInvoicePayment(a.id, invoice.id, u.id, 'TX-test');
+      await submitInvoicePayment(a.id, invoice.id, u.id, {payment_reference:'TX-test',payment_amount:invoice.amount,request_key:randomUUID()}, {originalname:'receipt.pdf',buffer:Buffer.from('%PDF-1.4 synthetic receipt'),size:Buffer.byteLength('%PDF-1.4 synthetic receipt')});
       assert.equal((await tenantQuota(a.id)).package, 'free');
       await reviewInvoicePayment(a.id, invoice.id, 'reject', 'Not received');
       assert.equal((await tenantQuota(a.id)).package, 'free');
-      await submitInvoicePayment(a.id, invoice.id, u.id, 'TX-confirmed');
+      await submitInvoicePayment(a.id, invoice.id, u.id, {payment_reference:'TX-confirmed',payment_amount:invoice.amount,request_key:randomUUID()}, {originalname:'receipt.pdf',buffer:Buffer.from('%PDF-1.4 synthetic receipt'),size:Buffer.byteLength('%PDF-1.4 synthetic receipt')});
       await reviewInvoicePayment(a.id, invoice.id, 'approve');
       const paid = await prisma.tenant.findUniqueOrThrow({ where: { id: a.id } });
       assert.equal(evaluateSubscription(paid.contact).status, 'active'); assert.equal((await tenantQuota(a.id)).package, 'starter');

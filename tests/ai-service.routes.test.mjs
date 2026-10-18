@@ -18,7 +18,10 @@ before(async()=>{
  prisma.projectMembership.findFirst=async()=>roles.includes('accountant')?{role:'accountant'}:null;
  prisma.project.findFirst=async()=>({name:'Project',projectType:'fund_shares'});
  prisma.project.findFirstOrThrow=async()=>({portalSettings:{deposit_review:'automatic'}});
- prisma.user.findFirst=async()=>active?{id:'user'}:null;
+ prisma.user.findFirst=async()=>active?{id:'user',memberships:roles.map(role=>({role}))}:null;
+ prisma.telegramConnection.findFirst=async()=>({tenantId:'tenant',projectId:'project',chatId:'-100'});
+ prisma.telegramConnection.findUnique=async({where})=>where.chatId==='-100'?{tenantId:'tenant',projectId:'project',chatId:'-100'}:null;
+ prisma.telegramBotIdentity.findUnique=async({where})=>where.projectId_userId||where.projectId_telegramUserId?.telegramUserId==='123'?{tenantId:'tenant',projectId:'project',userId:'user',telegramUserId:'123'}:null;
  prisma.user.findUniqueOrThrow=async()=>({id:'user',mobile:'+8801700000000'});
  prisma.user.findMany=async()=>userMatches;
  prisma.tenant.findUnique=async()=>({id:'tenant',name:'Test',currency:'BDT',contact,deletionStartedAt:null});
@@ -47,3 +50,17 @@ test('all other roles, revoked sessions and inactive memberships are rejected',a
 test('shared-key WhatsApp resolver is exact-group scoped, never public, and returns no permission for ambiguous phone matches',async()=>{const b={waba_id:'waba',phone_number_id:'phone',group_id:'group',sender:'8801700000000'};assert.equal((await request('/whatsapp/resolve',b)).status,403);let r=await request('/whatsapp/resolve',b,{'X-AI-Service-Key':process.env.AI_SERVICE_SHARED_SECRET});let data=(await r.json()).data;assert.equal(data.permitted,true);assert.equal(data.connection.access_token,'provider-secret');r=await request('/whatsapp/resolve',{...b,group_id:'other'},{'X-AI-Service-Key':process.env.AI_SERVICE_SHARED_SECRET});assert.equal((await r.json()).data,null);userMatches=[{id:'one',memberships:[{role:'admin'}]},{id:'two',memberships:[{role:'admin'}]}];r=await request('/whatsapp/resolve',b,{'X-AI-Service-Key':process.env.AI_SERVICE_SHARED_SECRET});data=(await r.json()).data;assert.equal(data.permitted,false);assert.equal(data.user_id,null);});
 test('Business entitlement is required by context and WhatsApp resolver',async()=>{contact={subscription:createThreeMonthTrial()};assert.equal((await request('/context')).status,403);const r=await request('/whatsapp/resolve',{waba_id:'waba',phone_number_id:'phone',group_id:'group',sender:'8801700000000'},{'X-AI-Service-Key':process.env.AI_SERVICE_SHARED_SECRET});assert.equal((await r.json()).data,null);});
 test('quota reservations reuse request keys, reject changed input and are already completed so the legacy worker cannot execute them',async()=>{const b={request_key:'request-key',channel:'ai_chat',prompt_hash:'a'.repeat(64)};assert.equal((await request('/usage',b)).status,200);assert.equal((await request('/usage',b)).status,200);assert.equal(records.length,1);assert.equal(records[0].status,'completed');assert.equal((await request('/usage',{...b,prompt_hash:'b'.repeat(64)})).status,409);});
+
+test('Telegram resolver requires the bridge key, exact project group and verified Telegram identity',async()=>{
+ process.env.TELEGRAM_BOT_TOKEN='test-telegram-token';process.env.TELEGRAM_BOT_USERNAME='FundNestaBot';
+ const b={chat_id:'-100',sender:'123'},headers={'X-AI-Service-Key':process.env.AI_SERVICE_SHARED_SECRET};
+ assert.equal((await request('/telegram/resolve',b)).status,403);
+ let r=await request('/telegram/resolve',b,headers),d=(await r.json()).data;assert.equal(d.permitted,true);assert.equal(d.project_id,'project');
+ r=await request('/telegram/resolve',{...b,chat_id:'-200'},headers);assert.equal((await r.json()).data,null);
+ r=await request('/telegram/resolve',{...b,sender:'999'},headers);d=(await r.json()).data;assert.equal(d.user_id,null);assert.equal(d.permitted,false);
+ roles=['member'];r=await request('/telegram/resolve',b,headers);assert.equal((await r.json()).data.permitted,false);
+});
+test('Telegram usage shares AI Chat quota and keeps Telegram requests idempotent',async()=>{
+ const b={request_key:'tg:123',channel:'telegram_bot:-100',prompt_hash:'a'.repeat(64)};
+ assert.equal((await request('/usage',b)).status,200);assert.equal((await request('/usage',b)).status,200);assert.equal(records.length,1);assert.equal(records[0].channel,'ai_chat');
+});

@@ -12,10 +12,12 @@ import { env } from '../../config/env.js';
 import { getWhatsAppConnection } from '../../core/whatsapp/whatsapp.service.js';
 import { checkWebhookSecret, confirmTelegramLink, receiveTelegramUpdate, startTelegramLink, telegramConfigured, telegramLinkStatus } from './telegram.service.js';
 import { testTelegram } from '../reports/report.service.js';
+import { forwardTelegramAssistantUpdate } from './telegram-assistant.service.js';
 export const telegramWebhookRouter=Router();
 telegramWebhookRouter.post('/',asyncHandler(async(req,res)=>{
   checkWebhookSecret(req.header('X-Telegram-Bot-Api-Secret-Token'));
   await receiveTelegramUpdate(req.body);
+  await forwardTelegramAssistantUpdate(req.body);
   return ok(res,{received:true});
 }));
 const router=Router();
@@ -48,6 +50,7 @@ router.post('/telegram/test',asyncHandler(async(req,res)=>{await testTelegram(re
 router.delete('/telegram',asyncHandler(async(req,res)=>{
   const s=requireProjectContext(req);
   await prisma.$transaction(async tx=>{
+    await tx.telegramBotIdentity.deleteMany({where:{tenantId:s.tenantId,projectId:s.projectId}});
     await tx.telegramConnection.deleteMany({where:{tenantId:s.tenantId,projectId:s.projectId}});
     await tx.reportSchedule.updateMany({where:{tenantId:s.tenantId,projectId:s.projectId},data:{telegram:false}});
     await tx.telegramLink.updateMany({where:{tenantId:s.tenantId,projectId:s.projectId,consumedAt:null},data:{expiresAt:new Date()}});

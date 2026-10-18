@@ -1,10 +1,30 @@
+import { notFound } from '../../core/http/api-error.js';
+import { env } from '../../config/env.js';
+import { invoicesFromContact } from '../subscription/billing.service.js';
 import { prisma } from "../../core/prisma/client.js";
 import { sendMail } from "../../core/mail/mailer.service.js";
 import { customerDetails } from "./customers.service.js";
+export function billingAlertInvoiceId(row: { kind: string; eventKey: string }) {
+    return ['billing_upgrade', 'billing_payment'].includes(row.kind) ? row.eventKey.split(':')[1] ?? null : null;
+}
+function deliveryConfiguration() {
+    return { email: !!(process.env.PLATFORM_ALERT_EMAILS?.split(',').some(s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim())) && env.smtp.user && env.smtp.pass), telegram: !!(process.env.PLATFORM_ALERT_TELEGRAM_CHAT_ID && process.env.TELEGRAM_BOT_TOKEN), admin_portal: !!process.env.ADMIN_WEB_URL };
+}
+function deliveryState(sent: Date | null, configured: boolean, attempts: number, lease?: Date | null) {
+    return sent ? 'sent' : !configured ? 'not_configured' : lease && lease > new Date() ? 'sending' : attempts >= 5 ? 'failed' : 'pending';
+}
+export async function retryPlatformAlert(id: string) {
+    const now = new Date(), row = await prisma.platformAlert.findUnique({where:{id}});
+    if (!row) throw notFound('Alert not found');
+    await prisma.platformAlert.updateMany({where:{id,emailSentAt:null,OR:[{leaseUntil:null},{leaseUntil:{lt:now}}]},data:{attempts:0,nextAttemptAt:now,leaseUntil:null}});
+    await prisma.platformAlert.updateMany({where:{id,telegramSentAt:null,OR:[{telegramLeaseUntil:null},{telegramLeaseUntil:{lt:now}}]},data:{telegramAttempts:0,telegramNextAttemptAt:now,telegramLeaseUntil:null}});
+    return {queued:true};
+}
 export async function platformAlerts(offset = 0, unread = false, kind?: string) {
     const where = { ...(unread ? { readAt: null } : {}), ...(kind ? { kind } : {}) };
     const [rows, count] = await Promise.all([prisma.platformAlert.findMany({ where, include: { tenant: { select: { name: true, slug: true } } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 31, skip: offset }), prisma.platformAlert.count({ where: { readAt: null } })]);
-    return { alerts: await Promise.all(rows.slice(0, 30).map(async (row) => ({ ...row, deletion_request_id: row.kind === 'account_deletion' ? row.eventKey.slice('account_deletion:'.length) : null, customer: await customerDetails(row.tenantId, row.userId) }))), unread: count, next_offset: rows.length > 30 ? offset + 30 : null };
+    const configured = deliveryConfiguration();
+    return { delivery_configured: configured, alerts: await Promise.all(rows.slice(0, 30).map(async (row) => ({ ...row, delivery: {email:deliveryState(row.emailSentAt,configured.email,row.attempts,row.leaseUntil),telegram:deliveryState(row.telegramSentAt,configured.telegram,row.telegramAttempts,row.telegramLeaseUntil)}, invoice_id: billingAlertInvoiceId(row), deletion_request_id: row.kind === 'account_deletion' ? row.eventKey.slice('account_deletion:'.length) : null, customer: await customerDetails(row.tenantId, row.userId) }))), unread: count, next_offset: rows.length > 30 ? offset + 30 : null };
 }
 let timer: ReturnType<typeof setInterval> | undefined, running = false;
 async function alertText(row: {
@@ -17,23 +37,24 @@ async function alertText(row: {
     const [customer, tenant] = await Promise.all([customerDetails(row.tenantId, row.userId), prisma.tenant.findUnique({ where: { id: row.tenantId } })]);
     if (!tenant)
         return null;
+    const invoiceId = billingAlertInvoiceId(row), invoice = invoiceId ? invoicesFromContact(tenant.contact).find(i => i.id === invoiceId) : null;
     const requestId = row.kind === 'account_deletion' ? row.eventKey.slice('account_deletion:'.length) : null;
     const request = requestId ? await prisma.accountDeletionRequest.findUnique({ where: { id: requestId } }) : null;
-    const root = process.env.ADMIN_WEB_URL?.replace(/\/$/, ''), query = requestId ? 'deletions&request=' + encodeURIComponent(requestId) : row.ticketId ? 'support&ticket=' + encodeURIComponent(row.ticketId) : 'organizations&organization=' + encodeURIComponent(row.tenantId);
+    const root = process.env.ADMIN_WEB_URL?.replace(/\/$/, ''), query = invoiceId ? 'billing&organization=' + encodeURIComponent(row.tenantId) + '&invoice=' + encodeURIComponent(invoiceId) : requestId ? 'deletions&request=' + encodeURIComponent(requestId) : row.ticketId ? 'support&ticket=' + encodeURIComponent(row.ticketId) : 'organizations&organization=' + encodeURIComponent(row.tenantId);
     const link = root ? `${root}/?view=${query}` : '';
-    const label = requestId ? 'Review deletion request' : 'Open and reply';
-    return { subject: `Fund Nesta · ${requestId ? 'Account deletion requested' : row.kind === 'signup' ? 'New signup' : 'New support message'} · ${tenant.name}`,
-      text: [tenant.name, request ? `Request: ${request.id}\nRequested: ${request.requestedAt.toISOString()}\nDue: ${request.dueAt.toISOString()}\nStatus: ${request.status}\nAction required: verify the requester and review account deletion in the control room.` : '',
+    const label = invoiceId ? 'Review billing request' : requestId ? 'Review deletion request' : 'Open and reply';
+    return { subject: `Fund Nesta · ${requestId ? 'Account deletion requested' : row.kind === 'billing_payment' ? 'Payment awaiting approval' : row.kind === 'billing_upgrade' ? 'Plan upgrade requested' : row.kind === 'signup' ? 'New signup' : 'New support message'} · ${tenant.name}`,
+      text: [tenant.name, invoice ? `Invoice: ${invoice.id}\nRequested plan: ${invoice.package ?? 'Renewal'} · ${invoice.billing_cycle ?? 'yearly'}\nInvoice amount: ${invoice.currency} ${invoice.amount}\nStatus: ${invoice.status}\nPaid amount: ${invoice.payment_amount == null ? 'Not supplied' : `${invoice.currency} ${invoice.payment_amount}`}\nTransaction reference: ${invoice.payment_reference ?? 'Not submitted yet'}\nReceipt: ${invoice.receipt?.file_name ?? 'Not attached'}\nAction required: ${row.kind === 'billing_payment' ? 'Check the receipt and bank records, then approve or reject in the control room.' : 'Review the requested plan. Activation requires a verified payment and superadmin approval.'}` : '', request ? `Request: ${request.id}\nRequested: ${request.requestedAt.toISOString()}\nDue: ${request.dueAt.toISOString()}\nStatus: ${request.status}\nAction required: verify the requester and review account deletion in the control room.` : '',
         customer ? `Customer: ${customer.name}\nMobile: ${customer.mobile}\nEmail: ${customer.email ?? 'Not supplied'}\nShares: ${customer.shares}\n${customer.members.map(m => `${m.project.name}${m.mid ? ' #' + m.mid : ''}: ${m.shares} shares`).join('\n')}` : 'Customer details unavailable',
         link ? label + ': ' + link : 'Open the super-admin panel to review this request.'].filter(Boolean).join('\n\n'),
-      ...(requestId && /^https:\/\//.test(link) ? { reply_markup: { inline_keyboard: [[{ text: label, url: link }]] } } : {}),
+      ...((requestId || invoiceId) && /^https:\/\//.test(link) ? { reply_markup: { inline_keyboard: [[{ text: label, url: link }]] } } : {}),
     };
 }
 export async function deliverPlatformAlerts() {
     const emails = (process.env.PLATFORM_ALERT_EMAILS ?? "").split(",").map(s => s.trim()).filter(s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)), chatId = process.env.PLATFORM_ALERT_TELEGRAM_CHAT_ID, botToken = process.env.TELEGRAM_BOT_TOKEN;
     const now = new Date();
     // Separate leases, attempts and success markers prevent a failed channel resending a successful one.
-    if (emails.length) {
+    if (emails.length && env.smtp.user && env.smtp.pass) {
         const rows = await prisma.platformAlert.findMany({ where: { emailSentAt: null, attempts: { lt: 5 }, nextAttemptAt: { lte: now }, OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }] }, orderBy: { createdAt: "asc" }, take: 10 });
         for (const row of rows) {
             const lease = new Date(Date.now() + 120000);

@@ -8,6 +8,7 @@ import { invoicesFromContact, type SubscriptionInvoice } from "./billing.service
 
 export async function selectPackage(tenantId: string, userId: string, selected: "starter" | "business", cycle: BillingCycle) {
   return prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR NO KEY UPDATE`;
     const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } });
     if (tenant.deletionStartedAt) throw conflict("Organization cleanup has started");
     const current = packageId(tenant.contact);
@@ -23,7 +24,7 @@ export async function selectPackage(tenantId: string, userId: string, selected: 
     if (usage.users.used > plan.users || usage.documents.used > plan.documents || usage.projects.used > plan.projects)
       throw badRequest("Your current organization usage exceeds this package. Choose a larger package or contact support.");
     const billing = contact.billing && typeof contact.billing === "object" && !Array.isArray(contact.billing) ? contact.billing as Record<string, unknown> : {};
-    const instructions = typeof billing.payment_instructions === "string" ? billing.payment_instructions : "Contact hello@appnesta.com for payment instructions. Submit your transaction reference after payment; your package activates after approval.";
+    const instructions = typeof billing.payment_instructions === "string" ? billing.payment_instructions : "Contact hello@appnesta.com for payment instructions. Submit the paid amount, transaction reference and receipt after payment; your package activates after approval.";
     const invoice: SubscriptionInvoice = { id: randomUUID(), package: selected, billing_cycle: cycle,
       amount: PACKAGES[selected][cycle], currency: "BDT", instructions, status: "open", issued_at: new Date().toISOString(),
       payment_reference: null, submitted_at: null, approved_at: null, rejection_reason: null, period_ends_at: null };
@@ -31,6 +32,7 @@ export async function selectPackage(tenantId: string, userId: string, selected: 
     const updated = await tx.tenant.updateMany({ where: { id: tenantId, updatedAt: tenant.updatedAt }, data: { contact: JSON.parse(JSON.stringify({ ...contact, billing: { ...billing, invoices } })) as Prisma.InputJsonValue } });
     if (updated.count !== 1) throw conflict("Billing changed. Reload and retry.");
     await tx.activity.create({ data: { tenantId, actorUserId: userId, action: "subscription.package_requested", entityType: "subscription_invoice", entityId: invoice.id, after: invoice as unknown as Prisma.InputJsonValue } });
+    await tx.platformAlert.upsert({ where: { eventKey: `billing_upgrade:${invoice.id}` }, update: {}, create: { tenantId, userId, kind: 'billing_upgrade', eventKey: `billing_upgrade:${invoice.id}` } });
     return invoice;
   });
 }
