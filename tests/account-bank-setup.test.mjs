@@ -10,7 +10,7 @@ const bank = { type: 'bank', bank_name: ' City Bank ', account_name: ' Sunrise F
 const matches = (row, where) => Object.entries(where ?? {}).every(([key,value]) => typeof value === 'object' || row[key] === value);
 before(async () => {
   prisma.$transaction = async fn => { const snapshot = structuredClone({ rows, transactions, progress }); try { return await fn(prisma); } catch (e) { ({ rows, transactions, progress } = snapshot); throw e; } };
-  prisma.session.findFirst = async ({ where }) => ({ id: 'session', userId: where.userId, tenantId: 'tenant', activeProjectId: 'project', user: { id: where.userId, isActive: true } });
+  prisma.session.findFirst = async ({ where }) => ({ id: 'session', userId: where.userId, tenantId: 'tenant', activeProjectId: 'project', user: { id: where.userId, isActive: true, lastActiveAt: new Date() } });
   prisma.projectMembership.findMany = async ({ where }) => [{ role: where.userId, memberId: null }];
   prisma.onboardingProgress.findUnique = async () => structuredClone(progress);
   prisma.onboardingProgress.update = async ({ data }) => { writes++; return Object.assign(progress, data); };

@@ -63,7 +63,7 @@ test('linked share access allows only explicitly owned member IDs or staff roles
 });
 test('a requested share context is accepted only within the signed-in user, tenant and project',async()=>{
  const token=signAccessToken({sessionId:'session',userId:'user',tenantId:'tenant'});
- prisma.session.findFirst=async()=>({id:'session',tenantId:'tenant',userId:'user',activeProjectId:'project',user:{isActive:true}});
+ prisma.session.findFirst=async()=>({id:'session',tenantId:'tenant',userId:'user',activeProjectId:'project',user:{isActive:true,lastActiveAt:new Date()}});
  prisma.projectMembership.findMany=async()=>[{role:'member',memberId:'m1'}];
  prisma.member.findMany=async({where})=>{assert.deepEqual(where,{tenantId:'tenant',projectId:'project',userId:'user',status:'active'});return[{id:'m1'},{id:'m2'}];};
  for(const [selected,allowed]of [['m2',true],['foreign',false]]){

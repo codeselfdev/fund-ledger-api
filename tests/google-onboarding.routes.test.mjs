@@ -36,6 +36,7 @@ before(async () => {
  prisma.user.findMany = async ({where}) => users.filter(row=>matches(row,where)).map(loginUser);
  prisma.user.findFirst = async ({where}) => loginUser(users.find(row=>matches(row,where))) ?? null;
  prisma.user.findUniqueOrThrow = async ({where}) => { const row=loginUser(users.find(row=>matches(row,where))); if(!row)throw Error('User missing');return row; };
+ prisma.user.update = async ({where,data}) => { const row=users.find(row=>row.id===where.id); Object.assign(row,data); return row; };
  prisma.user.create = async ({data}) => {writes++;const row={id:`user-${users.length}`,isActive:true,identityRootId:null,...data};users.push(row);return row;};
  prisma.tenant.findUnique = async ({where}) => tenants.find(row=>matches(row,where)) ?? null;
  prisma.tenant.findUniqueOrThrow = async ({where}) => tenants.find(row=>matches(row,where));
@@ -138,7 +139,7 @@ test('existing Google email with legacy organization accounts gets a picker, the
  assert.equal(session.user.id,'second-user');assert.equal(session.tenant.id,'second-tenant');
  assert.equal(verifyAccessToken(session.token).userId,'second-user');assert.equal(verifyAccessToken(session.token).tenantId,'second-tenant');
  assert.deepEqual(session.memberships.map(row=>row.project_id),['second-project']);assert.equal(session.memberships[0].role,'member');
- assert.deepEqual(users,before);assert.equal(writes,0);
+ assert.deepEqual(users.map(({lastLoginAt,lastLoginPlatform,lastActiveAt,...identity})=>identity),before);assert.equal(writes,0);
  assert.equal((await request('/auth/select-account',{ticket:selection.ticket,account_id:'existing-user'})).status,401);
 });
 test('browser Google OAuth ticket also returns organization choices without requiring another Google sign-in',async()=>{

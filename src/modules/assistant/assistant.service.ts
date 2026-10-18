@@ -9,7 +9,7 @@ export async function assistantStatus(tenantId: string, now = new Date()) {
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { contact: true } });
     const period = allowancePeriod(tenant.contact, now), enabled = hasBusinessAssistant(tenant.contact, now);
     const usage = await prisma.assistantReply.groupBy({ by: ["channel"], where: { tenantId, periodStart: period.start, status: { not: "failed" } }, _count: true });
-    return { resets_at: period.end.toISOString(), features: Object.fromEntries(CHANNELS.map(channel => [channel, { enabled, configured: channel === "ai_chat" ? aiConfigured() : botConfigured(), used: usage.find(row => row.channel === channel)?._count ?? 0, limit: featureLimit(channel) }])) };
+    return { action_service_enabled: !!process.env.AI_SERVICE_URL, resets_at: period.end.toISOString(), features: Object.fromEntries(CHANNELS.map(channel => [channel, { enabled, configured: !!process.env.AI_SERVICE_URL || (channel === "ai_chat" ? aiConfigured() : botConfigured()), used: usage.find(row => row.channel === channel)?._count ?? 0, limit: featureLimit(channel) }])) };
 }
 export async function reserveReply(input: {
     tenantId: string;

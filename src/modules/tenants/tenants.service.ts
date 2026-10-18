@@ -177,7 +177,8 @@ async function provisionTenantOnce(input: ProvisionTenantInput): Promise<Provisi
   const { token } = await createSessionToken({
     tenantId: result.tenant.id,
     userId: result.user.id,
-    activeProjectId: result.project.id
+    activeProjectId: result.project.id,
+    recordLogin: source === "self_signup"
   });
 
   await writeAudit({

@@ -1,3 +1,4 @@
+import { recordUserActivity } from "./client-activity.js";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import type { Role } from "@prisma/client";
 import { prisma } from "../prisma/client.js";
@@ -93,6 +94,8 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
         // Permissions belong only to the requested project's active memberships.
         roles = effectiveProjectRoles(roles);
       }
+
+      await recordUserActivity(session.userId, session.user.lastActiveAt);
 
       req.auth = {
         sessionId: session.id,

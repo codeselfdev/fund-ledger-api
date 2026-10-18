@@ -35,11 +35,12 @@ before(async () => {
  prisma.user.findFirst=async()=>null;
  prisma.user.findFirstOrThrow=async()=>owner;
  prisma.user.findUniqueOrThrow=async()=>owner;
+ prisma.user.update=async({where,data})=>({...owner,id:where.id,...data});
  prisma.user.create=async ({data})=>({...owner,...data});
  prisma.user.upsert=async ({create})=>({id:'accountant',isActive:true,...create});
  prisma.user.findMany=async()=>[];
  prisma.session.create=async ({data})=>({id:'session',...data});prisma.session.update=async()=>({});
- prisma.session.findFirst=async({where})=>({id:'session',tenantId:'tenant',userId:where.userId,activeProjectId:'project',user:{...owner,id:where.userId}});
+ prisma.session.findFirst=async({where})=>({id:'session',tenantId:'tenant',userId:where.userId,activeProjectId:'project',user:{...owner,id:where.userId,lastActiveAt:new Date()}});
  prisma.onboardingProgress.create=async ({data})=>(progress={...data});
  prisma.onboardingProgress.findUnique=async()=>structuredClone(progress);
  prisma.onboardingProgress.update=async ({data})=>(progress={...progress,...clean(data)});

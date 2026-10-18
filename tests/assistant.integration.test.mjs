@@ -56,14 +56,14 @@ test('Business AI Chat and WhatsApp Bot integration', { skip: !url }, async t =>
       const status = await assistantStatus(a.tenant.id); assert.equal(status.features.ai_chat.used, 1000); assert.equal(status.features.whatsapp_bot.used, 0);
       assert.equal((await assistantStatus(a.tenant.id, month.end)).features.ai_chat.used, 0);
     });
-    await t.test('context never crosses a project or exposes staff totals to members', async () => {
+    await t.test('context never crosses a project and denies member bot access', async () => {
       const a = await org(), foreign = await prisma.project.create({ data: { tenantId: a.tenant.id, name: 'Private foreign project', totalShares: 1 } });
       await prisma.account.create({ data: { tenantId: a.tenant.id, projectId: a.project.id, name: 'Cash', type: 'cash', balance: 42 } });
       await prisma.account.create({ data: { tenantId: a.tenant.id, projectId: foreign.id, name: 'Secret', type: 'cash', balance: 999999 } });
       const member = await prisma.user.create({ data: { tenantId: a.tenant.id, name: 'Member', mobile: '+8801712000000' } });
       await prisma.projectMembership.create({ data: { tenantId: a.tenant.id, projectId: a.project.id, userId: member.id, role: 'member' } });
       assert.equal((await assistantContext(a.tenant.id, a.project.id, a.user.id)).account_balance, 42);
-      const own = await assistantContext(a.tenant.id, a.project.id, member.id); assert.equal(own.account_balance, undefined); assert.equal(own.dues.scope, 'your linked member records only');
+      await assert.rejects(assistantContext(a.tenant.id, a.project.id, member.id), /not permitted to query/);
       await assert.rejects(assistantContext(a.tenant.id, foreign.id, member.id), /access is no longer active/);
     });
     const a = await org();
@@ -82,9 +82,9 @@ test('Business AI Chat and WhatsApp Bot integration', { skip: !url }, async t =>
       response = await fetch(base + '/assistant/messages', { headers: { 'x-user': 'foreign-user' } }); assert.equal(response.status, 403);
       const other = await prisma.user.create({ data: { tenantId: a.tenant.id, name: 'Other', mobile: 'other' } });
       await prisma.projectMembership.create({ data: { tenantId: a.tenant.id, projectId: a.project.id, userId: other.id, role: 'member' } });
-      response = await fetch(base + '/assistant/messages', { headers: { 'x-user': other.id } }); assert.deepEqual((await response.json()).data, []);
+      response = await fetch(base + '/assistant/messages', { headers: { 'x-user': other.id } }); assert.equal(response.status, 403);
       await prisma.projectMembership.updateMany({ where: { tenantId: a.tenant.id, projectId: a.project.id, userId: a.user.id }, data: { role: 'member' } });
-      response = await fetch(base + '/assistant/messages'); assert.deepEqual((await response.json()).data, []);
+      response = await fetch(base + '/assistant/messages'); assert.equal(response.status, 403);
       response = await send('What is our balance?'); assert.equal(response.status, 403);
       await prisma.projectMembership.updateMany({ where: { tenantId: a.tenant.id, projectId: a.project.id, userId: a.user.id }, data: { role: 'owner' } });
       providerFails = true; const failedKey = randomUUID(); response = await send('Retry me', failedKey); assert.equal(response.status, 503); assert.equal((await assistantStatus(a.tenant.id)).features.ai_chat.used, 1);

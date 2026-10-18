@@ -9,6 +9,7 @@ export async function assistantContext(tenantId: string, projectId: string, user
     prisma.projectMembership.findMany({ where: { tenantId, projectId, userId, isActive: true }, select: { role: true, memberId: true } })
   ]);
   if (!project || !user || !memberships.length) throw forbidden("Your project access is no longer active.");
+  if (!memberships.some(m => ["owner", "admin", "accountant"].includes(m.role))) throw forbidden("This member is not permitted to query the bot.");
   const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true, currency: true } });
   const base = { organization: tenant.name, project: project.name, project_type: project.projectType, currency: tenant.currency, snapshot_at: new Date().toISOString() };
   const finance = memberships.some(m => ["owner", "admin", "accountant", "auditor"].includes(m.role));

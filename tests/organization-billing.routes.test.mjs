@@ -62,6 +62,7 @@ before(async () => {
   prisma.$transaction = async fn => fn(prisma);
   prisma.user.findUniqueOrThrow = async ({ where }) => { const row = users.find(row => matches(row, where)); if (!row) throw new Error('User not found'); return userRow(row); };
   prisma.user.findMany = async ({ where }) => users.filter(row => matches(row, where)).map(userRow);
+  prisma.user.update = async ({where,data}) => { const row=users.find(user=>user.id===where.id); Object.assign(row,data); return copy(row); };
   prisma.user.create = async ({ data }) => { const row = { id: `user-${++nextId}`, identityRootId: null, isActive: true, deviceId: null, ...data }; users.push(row); return copy(row); };
   prisma.tenant.findUnique = async ({ where }) => copy(tenants.find(row => matches(row, where)) ?? null);
   prisma.tenant.findUniqueOrThrow = async ({ where }) => { const row = tenants.find(row => matches(row, where)); if (!row) throw new Error('Tenant not found'); return copy(row); };
@@ -83,7 +84,7 @@ before(async () => {
   prisma.account.create = async ({ data }) => { const row = { id: `account-${++nextId}`, ...data }; accounts.push(row); return copy(row); };
   prisma.onboardingProgress.create = async ({ data }) => { progress.push(data); return copy(data); };
   prisma.onboardingProgress.findUnique = async ({ where }) => copy(progress.find(row => matches(row, where)) ?? null);
-  prisma.session.findFirst = async ({ where }) => { const row = sessions.find(row => matches(row, where)); return row ? copy({ ...row, user: users.find(user => user.id === row.userId) }) : null; };
+  prisma.session.findFirst = async ({ where }) => { const row = sessions.find(row => matches(row, where)); return row ? copy({ ...row, user: { ...users.find(user => user.id === row.userId), lastActiveAt: new Date() } }) : null; };
   prisma.session.create = async ({ data }) => { const row = { id: `session-${++nextId}`, revokedAt: null, ...data }; sessions.push(row); return copy(row); };
   prisma.session.update = async ({ where, data }) => { const row = sessions.find(row => matches(row, where)); Object.assign(row, data); return copy(row); };
   prisma.session.updateMany = async ({ where, data }) => { const rows = sessions.filter(row => matches(row, where)); rows.forEach(row => Object.assign(row, data)); return { count: rows.length }; };

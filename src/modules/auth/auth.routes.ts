@@ -1,6 +1,8 @@
 import { linkedIdentityUsers } from "../../core/security/linked-identity.js";
 import { getActiveUserForLogin } from "./auth.service.js";
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
+import { requestLoginOtp } from "./otp-delivery.service.js";
 import { z } from "zod";
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { badRequest, forbidden, unauthorized } from "../../core/http/api-error.js";
@@ -10,7 +12,7 @@ import { authenticate, authenticateAccount, requireRoles } from "../../core/secu
 import { requireAuthContext } from "../../core/security/auth.context.js";
 import { hashToken } from "../../core/security/jwt.js";
 import { validateBody } from "../../core/validation/validate.js";
-import { findActiveUsersByEmail, findActiveUsersByMobile, googlePlaceholderMobile, issueLoginSession, issueOtp, resolveFirebaseIdentity, verifyOtp } from "./auth.service.js";
+import { findActiveUsersByEmail, findActiveUsersByMobile, issueLoginSession, resolveFirebaseIdentity, verifyOtp } from "./auth.service.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { buildGoogleAuthorizationUrl, handleGoogleOAuthCallback, resolveGoogleAuthTicket, sendOAuthResult, signupWithGoogleTicket } from "./google-oauth.service.js";
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
@@ -27,7 +29,9 @@ function isEmailOtpAmbiguous(users: Array<{ id: string; email: string | null }>)
 }
 
 const otpRequestSchema = z.object({
-  mobile: z.string().min(6)
+  mobile: z.string().regex(/^\+[1-9]\d{6,14}$/, "Enter a mobile number with country code"),
+  recaptcha_token: z.string().min(1).max(10000).optional(),
+  signup: z.boolean().optional()
 });
 
 const loginSchema = z
@@ -110,24 +114,11 @@ router.post("/google/signup", validateBody(googleSignupSchema), asyncHandler(asy
   return ok(res, payload);
 }));
 
-router.post("/otp/request", validateBody(otpRequestSchema), asyncHandler(async (req, res) => {
+router.post("/otp/request", rateLimit({ windowMs: 60_000, limit: 10, standardHeaders: true, legacyHeaders: false }), validateBody(otpRequestSchema), asyncHandler(async (req, res) => {
   const body = req.body as z.infer<typeof otpRequestSchema>;
-  const users = await findActiveUsersByMobile(body.mobile);
-  if (users.length === 0) throw badRequest("No active user found for this mobile number");
-  // An email OTP must not authenticate a different Google identity just because
-  // both accounts use the same contact mobile. SMS proves phone possession.
-  if (isEmailOtpAmbiguous(users)) {
-    throw badRequest("This mobile is shared by multiple accounts. Continue with Google or use SMS verification.");
-  }
-  const user = users[0];
-
-  const { code: devCode, emailed } = await issueOtp(body.mobile, user.email);
-
-  return ok(res, {
-    sent: true,
-    emailed,
-    ...(process.env.NODE_ENV === "production" ? {} : { dev_code: devCode })
-  });
+  const users = await findActiveUsersByMobile(body.mobile, undefined, false);
+  if (!users.length && !body.signup) throw badRequest("No active user found for this mobile number");
+  return ok(res, await requestLoginOtp({ mobile: body.mobile, users, recaptchaToken: body.recaptcha_token, signup: body.signup }));
 }));
 
 router.post("/login", validateBody(loginSchema), asyncHandler(async (req, res) => {
@@ -225,7 +216,7 @@ router.post("/switch-project", authenticateAccount, requireRoles("any"), validat
 
   if (membership.tenantId !== auth.tenantId || membership.userId !== auth.userId) {
     const target = await getActiveUserForLogin(membership.userId);
-    const login = await issueLoginSession(target, body.project_id);
+    const login = await issueLoginSession(target, body.project_id, false);
     await writeAudit({ tenantId: login.tenant.id, projectId: body.project_id, actorUserId: login.user.id,
       action: "auth.switch_project", entityType: "project", entityId: body.project_id });
     return ok(res, { ...login, identity_root_id: identity.rootId });

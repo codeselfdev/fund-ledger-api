@@ -105,7 +105,7 @@ beforeEach(reset);
 after(async () => { await new Promise(r => server.close(r)); await prisma.$disconnect(); });
 function token(role, project, userId) {
   const sessionId = randomUUID(), value = signAccessToken({ sessionId, tenantId: 't', userId });
-  db.sessions.push({ id: sessionId, tenantId: 't', userId, tokenHash: hashToken(value), revokedAt: null, expiresAt: new Date(Date.now() + 60000), activeProjectId: project, user: { isActive: true } });
+  db.sessions.push({ id: sessionId, tenantId: 't', userId, tokenHash: hashToken(value), revokedAt: null, expiresAt: new Date(Date.now() + 60000), activeProjectId: project, user: { isActive: true, lastActiveAt: new Date() } });
   db.memberships.push({ tenantId: 't', projectId: project, userId, role, isActive: true, memberId: role === 'member' ? 'member' : null }); return value;
 }
 async function request(path, body, role = 'accountant', method = body ? 'POST' : 'GET', project = 'p', userId = `user-${role}`) {

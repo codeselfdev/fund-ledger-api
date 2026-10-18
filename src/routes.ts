@@ -1,3 +1,4 @@
+import { aiServiceRouter } from './modules/ai-service/ai-service.routes.js';
 import { shortcutsRouter } from './modules/shortcuts/shortcuts.routes.js';
 import { memberInvitationRouter } from './modules/members/member-invitation.routes.js';
 import { supportRouter } from './modules/support/support.routes.js';
@@ -52,6 +53,7 @@ import { followupsRouter } from "./modules/follow-ups/followups.routes.js";
 import { assistantRouter } from "./modules/assistant/assistant.routes.js";
 
 export function registerRoutes(app: Express) {
+  app.use("/v1/ai-service", aiServiceRouter);
   app.use("/v1/internal", internalRouter);
   app.use("/v1/support", supportRouter);
   app.use("/v1/platform/billing", platformBillingRouter);

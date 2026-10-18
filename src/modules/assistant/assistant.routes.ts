@@ -18,7 +18,7 @@ import { assistantContext } from "./assistant.context.js";
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { files: 3, fileSize: 5000001, fields: 2, fieldSize: 10000 } }).array("files", 3);
 const present = async (row: Parameters<typeof publicReply>[0]) => ({ ...publicReply(row), attachments: await prisma.assistantAttachment.findMany({ where: { replyId: row.id }, select: { id: true, fileName: true, mimeType: true, size: true } }) });
-router.use(requireProject, requireRoles("any"));
+router.use(requireProject, requireRoles("owner", "admin", "accountant"));
 router.get("/status", asyncHandler(async (req, res) => ok(res, await assistantStatus(requireProjectContext(req).tenantId))));
 router.get("/messages", asyncHandler(async (req, res) => {
     const a = requireProjectContext(req);

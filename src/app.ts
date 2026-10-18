@@ -1,3 +1,4 @@
+import { clientActivityContext } from "./core/security/client-activity.js";
 import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
@@ -36,6 +37,7 @@ export function createApp() {
     res.json({ ok: true, data: { status: "ok", storage: getObjectStorageDiagnostics() } });
   });
 
+  app.use(clientActivityContext);
   registerRoutes(app);
 
   app.use(notFoundHandler);

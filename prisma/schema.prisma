@@ -349,6 +349,9 @@ model User {
   name         String
   mobile       String
   email        String?
+  lastLoginAt DateTime? @map("last_login_at")
+  lastLoginPlatform String? @map("last_login_platform")
+  lastActiveAt DateTime? @map("last_active_at")
   identityRootId String? @map("identity_root_id")
   identityRoot User? @relation("LinkedOrganizationIdentity", fields: [identityRootId], references: [id], onDelete: Restrict)
   linkedOrganizationUsers User[] @relation("LinkedOrganizationIdentity")
@@ -447,6 +450,15 @@ model Invitation {
 
   @@index([tenantId, projectId])
   @@map("invitations")
+}
+
+model SmsDailyUsage {
+  scope String
+  day DateTime @db.Date
+  count Int @default(0)
+
+  @@id([scope, day])
+  @@map("sms_daily_usage")
 }
 
 model OtpCode {

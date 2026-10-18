@@ -1,0 +1,114 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { Router } from 'express';
+import { z } from 'zod';
+import multer from 'multer';
+import { prisma } from '../../core/prisma/client.js';
+import { authenticate, requireProject, requireRoles } from '../../core/security/auth.middleware.js';
+import { requireActiveSubscription } from '../../core/security/subscription.middleware.js';
+import { requireProjectContext } from '../../core/security/auth.context.js';
+import { ApiError, forbidden, conflict } from '../../core/http/api-error.js';
+import { asyncHandler } from '../../core/http/async-handler.js';
+import { ok } from '../../core/http/response.js';
+import { projectDepositRoute } from '../../core/projects/project-settings.js';
+import { hasBusinessAssistant, allowancePeriod, featureLimit } from '../assistant/assistant.policy.js';
+import { assistantContext } from '../assistant/assistant.context.js';
+import { screenshotType } from '../support/support.service.js';
+import { aiServiceWhatsAppCredential } from '../../core/whatsapp/whatsapp.service.js';
+const router=Router();
+const permitted=(roles:string[])=>roles.some(r=>['owner','admin','accountant'].includes(r));
+const hash=(s:string)=>createHash('sha256').update(s).digest('hex');
+const resolveSchema=z.object({waba_id:z.string().min(1).max(100),phone_number_id:z.string().min(1).max(100),group_id:z.string().min(1).max(300),sender:z.string().regex(/^\d{7,15}$/)}).strict();
+router.post('/whatsapp/resolve',asyncHandler(async(req,res)=>{
+  const expected=process.env.AI_SERVICE_SHARED_SECRET,actual=req.header('X-AI-Service-Key');
+  if(!expected||expected.length<32||!actual||!timingSafeEqual(Buffer.from(hash(expected)),Buffer.from(hash(actual))))throw forbidden();
+  const b=resolveSchema.parse(req.body);
+  const connections=await prisma.whatsAppConnection.findMany({where:{wabaId:b.waba_id,phoneNumberId:b.phone_number_id,groupId:b.group_id,isActive:true},take:2});
+  if(connections.length!==1)return ok(res,null);
+  const c=connections[0]!;
+  const tenant=await prisma.tenant.findUnique({where:{id:c.tenantId}});
+  if(!tenant||tenant.deletionStartedAt||!hasBusinessAssistant(tenant.contact))return ok(res,null);
+  const project=await prisma.project.findFirst({where:{id:c.projectId,tenantId:c.tenantId,isActive:true}});
+  if(!project)return ok(res,null);
+  const users=await prisma.user.findMany({where:{tenantId:c.tenantId,isActive:true,mobile:{in:[b.sender,`+${b.sender}`]},memberships:{some:{projectId:c.projectId,tenantId:c.tenantId,isActive:true}}},include:{memberships:{where:{projectId:c.projectId,tenantId:c.tenantId,isActive:true}}},take:2});
+  const user=users.length===1?users[0]:null;
+  return ok(res,{tenant_id:c.tenantId,project_id:c.projectId,user_id:user?.id??null,permitted:!!user&&permitted(user.memberships.map(m=>m.role)),connection:{graph_api_version:c.graphApiVersion,access_token:await aiServiceWhatsAppCredential(c.id)}});
+}));
+router.use(authenticate,requireProject,requireRoles('owner','admin','accountant'),requireActiveSubscription);
+router.use(asyncHandler(async(req,_res,next)=>{const a=requireProjectContext(req);const t=await prisma.tenant.findUniqueOrThrow({where:{id:a.tenantId}});if(!hasBusinessAssistant(t.contact))throw new ApiError(403,'BUSINESS_REQUIRED','AI Chat and WhatsApp Bot require an active paid Business package.');next();}));
+
+router.get('/context',asyncHandler(async(req,res)=>{
+  const a=requireProjectContext(req);
+  const [user,progress,wa,deposit]=await Promise.all([
+    prisma.user.findUniqueOrThrow({where:{id:a.userId},select:{mobile:true}}),
+    prisma.onboardingProgress.findUnique({where:{tenantId:a.tenantId},select:{incomeApprovalFlow:true,expenseApprovalFlow:true}}),
+    prisma.whatsAppConnection.findFirst({where:{tenantId:a.tenantId,projectId:a.projectId,isActive:true},select:{wabaId:true,phoneNumberId:true,groupId:true}}),
+    projectDepositRoute(a.tenantId,a.projectId)
+  ]);
+  return ok(res,{tenant_id:a.tenantId,project_id:a.projectId,user_id:a.userId,mobile:user.mobile,roles:a.roles,member_id:a.memberId,member_ids:a.memberIds,policy:{income:progress?.incomeApprovalFlow??'accountant_only',expense:progress?.expenseApprovalFlow??'accountant_and_approver',deposit},whatsapp:wa?{waba_id:wa.wabaId,phone_number_id:wa.phoneNumberId,group_id:wa.groupId}:null});
+}));
+const usageSchema=z.object({request_key:z.string().min(1).max(200),channel:z.string().regex(/^(ai_chat|whatsapp_bot(?::[^\s]{1,300})?)$/),prompt_hash:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
+router.post('/usage',asyncHandler(async(req,res)=>{
+  const a=requireProjectContext(req),b=usageSchema.parse(req.body),channel=b.channel.startsWith('whatsapp_bot')?'whatsapp_bot':'ai_chat';
+  const context=await assistantContext(a.tenantId,a.projectId,a.userId);
+  const row=await prisma.$transaction(async tx=>{
+    await tx.$queryRaw`SELECT id FROM tenants WHERE id=${a.tenantId} FOR NO KEY UPDATE`;
+    const tenant=await tx.tenant.findUniqueOrThrow({where:{id:a.tenantId}});
+    if(!hasBusinessAssistant(tenant.contact))throw forbidden('An active Business package is required.');
+    const requestKey=`action:${b.request_key}`,period=allowancePeriod(tenant.contact);
+    const old=await tx.assistantReply.findUnique({where:{tenantId_channel_requestKey:{tenantId:a.tenantId,channel,requestKey}}});
+    if(old){if(old.userId!==a.userId||old.projectId!==a.projectId||old.promptHash!==b.prompt_hash||old.authorizationHash!==context.authorization_hash)throw conflict('This request key has already been used or your access changed.');return old;}
+    const used=await tx.assistantReply.count({where:{tenantId:a.tenantId,channel,periodStart:period.start,status:{not:'failed'}}});
+    if(used>=featureLimit(channel))throw new ApiError(429,'ASSISTANT_QUOTA_EXCEEDED','Your organization has used this month’s reply allowance.');
+    return tx.assistantReply.create({data:{tenantId:a.tenantId,projectId:a.projectId,userId:a.userId,channel,requestKey,promptHash:b.prompt_hash,prompt:'Attachment/action request',reply:'Request processed by Fund Nesta AI service.',authorizationHash:context.authorization_hash,periodStart:period.start,status:'completed'}});
+  });
+  return ok(res,{request_id:row.id});
+}));
+async function serviceRequest(req:import('express').Request,path:string,body?:unknown,method=body===undefined?'GET':'POST') {
+  const base=process.env.AI_SERVICE_URL;
+  if(!base)throw new ApiError(503,'AI_SERVICE_NOT_CONFIGURED','Configure the separate Fund Nesta AI service.');
+  const url=new URL(base);
+  if(url.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(url.hostname))throw new ApiError(503,'AI_SERVICE_NOT_CONFIGURED','The AI service requires HTTPS.');
+  const a=requireProjectContext(req);
+  const exchange=await fetch(new URL('/session',url),{method:'POST',redirect:'error',signal:AbortSignal.timeout(15000),headers:{Authorization:req.header('Authorization')!,'X-Project-Id':a.projectId}});
+  const session=await exchange.json() as {token?:string;error?:{code?:string;message?:string}};
+  if(!exchange.ok||!session.token)throw new ApiError(exchange.status,session.error?.code??'AI_SESSION_FAILED',session.error?.message??'Could not connect your AI session.');
+  try {
+    const response=await fetch(new URL(path,url),{method,redirect:'error',signal:AbortSignal.timeout(90000),headers:{Authorization:`Bearer ${session.token}`,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+    const data=await response.json() as {error?:{code?:string;message?:string}};
+    if(!response.ok)throw new ApiError(response.status,data.error?.code??'AI_SERVICE_FAILED',data.error?.message??'AI service request failed.');
+    return data;
+  }finally{
+    // WhatsApp pairing intentionally retains the service session until expiry.
+    if(path!=='/whatsapp/link') await fetch(new URL('/session',url),{method:'DELETE',redirect:'error',signal:AbortSignal.timeout(5000),headers:{Authorization:`Bearer ${session.token}`}}).catch(()=>{});
+  }
+}
+const upload=multer({storage:multer.memoryStorage(),limits:{files:3,fileSize:5000001,fields:2,fieldSize:10000}}).array('files',3);
+const chatSchema=z.object({message:z.string().trim().min(1).max(2000),request_key:z.string().uuid()}).strict();
+router.post('/chat',upload,asyncHandler(async(req,res)=>{
+  const b=chatSchema.parse(req.body),a=requireProjectContext(req),files=(req.files??[]) as Express.Multer.File[];
+  const images=files.map(f=>{if(f.size>5000000)throw new ApiError(413,'IMAGE_TOO_LARGE','Each image must be at most 5 MB.');return{name:f.originalname.slice(0,120),mime_type:screenshotType(f.buffer),base64:f.buffer.toString('base64')};});
+  const result=await serviceRequest(req,'/chat',{...b,images});
+  const row=await prisma.assistantReply.findUniqueOrThrow({where:{tenantId_channel_requestKey:{tenantId:a.tenantId,channel:'ai_chat',requestKey:`action:${b.request_key}`}}});
+  const saved=await prisma.assistantReply.update({where:{id:row.id},data:{prompt:b.message,reply:JSON.stringify(result)}});
+  return ok(res,{id:saved.id,message:saved.prompt,reply:null,status:'completed',request_key:b.request_key,created_at:saved.createdAt,action_result:result});
+}));
+router.get('/messages',asyncHandler(async(req,res)=>{
+  const a=requireProjectContext(req),context=await assistantContext(a.tenantId,a.projectId,a.userId);
+  const rows=await prisma.assistantReply.findMany({where:{tenantId:a.tenantId,projectId:a.projectId,userId:a.userId,channel:'ai_chat',requestKey:{startsWith:'action:'},authorizationHash:context.authorization_hash,createdAt:{gt:new Date(Date.now()-90*86400000)}},orderBy:{createdAt:'desc'},take:30});
+  return ok(res,rows.reverse().map(row=>{let result:unknown=null;try{result=JSON.parse(row.reply??'null');}catch{}return{id:row.id,message:row.prompt,reply:result?null:row.reply,status:row.status,request_key:row.requestKey.slice(7),created_at:row.createdAt,action_result:result};}));
+}));
+router.post('/whatsapp/link',asyncHandler(async(req,res)=>ok(res,await serviceRequest(req,'/whatsapp/link',{}))));
+router.get('/drafts/:id',asyncHandler(async(req,res)=>ok(res,await serviceRequest(req,`/drafts/${encodeURIComponent(req.params.id!)}`))));
+router.post('/drafts/:id/confirm',asyncHandler(async(req,res)=>{
+  const b=z.object({digest:z.string().regex(/^[a-f0-9]{64}$/),verified_source_records:z.literal(true)}).strict().parse(req.body);
+  const result=await serviceRequest(req,`/drafts/${encodeURIComponent(req.params.id!)}/confirm`,b);
+  const a=requireProjectContext(req);
+  await prisma.assistantReply.updateMany({where:{tenantId:a.tenantId,projectId:a.projectId,userId:a.userId,channel:'ai_chat',requestKey:{startsWith:'action:'},reply:{contains:req.params.id!}},data:{reply:JSON.stringify({status:'completed',proposal:result})}});
+  return ok(res,result);
+}));
+router.post('/drafts/:id/cancel',asyncHandler(async(req,res)=>{
+  const result=await serviceRequest(req,`/drafts/${encodeURIComponent(req.params.id!)}/cancel`,{}),a=requireProjectContext(req);
+  await prisma.assistantReply.updateMany({where:{tenantId:a.tenantId,projectId:a.projectId,userId:a.userId,channel:'ai_chat',requestKey:{startsWith:'action:'},reply:{contains:req.params.id!}},data:{reply:JSON.stringify({status:'cancelled',proposal:result})}});
+  return ok(res,result);
+}));
+export {router as aiServiceRouter};

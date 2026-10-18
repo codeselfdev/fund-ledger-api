@@ -1,3 +1,5 @@
+import { randomInt } from "node:crypto";
+import { recordUserLogin } from "../../core/security/client-activity.js";
 import { linkedIdentityUsers } from "../../core/security/linked-identity.js";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../core/prisma/client.js";
@@ -29,6 +31,7 @@ export async function createSessionToken(input: {
   tenantId: string;
   userId: string;
   activeProjectId?: string | null;
+  recordLogin?: boolean;
 }) {
   const session = await prisma.session.create({
     data: {
@@ -51,11 +54,12 @@ export async function createSessionToken(input: {
     data: { tokenHash: hashToken(token) }
   });
 
+  if (input.recordLogin) await recordUserLogin(input.userId);
   return { token, sessionId: session.id };
 }
 
 export async function createOtp(mobile: string) {
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const code = String(randomInt(100000, 1000000));
   await prisma.otpCode.create({
     data: {
       mobile,
@@ -154,7 +158,7 @@ const userLoginInclude = {
   tenant: true
 } as const;
 
-export async function findActiveUsersByMobile(mobile: string, tenantSlug?: string) {
+export async function findActiveUsersByMobile(mobile: string, tenantSlug?: string, deduplicate = true) {
   const candidates = mobileLookupValues(mobile);
   const last10 = mobile.replace(/\D/g, "").slice(-10);
   const users = await prisma.user.findMany({
@@ -169,7 +173,8 @@ export async function findActiveUsersByMobile(mobile: string, tenantSlug?: strin
     include: userLoginInclude
   });
 
-  return deduplicateLinkedUsers(users.filter((user) => mobilesEquivalent(user.mobile, mobile)));
+  const matching = users.filter((user) => mobilesEquivalent(user.mobile, mobile));
+  return deduplicate ? deduplicateLinkedUsers(matching) : matching;
 }
 
 export async function findActiveUsersByEmail(email: string, tenantSlug?: string) {
@@ -205,7 +210,7 @@ export function toLoginSessionPayload(
   };
 }
 
-export async function issueLoginSession(user: LoginUser, projectId?: string): Promise<LoginSessionPayload> {
+export async function issueLoginSession(user: LoginUser, projectId?: string, recordLogin = true): Promise<LoginSessionPayload> {
   if (!user) throw unauthorized("Invalid login");
   const identity = await linkedIdentityUsers(user.id);
   const allMemberships = await prisma.projectMembership.findMany({
@@ -214,7 +219,7 @@ export async function issueLoginSession(user: LoginUser, projectId?: string): Pr
   const activeMembership = projectId ? allMemberships.find(row => row.projectId === projectId) : (user.memberships[0] ?? allMemberships[0]);
   if (projectId && !activeMembership) throw forbidden("No active membership for requested project");
   const selectedUser = activeMembership && activeMembership.userId !== user.id ? await getActiveUserForLogin(activeMembership.userId) : user;
-  const { token } = await createSessionToken({ tenantId: selectedUser.tenantId, userId: selectedUser.id, activeProjectId: activeMembership?.projectId ?? null });
+  const { token } = await createSessionToken({ tenantId: selectedUser.tenantId, userId: selectedUser.id, recordLogin, activeProjectId: activeMembership?.projectId ?? null });
   return { ...toLoginSessionPayload(selectedUser, token, activeMembership?.projectId ?? null),
     identity_root_id: identity.rootId, memberships: summarizeProjectMemberships(allMemberships) };
 

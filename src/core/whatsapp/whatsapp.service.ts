@@ -182,3 +182,9 @@ export async function sendWhatsAppBotReply(input: { tenantId: string; projectId:
   return graphRequest<{ messages?: { id: string }[] }>({ version: connection.graphApiVersion, path: `${connection.phoneNumberId}/messages`, token: decrypt(connection.encryptedAccessToken), method: "POST",
     body: { messaging_product: "whatsapp", recipient_type: "individual", to: input.recipient, type: "text", text: { body: input.message.slice(0, 4000), preview_url: false } } });
 }
+
+/** Internal AI service bridge only; never return this from a public integration route. */
+export async function aiServiceWhatsAppCredential(id: string) {
+  const connection = await prisma.whatsAppConnection.findFirstOrThrow({where:{id,isActive:true}});
+  return decrypt(connection.encryptedAccessToken);
+}

@@ -17,7 +17,7 @@ function tokenFor(userId = 'user-a', tenantId = 'tenant-a') {
   const sessionId = `session-${userId}`;
   const token = signAccessToken({ userId, tenantId, sessionId });
   sessions.set(sessionId, { id: sessionId, userId, tenantId, tokenHash: hashToken(token),
-    revokedAt: null, expiresAt: new Date(Date.now() + 60000), activeProjectId: 'removed-project', user: { isActive: true } });
+    revokedAt: null, expiresAt: new Date(Date.now() + 60000), activeProjectId: 'removed-project', user: { isActive: true, lastActiveAt: new Date() } });
   return token;
 }
 before(async () => {
