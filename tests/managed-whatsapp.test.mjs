@@ -23,11 +23,11 @@ const {errorHandler}=await import('../dist/core/http/error-handler.js');
 const {renewTenantSubscription}=await import('../dist/core/subscription/subscription.service.js');
 const scope={tenantId:'tenant',projectId:'project',userId:'admin'},rows=new Map(),inbox=new Map();
 const originalFetch=globalThis.fetch;
-let paid=true,calls=[],responseStatus=200,early=false,interrupt=false;
+let paid=true,calls=[],responseStatus=200,early=false,interrupt=false,providerError=null;
 const event=(request='request-1',changes={})=>({object:'whatsapp_business_account',entry:[{id:'platform-waba',changes:[{field:'group_lifecycle_update',value:{metadata:{phone_number_id:'platform-phone'},groups:[{type:'group_create',request_id:request,group_id:'group-1',invite_link:'https://chat.whatsapp.com/Invite123',...changes}]}}]}]});
 function matches(row,where){return Object.entries(where).every(([key,value])=>value&&typeof value==='object'&&'in'in value?value.in.includes(row[key]):value instanceof Date?row[key]?.getTime()===value.getTime():row[key]===value);}
 beforeEach(()=>{
- rows.clear();inbox.clear();paid=true;calls=[];responseStatus=200;early=false;interrupt=false;
+ rows.clear();inbox.clear();paid=true;calls=[];responseStatus=200;early=false;interrupt=false;providerError=null;
  process.env.WHATSAPP_GROUPS_ENABLED='true';
  prisma.tenant.findUnique=async()=>({id:'tenant',contact:paid?renewTenantSubscription({},new Date(),{package:'business',billing_cycle:'yearly'}).contact:{}});
  prisma.project.findFirst=async({where})=>({id:where.id,name:'Project',tenantId:where.tenantId});
@@ -48,7 +48,7 @@ beforeEach(()=>{
   calls.push({url:String(url),body:JSON.parse(options.body),headers:options.headers});
   if(interrupt)throw Error('interrupted');
   if(early)await receiveManagedGroupLifecycle(event());
-  return Response.json({request_id:`request-${calls.length}`},{status:responseStatus});
+  return Response.json(providerError ?? {request_id:`request-${calls.length}`},{status:responseStatus});
  };
 });
 after(async()=>{globalThis.fetch=originalFetch;await prisma.$disconnect();});
@@ -102,4 +102,12 @@ test('customer routes refuse credentials and verify lifecycle signatures even wh
 test('creation callbacks without an invitation retrieve it using the authoritative group ID',async()=>{
  await createManagedWhatsAppGroup(scope,'Committee');await receiveManagedGroupLifecycle(event('request-1',{invite_link:undefined}));
  const result=await managedWhatsAppSetup(scope);assert.equal(result.group.status,'ready');assert.equal(result.group.invite_link,'https://chat.whatsapp.com/FromLookup');
+});
+
+test('provider rejection preserves a safe support reference and never exposes provider text',async()=>{
+ responseStatus=400;providerError={error:{code:190,error_subcode:463,message:'Expired platform-secret-token-for-tests'}};
+ const original=console.warn,logs=[];console.warn=(...args)=>logs.push(args);
+ let result;try{result=await createManagedWhatsAppGroup(scope,'Committee');}finally{console.warn=original;}
+ assert.equal(result.group.status,'failed');assert.match(result.group.error,/connection needs renewal/);assert.match(result.group.error,/WA-190-463/);
+ assert.match(JSON.stringify(logs),/credentials/);assert.ok(!JSON.stringify({result,logs}).includes('platform-secret-token-for-tests'));
 });

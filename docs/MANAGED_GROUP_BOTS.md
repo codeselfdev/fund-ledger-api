@@ -60,6 +60,8 @@ npm run whatsapp:check
 
 This prints `READY` or the exact variable names that are missing or invalid, without printing credentials. `npm run whatsapp:check -- --json` returns machine-readable checks and exits with status 1 when unavailable. The same configuration gate controls the customer setup response. Startup logs also report invalid settings when either WhatsApp flag is enabled.
 
+If configuration is ready but creation fails, run `npm run whatsapp:check -- --provider` (or add `--json`). This makes only a read-only `GET /{phone-number-id}/groups?limit=1` call; it does not create a group or print group details/credentials. It reports Meta's numeric error code/subcode and a fixed diagnostic category. Successful list access does not guarantee permission to create. The create request logs `[whatsapp] group_create_rejected` with the same safe fields and stores a support reference such as `WA-190-463` in the app's error. The provider's raw text is not returned to customers. Fix the indicated shared Fund Nesta credential, permissions or provider access before explicitly retrying a failed creation. Never reset a pending or unknown outcome just to retry.
+
 Both `WHATSAPP_ENABLED` and `WHATSAPP_GROUPS_ENABLED` must be exactly `true`. `AI_SERVICE_SHARED_SECRET` needs at least 32 characters and must match the AI service. Use a deployed AI service URL reachable from the API container; `127.0.0.1` only works when the AI service runs inside that same container. The diagnostic checks configuration only; verify provider eligibility, webhook callbacks and AI connectivity separately before rollout. After it reports ready, tap **Refresh status** in the app; a new mobile build is not required for this configuration fix.
 
 ## Operations and verification

@@ -5,6 +5,7 @@ import { ApiError, conflict, forbidden, serviceUnavailable } from '../http/api-e
 import { hasBusinessAssistant } from '../../modules/assistant/assistant.policy.js';
 import { managedWhatsAppConfiguration as settings } from './whatsapp.configuration.js';
 import { encryptWhatsAppCredential } from './whatsapp.service.js';
+import { whatsappProviderFailure } from './whatsapp-provider-error.js';
 
 export const createGroupSchema = z.object({ name: z.string().trim().min(2).max(128) }).strict();
 type Scope = { tenantId: string; projectId: string; userId: string };
@@ -86,11 +87,13 @@ export async function createManagedWhatsAppGroup(scope: Scope, name: string) {
     return managedWhatsAppSetup(where);
   }
   if (!response.ok) {
+    const failure = whatsappProviderFailure(response.status, await response.json().catch(() => null));
+    console.warn('[whatsapp] group_create_rejected', { http_status: failure.http_status, code: failure.code, subcode: failure.subcode, category: failure.category, reference: failure.reference });
     // Only a definite 4xx rejection permits a new creation attempt. 5xx delivery is uncertain.
     const rejected = response.status >= 400 && response.status < 500 && response.status !== 408;
     await prisma.whatsAppConnection.update({ where: { id: row.id }, data: {
       groupSetupStatus: rejected ? 'failed' : 'unknown',
-      groupSetupError: rejected ? 'WhatsApp could not create this group. Please try again or contact Fund Nesta support.' : 'Creation has not been confirmed. Contact Fund Nesta support before trying again.',
+      groupSetupError: rejected ? failure.customer_message : `Creation has not been confirmed. Contact Fund Nesta support before trying again. (${failure.reference})`,
     } });
     return managedWhatsAppSetup(where);
   }
@@ -125,6 +128,10 @@ export async function receiveManagedGroupLifecycle(payload: unknown) {
     for (const raw of change.value.groups ?? []) {
       const parsedEvent = createdSchema.safeParse(raw); if (!parsedEvent.success) continue;
       const event = parsedEvent.data, failed = !!event.errors?.length;
+      if (failed) {
+        const failure = whatsappProviderFailure(400, { error: event.errors![0] });
+        console.warn('[whatsapp] group_create_callback_failed', { code: failure.code, subcode: failure.subcode, category: failure.category, reference: failure.reference });
+      }
       const invite = safeInviteLink(event.invite_link);
       if (!failed && (!event.group_id || (event.invite_link && !invite))) continue;
       await prisma.whatsAppGroupCreationEvent.upsert({
