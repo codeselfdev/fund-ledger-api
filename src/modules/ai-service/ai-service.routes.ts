@@ -67,7 +67,7 @@ router.get('/context',asyncHandler(async(req,res)=>{
     prisma.telegramConnection.findFirst({where:{tenantId:a.tenantId,projectId:a.projectId}}),
     prisma.telegramBotIdentity.findUnique({where:{projectId_userId:{projectId:a.projectId,userId:a.userId}}})
   ]);
-  return ok(res,{tenant_id:a.tenantId,project_id:a.projectId,user_id:a.userId,mobile:user.mobile,roles:a.roles,member_id:a.memberId,member_ids:a.memberIds,policy:{income:progress?.incomeApprovalFlow??'accountant_only',expense:progress?.expenseApprovalFlow??'accountant_and_approver',deposit},whatsapp:wa?{waba_id:wa.wabaId,phone_number_id:wa.phoneNumberId,group_id:wa.groupId}:null,telegram:tg&&identity&&identity.tenantId===a.tenantId?{chat_id:tg.chatId,sender_id:identity.telegramUserId,bot_username:process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/,'')??null}:null});
+  return ok(res,{tenant_id:a.tenantId,project_id:a.projectId,user_id:a.userId,mobile:user.mobile,roles:a.roles,member_id:a.memberId,member_ids:a.memberIds,policy:{income:progress?.incomeApprovalFlow??'accountant_only',expense:progress?.expenseApprovalFlow??'accountant_and_approver',deposit,admin_deposit_finalize:true},whatsapp:wa?{waba_id:wa.wabaId,phone_number_id:wa.phoneNumberId,group_id:wa.groupId}:null,telegram:tg&&identity&&identity.tenantId===a.tenantId?{chat_id:tg.chatId,sender_id:identity.telegramUserId,bot_username:process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/,'')??null}:null});
 }));
 const usageSchema=z.object({request_key:z.string().min(1).max(200),channel:z.string().regex(/^(ai_chat|(?:whatsapp_bot|telegram_bot)(?::[^\s]{1,300})?)$/),prompt_hash:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
 router.post('/usage',asyncHandler(async(req,res)=>{

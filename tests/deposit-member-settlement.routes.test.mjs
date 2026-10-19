@@ -342,3 +342,27 @@ test('a payment changed after the initial read cannot be posted using its former
  try {assert.equal((await request(`/deposits/${id}/confirm`,{allocation_version:preview.allocation_version})).status,409);assert.equal(receipts.length,0);assert.equal(account.balance,0);}
  finally {prisma.$queryRaw=original;}
 });
+
+test('explicit verified administrator submission finalizes atomically with proof, receipt, balance and actual before/after dues',async()=>{
+ const result=await request('/deposits',{...payment,amount:2000,method:'bank',proof_file_id:'original-proof',finalize:true});
+ assert.equal(result.status,201,JSON.stringify(result.body));assert.equal(result.body.data.status,'confirmed');assert.equal(result.body.data.member_due_before,22000);assert.equal(result.body.data.member_due_after,20000);assert.ok(result.body.data.receipt_no);
+ assert.equal(deposits.length,1);assert.equal(deposits[0].proofFileId,'original-proof');assert.equal(deposits[0].approverById,'actor');assert.equal(account.balance,2000);assert.equal(outstanding(),20000);assert.equal(receipts.length,1);assert.equal(transactions.length,1);
+ assert.equal((await request(`/deposits/${result.body.data.id}/confirm`,{})).status,400);assert.equal(account.balance,2000);assert.equal(receipts.length,1);assert.equal(transactions.length,1);
+});
+test('owner can finalize; accountant submissions remain awaiting approval without reducing dues',async()=>{
+ let result=await request('/deposits',{...payment,amount:2000,finalize:true},'owner');assert.equal(result.status,201,JSON.stringify(result.body));assert.equal(result.body.data.status,'confirmed');assert.equal(account.balance,2000);
+ reset();result=await request('/deposits',{...payment,amount:2000,proof_file_id:'proof'},'accountant');assert.equal(result.status,201);assert.equal(result.body.data.status,'pending_approver');assert.equal(result.body.data.member_due_before,22000);assert.equal(result.body.data.member_due_after,22000);assert.equal(account.balance,0);assert.equal(receipts.length,0);
+});
+test('non-admins cannot forge immediate finalization and unsupported/overpaid requests never post',async()=>{
+ for(const role of ['accountant','member','cashier','approver','auditor']){const result=await request('/deposits',{...payment,finalize:true,proof_file_id:'proof'},role);assert.equal(result.status,403,role);}
+ assert.equal((await request('/deposits',{...payment,finalize:true,amount:22001})).status,400);
+ assert.equal(deposits.length,0);assert.equal(account.balance,0);assert.equal(receipts.length,0);assert.equal(transactions.length,0);
+});
+test('failure during administrator finalization rolls back the new deposit, allocations, dues, receipt and balance',async()=>{
+ const create=prisma.accountTransaction.create;prisma.accountTransaction.create=async()=>{throw Error('transaction write failed');};
+ try{const result=await request('/deposits',{...payment,finalize:true,amount:2000});assert.equal(result.status,500);assert.equal(deposits.length,0);assert.equal(allocations.length,0);assert.equal(receipts.length,0);assert.equal(transactions.length,0);assert.equal(account.balance,0);assert.equal(outstanding(),22000);}finally{prisma.accountTransaction.create=create;}
+});
+test('concurrent full administrator payments cannot settle the same dues or credit the balance twice',async()=>{
+ const results=await Promise.all([request('/deposits',{...payment,finalize:true}),request('/deposits',{...payment,finalize:true})]);
+ assert.deepEqual(results.map(r=>r.status).sort(),[201,400]);assert.equal(deposits.length,1);assert.equal(receipts.length,1);assert.equal(transactions.length,1);assert.equal(account.balance,22000);assert.equal(outstanding(),0);
+});

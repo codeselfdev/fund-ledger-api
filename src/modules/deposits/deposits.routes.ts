@@ -65,6 +65,7 @@ async function announceConfirmedPayment(input: {
 const depositBodySchema = z.object({
   schedule_ids: z.array(z.string().min(1)).min(1).optional(),
   settle_all_dues: z.boolean().default(false),
+  finalize: z.boolean().default(false),
   member_id: z.string().min(1),
   account_id: z.string().min(1),
   amount: z.number().int().positive(),
@@ -187,12 +188,13 @@ async function finalizeDepositConfirmation(input: {
     status: DepositStatus;
     allocate: string | null;
   };
-}) {
+}, transaction?: Prisma.TransactionClient) {
+  const db = transaction ?? prisma;
   if (!input.before.accountId) {
     throw badRequest("This deposit has no account set — ask the accountant to set one before approving");
   }
 
-  const allocations = await prisma.depositAllocation.findMany({
+  const allocations = await db.depositAllocation.findMany({
     where: { depositId: input.depositId },
     include: { due: true }
   });
@@ -212,7 +214,7 @@ async function finalizeDepositConfirmation(input: {
     });
   }
 
-  const account = await prisma.account.findFirstOrThrow({
+  const account = await db.account.findFirstOrThrow({
     where: { id: input.before.accountId, tenantId: input.auth.tenantId, projectId: input.auth.projectId }
   });
   const receiptNo = `RCT-${Date.now()}-${input.depositId.slice(-4).toUpperCase()}`;
@@ -222,7 +224,7 @@ async function finalizeDepositConfirmation(input: {
     throw badRequest("Schedule amounts changed since review. Reload the breakdown before confirming.");
   }
 
-  const result = await prisma.$transaction(async (tx) => {
+  const post = async (tx: Prisma.TransactionClient) => {
     await lockReviewedDeposit(tx, input);
     // Lock dues in a stable order so another confirmation cannot change the
     // reviewed amounts between validation and posting.
@@ -239,6 +241,9 @@ async function finalizeDepositConfirmation(input: {
       throw badRequest("Schedule amounts changed since review. Reload the breakdown before confirming.");
     }
 
+    const memberDueScope = { tenantId: input.auth.tenantId, projectId: input.auth.projectId, memberId: input.before.memberId };
+    const memberDuesBefore = await tx.due.findMany({ where: memberDueScope });
+    const memberDueBefore = memberDuesBefore.reduce((sum, due) => sum + calculateDueBalance(due).total, 0);
     const claimed = await tx.deposit.updateMany({
       where: { id: input.depositId, tenantId: input.auth.tenantId, projectId: input.auth.projectId, status: input.before.status },
       data: { status: "confirmed", approverById: input.auth.userId, confirmedAt: new Date() }
@@ -298,8 +303,11 @@ async function finalizeDepositConfirmation(input: {
 
     const resolvedCommitment = await resolveCommitmentsForDeposit(tx, deposit, input.auth.userId);
 
-    return { deposit, receipt, accountTransaction, resolvedCommitment };
-  });
+    const memberDuesAfter = await tx.due.findMany({ where: memberDueScope });
+    const memberDueAfter = memberDuesAfter.reduce((sum, due) => sum + calculateDueBalance(due).total, 0);
+    return { deposit, receipt, accountTransaction, resolvedCommitment, memberDueBefore, memberDueAfter };
+  };
+  const result = transaction ? await post(transaction) : await prisma.$transaction(post);
 
   return { ...result, receiptNo, accountBalanceBefore: account.balance };
 }
@@ -380,6 +388,8 @@ async function finalizeAdvanceDepositConfirmation(input: {
 router.post("/", requireProject, requireRoles("member", "cashier", "accountant", "admin"), validateBody(depositBodySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const body = req.body as z.infer<typeof depositBodySchema>;
+  const administrator = auth.roles.some(role => role === "admin" || role === "owner");
+  if (body.finalize && !administrator) throw forbidden("Only an administrator can finalize a submitted deposit.");
   const approvalRoute = await projectDepositRoute(auth.tenantId, auth.projectId);
   const submittedByAccountant = approvalRoute === "accountant" && auth.roles.includes("accountant");
   if (!(await canSubmitForMember(auth, body.member_id))) {
@@ -419,7 +429,7 @@ router.post("/", requireProject, requireRoles("member", "cashier", "accountant",
   });
   if (!account) throw notFound("Account not found");
 
-  const deposit = await prisma.$transaction(async (tx) => {
+  const submitted = await prisma.$transaction(async (tx) => {
     const createdDeposit = await tx.deposit.create({
       data: {
         tenantId: auth.tenantId,
@@ -449,8 +459,28 @@ router.post("/", requireProject, requireRoles("member", "cashier", "accountant",
       }))
     });
 
-    return createdDeposit;
+    // A verified administrator action creates and finalizes in one transaction.
+    // If dues change or finalization fails, no pending orphan or balance change survives.
+    const finalized = body.finalize
+      ? await finalizeDepositConfirmation({ auth, depositId: createdDeposit.id, before: createdDeposit }, tx)
+      : null;
+    return { deposit: finalized?.deposit ?? createdDeposit, finalized };
   });
+  const { deposit, finalized } = submitted;
+  if (finalized) {
+    await writeAudit({ tenantId: auth.tenantId, projectId: auth.projectId, actorUserId: auth.userId,
+      action: "deposit.confirmed", entityType: "deposit", entityId: deposit.id, after: finalized });
+    await writeAccountTransactionAudit({ tenantId: auth.tenantId, projectId: auth.projectId, actorUserId: auth.userId,
+      transaction: finalized.accountTransaction, balanceBefore: finalized.accountBalanceBefore });
+    await notifyProjectMembers({ tenantId: auth.tenantId, projectId: auth.projectId, actorUserId: auth.userId,
+      memberIds: [body.member_id], type: "deposit.confirmed", title: "Deposit confirmed",
+      body: `Receipt ${finalized.receiptNo} was issued for your payment.`, entityType: "receipt", entityId: finalized.receipt.id });
+    await announceConfirmedPayment({ tenantId: auth.tenantId, projectId: auth.projectId, actorUserId: auth.userId,
+      memberId: body.member_id, amount: finalized.receipt.amount, receiptId: finalized.receipt.id });
+    await emailDepositDecision({ tenantId: auth.tenantId, projectId: auth.projectId, memberId: body.member_id, decision: "approved" });
+    return created(res, { id: deposit.id, status: deposit.status, receipt_id: finalized.receipt.id, receipt_no: finalized.receiptNo,
+      member_due_before: finalized.memberDueBefore, member_due_after: finalized.memberDueAfter });
+  }
 
   await writeAudit({
     tenantId: auth.tenantId,
@@ -488,7 +518,9 @@ router.post("/", requireProject, requireRoles("member", "cashier", "accountant",
     });
   }
 
-  return created(res, { id: deposit.id, status: deposit.status });
+  const currentMemberDues = await prisma.due.findMany({ where: { tenantId: auth.tenantId, projectId: auth.projectId, memberId: body.member_id } });
+  const currentDue = currentMemberDues.reduce((sum, due) => sum + calculateDueBalance(due).total, 0);
+  return created(res, { id: deposit.id, status: deposit.status, member_due_before: currentDue, member_due_after: currentDue });
 }));
 
 router.post("/advance", requireProject, requireRoles("member", "cashier", "accountant", "admin"), validateBody(advanceDepositBodySchema), asyncHandler(async (req, res) => {
@@ -854,7 +886,8 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
     id: result.deposit.id,
     status: result.deposit.status,
     receipt_id: result.receipt.id,
-    receipt_no: result.receipt.receiptNo
+    receipt_no: result.receipt.receiptNo,
+    ...("memberDueAfter" in result && "memberDueBefore" in result ? { member_due_before: result.memberDueBefore, member_due_after: result.memberDueAfter } : {})
   });
 }));
 
@@ -938,7 +971,8 @@ router.post("/:id/confirm", requireProject, requireRoles("approver", "admin"), v
     id: result.deposit.id,
     status: result.deposit.status,
     receipt_id: result.receipt.id,
-    receipt_no: result.receipt.receiptNo
+    receipt_no: result.receipt.receiptNo,
+    ...("memberDueAfter" in result && "memberDueBefore" in result ? { member_due_before: result.memberDueBefore, member_due_after: result.memberDueAfter } : {})
   });
 }));
 
