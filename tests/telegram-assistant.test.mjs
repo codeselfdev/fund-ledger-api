@@ -40,7 +40,18 @@ test('initial group mapping still requires a group administrator',async()=>{
  memberStatus='administrator';await receiveTelegramUpdate(command());assert.equal(link.chatId,'-100');
 });
 test('bridge forwards only mentions and preserves integrity with a body signature',async()=>{
- const update={update_id:1,message:{text:'@FundNestaBot balance',chat:{id:-100,type:'supergroup'},from:{id:123,is_bot:false}}};
+ const update={update_id:1,message:{message_id:1,text:'@FundNestaBot balance',chat:{id:-100,type:'supergroup'},from:{id:123,is_bot:false}}};
  await forwardTelegramAssistantUpdate({...update,message:{...update.message,text:'ordinary conversation'}});assert.equal(forwarded.length,0);
  await forwardTelegramAssistantUpdate(update);assert.equal(forwarded.length,1);const f=forwarded[0];assert.equal(f.url,'http://127.0.0.1:4010/webhooks/telegram');assert.equal(f.headers['x-fundnesta-signature'],`sha256=${createHmac('sha256',process.env.AI_SERVICE_SHARED_SECRET).update(f.body).digest('hex')}`);
+});
+
+test('bridge forwards our native button callbacks using the clicker and signs the complete update',async()=>{
+ const update={update_id:2,callback_query:{id:'click-2',data:'fn:'+'x'.repeat(43),from:{id:123,is_bot:false},message:{message_id:99,date:0,chat:{id:-100,type:'supergroup'},from:{id:456,is_bot:true,username:'FundNestaBot'}}}};
+ await forwardTelegramAssistantUpdate(update);assert.equal(forwarded.length,1);
+ const f=forwarded[0];assert.deepEqual(JSON.parse(f.body),update);assert.equal(f.headers['x-fundnesta-signature'],`sha256=${createHmac('sha256',process.env.AI_SERVICE_SHARED_SECRET).update(f.body).digest('hex')}`);
+});
+test('bridge rejects private, anonymous, foreign-bot, bot-clicker and malformed callbacks',async()=>{
+ const original={update_id:3,callback_query:{id:'click-3',data:'fn:'+'x'.repeat(43),from:{id:123,is_bot:false},message:{message_id:99,chat:{id:-100,type:'supergroup'},from:{id:456,is_bot:true,username:'FundNestaBot'}}}};
+ for(const mutate of [u=>u.callback_query.from.is_bot=true,u=>u.callback_query.message.chat={id:123,type:'private'},u=>u.callback_query.message.sender_chat={id:-100},u=>u.callback_query.message.from.username='OtherBot',u=>u.callback_query.data='CONFIRM abc',u=>u.callback_query.inline_message_id='inline',u=>u.callback_query.message.message_id=0]){const update=structuredClone(original);mutate(update);await forwardTelegramAssistantUpdate(update);}
+ assert.equal(forwarded.length,0);
 });

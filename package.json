@@ -20,7 +20,8 @@
     "billing": "tsx src/scripts/subscription-billing.ts",
     "billing:prod": "node dist/scripts/subscription-billing.js",
     "construction:migration:recover": "node scripts/recover-construction-migration.mjs",
-    "whatsapp:check": "node scripts/check-whatsapp.mjs"
+    "whatsapp:check": "node scripts/check-whatsapp.mjs",
+    "telegram:buttons": "node scripts/configure-telegram-webhook.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",

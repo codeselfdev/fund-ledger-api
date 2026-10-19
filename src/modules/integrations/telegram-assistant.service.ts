@@ -39,15 +39,32 @@ export async function confirmTelegramIdentityLink(scope: Scope, id: string) {
 export async function forwardTelegramAssistantUpdate(update: unknown) {
   const base = process.env.AI_SERVICE_URL, secret = process.env.AI_SERVICE_SHARED_SECRET;
   if (!base || !secret || secret.length < 32) return;
-  const message = (update as { message?: { text?: string; caption?: string; chat?: { type?: string }; from?: { is_bot?: boolean }; sender_chat?: unknown } })?.message;
-  if (!message || !['group', 'supergroup'].includes(message.chat?.type ?? '') || message.from?.is_bot || message.sender_chat) return;
   const username = process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/, '');
   if (!username || !/^\w+$/.test(username)) return;
-  const text = message.text ?? message.caption ?? '';
-  if (!new RegExp(`(?:^|\\s)@${username}(?=$|[^a-zA-Z0-9_])|^/ask@${username}(?:\\s|$)`, 'i').test(text)) return;
+  if (!isTelegramAssistantUpdate(update, username)) return;
   const body = JSON.stringify(update), signature = `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
   try {
     const response = await fetch(new URL('/webhooks/telegram', base), { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(8000), headers: { 'Content-Type': 'application/json', 'x-fundnesta-signature': signature }, body });
     if (!response.ok) throw Error('AI inbox rejected update');
   } catch { throw serviceUnavailable('Telegram bot request could not be queued.'); }
+}
+
+/** Public webhook authentication is performed by the route before this predicate. */
+export function isTelegramAssistantUpdate(update: unknown, username: string): boolean {
+  if (!update || typeof update !== 'object' || !/^[a-zA-Z0-9_]{1,64}$/.test(username)) return false;
+  type Sender = { id: number; is_bot?: boolean; username?: string };
+  type Message = { message_id: number; text?: string; caption?: string; chat?: { id: number; type: string }; from?: Sender; sender_chat?: unknown };
+  const value = update as { update_id?: number; message?: Message; callback_query?: { id?: string; data?: string; from?: Sender; message?: Message; inline_message_id?: string } };
+  if (!Number.isSafeInteger(value.update_id)) return false;
+  const callback = value.callback_query;
+  const message = callback?.message ?? value.message;
+  const sender = callback?.from ?? message?.from;
+  if (!message || !['group', 'supergroup'].includes(message.chat?.type ?? '') || !Number.isSafeInteger(message.chat?.id) || Number(message.chat?.id) >= 0 || !Number.isSafeInteger(message.message_id) || message.message_id <= 0 || !sender || !Number.isSafeInteger(sender.id) || sender.id <= 0 || sender.is_bot || message.sender_chat) return false;
+  if (callback) {
+    if (typeof callback.id !== 'string' || !callback.id || callback.id.length > 200 || callback.inline_message_id || typeof callback.data !== 'string' || !/^fn:[A-Za-z0-9_-]{43}$/.test(callback.data)) return false;
+    // The message was sent by our bot; the clicker is callback.from.
+    return !message.from || (message.from.is_bot === true && message.from.username?.toLowerCase() === username.toLowerCase());
+  }
+  const text = message.text ?? message.caption ?? '';
+  return typeof text === 'string' && new RegExp(`(?:^|\\s)@${username}(?=$|[^a-zA-Z0-9_])|^/ask@${username}(?:\\s|$)`, 'i').test(text);
 }
