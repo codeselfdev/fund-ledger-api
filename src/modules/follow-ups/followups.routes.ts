@@ -16,6 +16,8 @@ import { getMemberOutstanding } from "../dues/outstanding.service.js";
 import { addDateDays, assertPromiseDate, callLogSchema, compareDateOnly, dateKey, dhakaToday, followupsQuerySchema, reliabilityQuerySchema, resolveCommitmentSchema, timelineQuerySchema } from "./followups.policy.js";
 import { commitmentPayload, getFollowupList, getMemberFollowup, getReliabilityRanking } from "./followups.service.js";
 
+import { actionListQuerySchema, getFollowupActionList } from "./followup-action-list.service.js";
+
 const router = Router();
 const readRoles = requireRoles("owner", "admin", "accountant", "auditor");
 const writeRoles = requireRoles("owner", "admin");
@@ -28,6 +30,11 @@ router.get("/follow-ups", requireProject, readRoles, validateQuery(followupsQuer
   const auth = requireProjectContext(req);
   const { tab } = req.query as z.infer<typeof followupsQuerySchema>;
   return ok(res, await getFollowupList({ tenantId: auth.tenantId, projectId: auth.projectId }, tab));
+}));
+
+router.get("/follow-ups/action-list", requireProject, requireRoles("owner", "admin", "accountant"), validateQuery(actionListQuerySchema), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  return ok(res, await getFollowupActionList({ tenantId: auth.tenantId, projectId: auth.projectId }, actionListQuerySchema.parse(req.query)));
 }));
 
 router.get("/follow-ups/reliability", requireProject, readRoles, validateQuery(reliabilityQuerySchema), asyncHandler(async (req, res) => {
