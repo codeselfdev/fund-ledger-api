@@ -1,4 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { migrateTelegramGroup, telegramGroupMigration } from './telegram-migration.service.js';
+import { ApiError } from '../../core/http/api-error.js';
 import { prisma } from '../../core/prisma/client.js';
 import { badRequest, conflict, notFound, serviceUnavailable, unauthorized } from '../../core/http/api-error.js';
 import type { Scope } from '../reports/report.policy.js';
@@ -8,13 +10,17 @@ export function checkWebhookSecret(provided: string | undefined) {
   const expected=process.env.TELEGRAM_WEBHOOK_SECRET;
   if (!expected || !provided || !timingSafeEqual(Buffer.from(hash(expected)),Buffer.from(hash(provided)))) throw unauthorized('Invalid webhook secret');
 }
+export class TelegramGroupMigratedError extends ApiError {
+  constructor(public readonly chatId: string) { super(400, 'TELEGRAM_GROUP_MIGRATED', 'Telegram upgraded this group. Reconnect the project group.'); }
+}
 export async function telegramApi<T>(method: string, body: Record<string, unknown> | FormData): Promise<T> {
   if (!telegramConfigured()) throw serviceUnavailable('Telegram is not configured on the server');
   const form = body instanceof FormData;
   let response: Response;
   try { response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`, { method:'POST', headers: form?undefined:{'Content-Type':'application/json'}, body:form?body:JSON.stringify(body), signal:AbortSignal.timeout(20000) }); }
   catch { throw serviceUnavailable('Telegram request failed or timed out'); }
-  const result=await response.json() as {ok:boolean;result:T;description?:string};
+  const result=await response.json() as {ok:boolean;result:T;description?:string;parameters?:{migrate_to_chat_id?:number}};
+  if ((!response.ok || !result.ok) && Number.isSafeInteger(result.parameters?.migrate_to_chat_id) && Number(result.parameters?.migrate_to_chat_id) < -1000000000000) throw new TelegramGroupMigratedError(String(result.parameters!.migrate_to_chat_id));
   if (!response.ok || !result.ok) throw badRequest(result.description || 'Telegram rejected the request');
   return result.result;
 }
@@ -28,6 +34,8 @@ export async function startTelegramLink(scope: Scope, targetChatId?: string) {
   return {id:link.id,code,command:`/connect ${code}`,expires_at:link.expiresAt,bot_username:process.env.TELEGRAM_BOT_USERNAME!.replace(/^@/,'')};
 }
 export async function receiveTelegramUpdate(update: unknown) {
+  const migration = telegramGroupMigration(update);
+  if (migration) { await migrateTelegramGroup(migration.from, migration.to); return; }
   const message=(update as {message?:{text?:string;chat?:{id:number;type:string;title?:string};from?:{id:number;is_bot?:boolean;first_name?:string;last_name?:string;username?:string}}})?.message;
   if(typeof message?.text!=='string') return;
   const match=message.text.trim().match(/^\/(?:connect|start)(?:@(\w+))?\s+(FL-[A-F0-9]{16})$/i);

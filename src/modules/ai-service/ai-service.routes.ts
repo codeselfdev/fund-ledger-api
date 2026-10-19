@@ -16,7 +16,8 @@ import { assistantContext } from '../assistant/assistant.context.js';
 import { screenshotType } from '../support/support.service.js';
 import { aiServiceWhatsAppCredential } from '../../core/whatsapp/whatsapp.service.js';
 import { startTelegramIdentityLink, confirmTelegramIdentityLink } from '../integrations/telegram-assistant.service.js';
-import { telegramLinkStatus } from '../integrations/telegram.service.js';
+import { telegramLinkStatus, telegramApi, TelegramGroupMigratedError } from '../integrations/telegram.service.js';
+import { resolveTelegramConnection } from '../integrations/telegram-migration.service.js';
 const router=Router();
 const permitted=(roles:string[])=>roles.some(r=>['owner','admin','accountant'].includes(r));
 const hash=(s:string)=>createHash('sha256').update(s).digest('hex');
@@ -41,7 +42,10 @@ router.post('/telegram/resolve',asyncHandler(async(req,res)=>{
   const expected=process.env.AI_SERVICE_SHARED_SECRET,actual=req.header('X-AI-Service-Key');
   if(!expected||expected.length<32||!actual||!timingSafeEqual(Buffer.from(hash(expected)),Buffer.from(hash(actual))))throw forbidden();
   const b=telegramResolveSchema.parse(req.body);
-  const connection=await prisma.telegramConnection.findUnique({where:{chatId:b.chat_id}});
+  const connection=await resolveTelegramConnection(b.chat_id,b.sender,async old=>{
+    try { const chat=await telegramApi<{id:number}>('getChat',{chat_id:old});return Number.isSafeInteger(chat.id)?String(chat.id):null; }
+    catch(error) { if(error instanceof TelegramGroupMigratedError)return error.chatId;throw error; }
+  });
   if(!connection||!process.env.TELEGRAM_BOT_TOKEN||!process.env.TELEGRAM_BOT_USERNAME)return ok(res,null);
   const tenant=await prisma.tenant.findUnique({where:{id:connection.tenantId}});
   const project=await prisma.project.findFirst({where:{id:connection.projectId,tenantId:connection.tenantId,isActive:true}});

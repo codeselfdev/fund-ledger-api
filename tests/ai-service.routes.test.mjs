@@ -100,3 +100,24 @@ test('app chat forwards real service progress, saves the final result and propag
    roles=['accountant'];revoked=true;assert.equal((await request('/events-ticket',{request_key:requestKey})).status,401);
  }finally{global.fetch=originalFetch;ws.close();await once(ws,'close');}
 });
+
+test('Telegram resolver repairs a missed migration only from a Telegram-proven old group',async()=>{
+ process.env.TELEGRAM_BOT_TOKEN='test-telegram-token';process.env.TELEGRAM_BOT_USERNAME='FundNestaBot';process.env.TELEGRAM_WEBHOOK_SECRET='test-secret';
+ const from='-100',to='-1000000000100',c={id:'migration-connection',tenantId:'tenant',projectId:'project',chatId:from};
+ const saved={findUnique:prisma.telegramConnection.findUnique,findMany:prisma.telegramConnection.findMany,updateMany:prisma.telegramConnection.updateMany,identities:prisma.telegramBotIdentity.findMany,links:prisma.telegramLink.updateMany,fetch:globalThis.fetch};
+ prisma.telegramConnection.findUnique=async({where})=>where.chatId===c.chatId?c:null;
+ prisma.telegramConnection.findMany=async()=>[c];prisma.telegramBotIdentity.findMany=async()=>[{tenantId:'tenant',projectId:'project'}];
+ prisma.telegramConnection.updateMany=async({data})=>{Object.assign(c,data);return{count:1};};prisma.telegramLink.updateMany=async()=>({count:0});
+ let destination='-1000000000999',probes=0;
+ globalThis.fetch=async(input,options)=>{
+  if(String(input).startsWith('https://api.telegram.org/')){probes++;assert.equal(JSON.parse(options.body).chat_id,from);return Response.json({ok:false,parameters:{migrate_to_chat_id:Number(destination)}},{status:400});}
+  return saved.fetch(input,options);
+ };
+ try {
+  const headers={'X-AI-Service-Key':process.env.AI_SERVICE_SHARED_SECRET};
+  let response=await request('/telegram/resolve',{chat_id:to,sender:'123'},headers);assert.equal((await response.json()).data,null);assert.equal(c.chatId,from);
+  destination=to;response=await request('/telegram/resolve',{chat_id:to,sender:'123'},headers);assert.equal(response.status,200);const data=(await response.json()).data;assert.equal(data.project_id,'project');assert.equal(data.permitted,true);assert.equal(c.chatId,to);assert.equal(probes,2);
+ }finally{
+  globalThis.fetch=saved.fetch;prisma.telegramConnection.findUnique=saved.findUnique;prisma.telegramConnection.findMany=saved.findMany;prisma.telegramConnection.updateMany=saved.updateMany;prisma.telegramBotIdentity.findMany=saved.identities;prisma.telegramLink.updateMany=saved.links;
+ }
+});
