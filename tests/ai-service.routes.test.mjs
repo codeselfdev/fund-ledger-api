@@ -64,3 +64,39 @@ test('Telegram usage shares AI Chat quota and keeps Telegram requests idempotent
  const b={request_key:'tg:123',channel:'telegram_bot:-100',prompt_hash:'a'.repeat(64)};
  assert.equal((await request('/usage',b)).status,200);assert.equal((await request('/usage',b)).status,200);assert.equal(records.length,1);assert.equal(records[0].channel,'ai_chat');
 });
+
+
+test('app chat forwards real service progress, saves the final result and propagates provider billing failures',async t=>{
+ const {attachAssistantEvents}=await import('../dist/modules/ai-service/assistant-events.js');
+ const {default:WebSocket}=await import('ws');const {once}=await import('node:events');
+ const stop=attachAssistantEvents(server);t.after(stop);
+ const requestKey='123e4567-e89b-42d3-a456-426614174000';
+ const ticketResponse=await request('/events-ticket',{request_key:requestKey});assert.equal(ticketResponse.status,200);
+ const {ticket}= (await ticketResponse.json()).data;
+ const ws=new WebSocket(base.replace('http:','ws:')+'/v1/ai-service/events');await once(ws,'open');
+ const ready=once(ws,'message');ws.send(JSON.stringify({ticket}));assert.equal(JSON.parse((await ready)[0]).type,'ready');
+ const phases=[];ws.on('message',raw=>phases.push(JSON.parse(raw).phase));
+ const originalFetch=global.fetch;let mode='success';
+ prisma.assistantReply.findUniqueOrThrow=async()=>({id:'chat',prompt:'balances',createdAt:new Date()});
+ prisma.assistantReply.update=async({data})=>({id:'chat',createdAt:new Date(),...data});
+ global.fetch=async(input,options)=>{
+   const url=new URL(input);
+   if(url.origin!=='http://127.0.0.1:4010')return originalFetch(input,options);
+   if(url.pathname==='/session')return Response.json(options?.method==='DELETE'?{}:{token:'test-service-session'});
+   assert.equal(url.pathname,'/chat');assert.equal(url.searchParams.get('progress'),'1');
+   if(mode==='legacy')return Response.json({status:'completed',reply:'Old service response'});
+   const events=[{type:'progress',phase:'checking_access'},{type:'progress',phase:'reading_records'},mode==='success'?{type:'result',result:{status:'completed',reply:'Your balances'}}:{type:'error',error:{code:'AI_BILLING_REQUIRED',message:'AI provider has no remaining credit.'}}];
+   return new Response(events.map(event=>JSON.stringify(event)).join('\n')+'\n',{headers:{'Content-Type':'application/x-ndjson'}});
+ };
+ try {
+   const r=await request('/chat',{message:'balances',request_key:requestKey});assert.equal(r.status,200);assert.equal((await r.json()).data.action_result.reply,'Your balances');
+   // WebSocket delivery can arrive just after the HTTP reply.
+   if(!phases.includes('completed'))await once(ws,'message');
+   assert.deepEqual(phases,['connecting','checking_access','reading_records','completed']);
+   mode='billing';const failed=await request('/chat',{message:'balances',request_key:requestKey});assert.equal(failed.status,503);assert.equal((await failed.json()).error.code,'AI_BILLING_REQUIRED');
+   if(!phases.includes('failed'))await once(ws,'message');assert.equal(phases.at(-1),'failed');
+   mode='legacy';const legacy=await request('/chat',{message:'balances',request_key:requestKey});assert.equal((await legacy.json()).data.action_result.reply,'Old service response');
+   roles=['member'];assert.equal((await request('/events-ticket',{request_key:requestKey})).status,403);
+   roles=['accountant'];revoked=true;assert.equal((await request('/events-ticket',{request_key:requestKey})).status,401);
+ }finally{global.fetch=originalFetch;ws.close();await once(ws,'close');}
+});

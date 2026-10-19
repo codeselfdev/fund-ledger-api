@@ -1,3 +1,4 @@
+import { assistantEventScope, assistantEventTicket, publishAssistantPhase } from './assistant-events.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -81,7 +82,7 @@ router.post('/usage',asyncHandler(async(req,res)=>{
   });
   return ok(res,{request_id:row.id});
 }));
-async function serviceRequest(req:import('express').Request,path:string,body?:unknown,method=body===undefined?'GET':'POST') {
+async function serviceRequest(req:import('express').Request,path:string,body?:unknown,method=body===undefined?'GET':'POST',progress?:(phase:string)=>void) {
   const base=process.env.AI_SERVICE_URL;
   if(!base)throw new ApiError(503,'AI_SERVICE_NOT_CONFIGURED','Configure the separate Fund Nesta AI service.');
   const url=new URL(base);
@@ -92,7 +93,24 @@ async function serviceRequest(req:import('express').Request,path:string,body?:un
   if(!exchange.ok||!session.token)throw new ApiError(exchange.status,session.error?.code??'AI_SESSION_FAILED',session.error?.message??'Could not connect your AI session.');
   let retainSession=false;
   try {
-    const response=await fetch(new URL(path,url),{method,redirect:'error',signal:AbortSignal.timeout(90000),headers:{Authorization:`Bearer ${session.token}`,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+    const response=await fetch(new URL(progress?`${path}?progress=1`:path,url),{method,redirect:'error',signal:AbortSignal.timeout(90000),headers:{Authorization:`Bearer ${session.token}`,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+    if(progress&&response.ok&&response.headers.get('content-type')?.includes('application/x-ndjson')) {
+      if(!response.body)throw new ApiError(503,'AI_SERVICE_FAILED','AI progress connection ended. Retry your question.');
+      const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',result:unknown,received=false;
+      const consume=(line:string)=>{
+        if(!line.trim())return;
+        const event=JSON.parse(line);
+        if(event.type==='progress'&&typeof event.phase==='string')progress(event.phase);
+        if(event.type==='error')throw new ApiError(503,event.error?.code??'AI_SERVICE_FAILED',event.error?.message??'AI request failed.');
+        if(event.type==='result'){result=event.result;received=true;}
+      };
+      try {
+        while(true){const {value,done}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});if(buffer.length>1000000)throw new ApiError(503,'AI_SERVICE_FAILED','AI response was too large.');let end;while((end=buffer.indexOf('\n'))>=0){consume(buffer.slice(0,end));buffer=buffer.slice(end+1);}}
+        buffer+=decoder.decode();consume(buffer);
+        if(!received)throw new ApiError(503,'AI_SERVICE_FAILED','AI connection ended before the reply arrived. Retry your question.');
+        return result;
+      }finally{await reader.cancel().catch(()=>{});}
+    }
     const data=await response.json() as {error?:{code?:string;message?:string}};
     if(!response.ok)throw new ApiError(response.status,data.error?.code??'AI_SERVICE_FAILED',data.error?.message??'AI service request failed.');
     retainSession=['/whatsapp/link','/telegram/link'].includes(path);
@@ -104,13 +122,21 @@ async function serviceRequest(req:import('express').Request,path:string,body?:un
 }
 const upload=multer({storage:multer.memoryStorage(),limits:{files:3,fileSize:5000001,fields:2,fieldSize:10000}}).array('files',3);
 const chatSchema=z.object({message:z.string().trim().min(1).max(2000),request_key:z.string().uuid()}).strict();
+router.post('/events-ticket',asyncHandler(async(req,res)=>{
+  const b=z.object({request_key:z.string().uuid()}).strict().parse(req.body);
+  return ok(res,assistantEventTicket(requireProjectContext(req),b.request_key));
+}));
 router.post('/chat',upload,asyncHandler(async(req,res)=>{
   const b=chatSchema.parse(req.body),a=requireProjectContext(req),files=(req.files??[]) as Express.Multer.File[];
   const images=files.map(f=>{if(f.size>5000000)throw new ApiError(413,'IMAGE_TOO_LARGE','Each image must be at most 5 MB.');return{name:f.originalname.slice(0,120),mime_type:screenshotType(f.buffer),base64:f.buffer.toString('base64')};});
-  const result=await serviceRequest(req,'/chat',{...b,images});
+  const scope=assistantEventScope(a,b.request_key);publishAssistantPhase(scope,'connecting');
+  try {
+  const result=await serviceRequest(req,'/chat',{...b,images},'POST',phase=>publishAssistantPhase(scope,phase));
   const row=await prisma.assistantReply.findUniqueOrThrow({where:{tenantId_channel_requestKey:{tenantId:a.tenantId,channel:'ai_chat',requestKey:`action:${b.request_key}`}}});
   const saved=await prisma.assistantReply.update({where:{id:row.id},data:{prompt:b.message,reply:JSON.stringify(result)}});
+  publishAssistantPhase(scope,'completed');
   return ok(res,{id:saved.id,message:saved.prompt,reply:null,status:'completed',request_key:b.request_key,created_at:saved.createdAt,action_result:result});
+  }catch(error){publishAssistantPhase(scope,'failed');throw error;}
 }));
 router.get('/messages',asyncHandler(async(req,res)=>{
   const a=requireProjectContext(req),context=await assistantContext(a.tenantId,a.projectId,a.userId);

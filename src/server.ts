@@ -30,6 +30,8 @@ startFixedAssetsWorker();
 startCommunityRemindersCron();
 startPaymentCommitmentsCron();
 
+import { attachAssistantEvents } from './modules/ai-service/assistant-events.js';
+
 const server = app.listen(env.port, () => {
   console.log(`FundLedger API listening on http://localhost:${env.port}`);
   void verifyMailTransport();
@@ -38,7 +40,10 @@ const server = app.listen(env.port, () => {
     .catch((error) => console.error(`[storage] ${env.uploadStorage} verification failed`, error));
 });
 
+const stopAssistantEvents = attachAssistantEvents(server);
+
 async function shutdown() {
+  stopAssistantEvents();
   stopPlatformAlerts();
   stopSupportReplyNotifications();
   stopAssistantWorker();

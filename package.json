@@ -39,6 +39,7 @@
     "node-cron": "^4.6.0",
     "nodemailer": "^9.0.3",
     "pdfkit": "^0.20.2",
+    "ws": "^8.22.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^3.24.1"
   },
@@ -52,6 +53,7 @@
     "@types/node": "^22.10.1",
     "@types/nodemailer": "^8.0.1",
     "@types/pdfkit": "^0.17.6",
+    "@types/ws": "^8.18.2",
     "prisma": "^5.22.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
