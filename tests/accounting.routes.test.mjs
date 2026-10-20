@@ -197,3 +197,24 @@ for (const project of ['fund', 'billing']) test(`existing income can be tagged i
  assert.equal(db.accounts.find(row => row.projectId === project).balance, 500);
  assert.equal((await request('/incomes/report', undefined, 'member', 'GET', project)).body.data.by_category[0].name, 'Outside income');
 });
+
+// Dashboard aggregates remain subject to the Accounting router's role and project boundary.
+test('dashboard validates periods and retains project and role isolation', async () => {
+ assert.equal((await request('/accounting/dashboard?period=week')).status,400);
+ assert.equal((await request('/accounting/dashboard',undefined,'member')).status,403);
+ assert.equal((await request('/accounting/dashboard',undefined,'admin','GET','fund')).status,403);
+ assert.equal((await request('/accounting/dashboard',undefined,'admin','GET','foreign')).status,403);
+ const response=await request('/accounting/dashboard?period=this_year',undefined,'auditor');
+ assert.equal(response.status,200);assert.equal(response.body.data.period,'this_year');assert.equal(response.body.data.metrics.invoiced,0);
+});
+test('dashboard reports issued invoices, payments, and linked conversions without leaking foreign data', async () => {
+ const q=await newDoc('quotation');await action(q,'send');await action(q,'accept');
+ const order=await convert(q,'order');await action(order,'confirm');const sale=await convert(order,'sale');await action(sale,'issue');
+ await request(`/accounting/documents/${sale.id}/payments`,payBody(400));
+ db.documents.push({...db.documents.find(d=>d.id===sale.id),id:'foreign-document',tenantId:'other-tenant',projectId:'foreign',total:999999});
+ db.payments.push({...db.payments[0],id:'foreign-payment',tenantId:'other-tenant',projectId:'foreign',documentId:'foreign-document',amount:999999});
+ const response=await request('/accounting/dashboard?period=this_year');assert.equal(response.status,200);
+ const d=response.body.data;assert.equal(d.metrics.invoiced,1000);assert.equal(d.metrics.collected,400);assert.equal(d.pipeline.stages[0].conversionRate,100);assert.equal(d.pipeline.stages[1].conversionRate,100);
+ assert.ok(d.activity.paid.some(row=>row.kind==='payment'));assert.ok(d.activity.unpaid.some(row=>row.documentId===sale.id));
+ assert.ok(d.activity.all.every(row=>!row.id.includes('foreign')));
+});

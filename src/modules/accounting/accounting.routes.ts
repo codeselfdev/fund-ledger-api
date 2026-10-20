@@ -16,6 +16,7 @@ import { requireProjectContext } from '../../core/security/auth.context.js';
 import { validateBody, validateQuery } from '../../core/validation/validate.js';
 import { allowDirect, calculate, conversion, dateSchema, documentSchema, kindSchema, nextStatus, pastDateSchema, paymentStatus, workflow, workflowSchema, type Kind } from './workflow.js';
 import { financialTransaction } from './transaction.js';
+import { buildAccountingDashboard } from './dashboard.js';
 const router = Router();
 const read = requireRoles('accountant', 'cashier', 'approver', 'auditor');
 const write = requireRoles('accountant', 'cashier');
@@ -40,6 +41,21 @@ router.get('/overview', asyncHandler(async (req, res) => {
     const [p, docs, customers] = await Promise.all([prisma.project.findFirstOrThrow({ where: { id: auth.projectId, tenantId: auth.tenantId } }), prisma.businessDocument.findMany({ where: scoped(auth), orderBy: { createdAt: 'desc' } }), prisma.customer.count({ where: { ...scoped(auth), isActive: true } })]);
     const sales = docs.filter(d => d.kind === 'sale' && d.status === 'issued');
     return ok(res, { stock_management_enabled: p.stockManagementEnabled !== false, workflow: workflow(p.commerceSettings), customers, invoiced: sales.reduce((n, d) => n + d.total, 0), collected: sales.reduce((n, d) => n + d.paidAmount, 0), receivable: sales.reduce((n, d) => n + d.total - d.paidAmount, 0), overdue: sales.filter(d => paymentStatus(d) === 'overdue').reduce((n, d) => n + d.total - d.paidAmount, 0), counts: { quotation: docs.filter(d => d.kind === 'quotation').length, order: docs.filter(d => d.kind === 'order').length, sale: sales.length }, recent: docs.slice(0, 5).map(mapDoc) });
+}));
+const dashboardQuery = z.object({ period: z.enum(['this_month', 'last_month', 'this_year']).default('this_month') });
+router.get('/dashboard', validateQuery(dashboardQuery), asyncHandler(async (req, res) => {
+    const auth = requireProjectContext(req), { period } = dashboardQuery.parse(req.query);
+    const result = await financialTransaction(async tx => {
+    const [project, documents, payments, customers] = await Promise.all([
+        tx.project.findFirstOrThrow({ where: { id: auth.projectId, tenantId: auth.tenantId } }),
+        tx.businessDocument.findMany({ where: scoped(auth), orderBy: { updatedAt: 'desc' } }),
+        tx.businessPayment.findMany({ where: scoped(auth), orderBy: { createdAt: 'desc' } }),
+        tx.customer.count({ where: { ...scoped(auth), isActive: true } }),
+    ]);
+    const items = project.stockManagementEnabled === false ? [] : await tx.inventoryItem.findMany({ where: { ...scoped(auth), isActive: true } });
+    return buildAccountingDashboard({ documents, payments, customers, items, stockEnabled: project.stockManagementEnabled !== false, period });
+    });
+    return ok(res, result);
 }));
 router.put('/workflow', requireRoles('admin'), validateBody(workflowSchema), asyncHandler(async (req, res) => {
     const auth = requireProjectContext(req);
