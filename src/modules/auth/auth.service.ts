@@ -62,7 +62,8 @@ export async function createOtp(contact: string) {
   const code = String(randomInt(100000, 1000000));
   const codeHash = await bcrypt.hash(code, 10);
   await prisma.$transaction(async tx => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`otp:${contact}`}, 0))`;
+    // PostgreSQL returns void for this lock; cast it so Prisma can decode the result.
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`otp:${contact}`}, 0))::text`;
     await tx.otpCode.updateMany({ where: { mobile: contact, consumedAt: null }, data: { consumedAt: new Date() } });
     await tx.otpCode.create({ data: { mobile: contact, codeHash, expiresAt: new Date(Date.now() + 5 * 60 * 1000) } });
   });

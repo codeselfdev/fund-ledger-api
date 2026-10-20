@@ -69,7 +69,8 @@ async function provisionTenantOnce(input: ProvisionTenantInput): Promise<Provisi
     const email = input.adminEmail?.trim().toLowerCase();
     // Lock contact identities before checking, so concurrent signups cannot both pass.
     for (const scope of [`signup:mobile:${mobile}`, ...(email ? [`signup:email:${email}`] : [])].sort()) {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${scope}, 0))`;
+      // The lock returns void, which Prisma cannot decode without a supported cast.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${scope}, 0))::text`;
     }
     await assertSignupMobileAvailable(mobile, tx);
     if (email && await tx.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } }, select: { id: true } })) {
