@@ -13,6 +13,8 @@ import { attributeSchema, entitySchema as entityParam, fieldSchema, mapField, ta
 import { entitySchema, taxSetup, scope, json, lockSetup, bumpRevision } from './service.js';
 import { saveRecord, table } from './records.js';
 import { importSchema, planImport, commitImport } from './import.js';
+import { previewFieldConversion, convertFieldValues } from './field-conversion.js';
+import { valueTypeSchema } from './validation.js';
 const router = Router();
 router.use(requireProject, requireRoles('accountant', 'cashier', 'approver', 'auditor', 'staff'));
 const admin = requireRoles('admin');
@@ -31,6 +33,18 @@ router.post('/entities/:entity/fields', admin, asyncHandler(async (req, res) => 
     await bumpRevision(db, auth); await audit(db, auth, 'business.field.created', row.id, row); return mapField(row);
   }); return created(res, field);
 }));
+router.post('/entities/:entity/fields/:id/conversion-preview', admin, asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req), entity = entityParam.parse(req.params.entity);
+  const body = z.object({ revision: z.number().int(), type: valueTypeSchema }).strict().parse(req.body);
+  const preview = await prisma.$transaction(async db => {
+    await lockSetup(db, auth);
+    const schema = await entitySchema(db, auth, entity), field = schema.fields.find(f => f.id === req.params.id);
+    if (!field) throw notFound('Field not found');
+    if (schema.revision !== body.revision) throw conflict('Settings changed. Reload before changing the type.');
+    return previewFieldConversion(db, auth, entity, field, body.type, schema.revision);
+  }, { timeout: 60000 });
+  return ok(res, preview);
+}));
 router.patch('/entities/:entity/fields/:id', admin, asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req), entity = entityParam.parse(req.params.entity), body = z.object({ revision: z.number().int(), field: fieldSchema }).strict().parse(req.body);
   const field = await prisma.$transaction(async db => {
@@ -39,11 +53,17 @@ router.patch('/entities/:entity/fields/:id', admin, asyncHandler(async (req, res
     if (!before) throw notFound('Field not found');
     if (schema.revision !== body.revision) throw conflict('Settings changed. Reload before saving.');
     if (before.archived && !body.field.archived && schema.fields.filter(f => !f.archived).length >= 100) throw badRequest('At most 100 active fields per entity');
-    if (before.key !== body.field.key || before.type !== body.field.type) throw badRequest('Saved field keys and types are immutable. Add a new field to change the type.');
+    if (before.key !== body.field.key) throw badRequest('Saved field keys cannot change.');
     if (before.options.some(o => !body.field.options.includes(o))) throw badRequest('Keep existing choices to preserve saved values. You can add choices.');
+    let convertedRecords = 0;
+    if (before.type !== body.field.type) {
+      const preview = await previewFieldConversion(db, auth, entity, before, body.field.type, schema.revision);
+      if (preview.options.some(option => !body.field.options.includes(option))) throw conflict('Saved values changed or used choices were removed. Reload choices and try again.');
+      convertedRecords = await convertFieldValues(db, auth, entity, before, body.field.type);
+    }
     const row = await db.businessField.update({ where: { id: before.id }, data: { ...body.field, options: json(body.field.options) } });
-    await bumpRevision(db, auth); await audit(db, auth, body.field.archived ? 'business.field.archived' : 'business.field.updated', row.id, { before, after: row }); return mapField(row);
-  }); return ok(res, field);
+    await bumpRevision(db, auth); await audit(db, auth, body.field.archived ? 'business.field.archived' : 'business.field.updated', row.id, { before, after: row, convertedRecords }); return mapField(row);
+  }, { timeout: 60000 }); return ok(res, field);
 }));
 router.put('/entities/:entity/search', admin, asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req), entity = entityParam.parse(req.params.entity), body = z.object({ revision: z.number().int(), builtinSearch: z.array(z.string()).max(10), fields: z.array(z.object({ id: z.string(), searchable: z.boolean(), match: z.enum(['contains', 'exact', 'starts_with']), filterable: z.boolean(), showInList: z.boolean(), position: z.number().int().min(0).max(1000) }).strict()).max(100) }).strict().parse(req.body);

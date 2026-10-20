@@ -1,3 +1,4 @@
+import { openingStock } from '../inventory/stock.service.js';
 import { Prisma } from '@prisma/client';
 import { badRequest, conflict, notFound } from '../../core/http/api-error.js';
 import { BUILTINS, attributeValue, type BusinessEntity, businessPhoneIdentity, type Attributes, type FieldDefinition, validateAttributes } from './contract.js';
@@ -48,7 +49,7 @@ export async function saveRecord(db: Prisma.TransactionClient, auth: Scope & { u
     const data = { ...builtins, attributes } as Prisma.InventoryItemUncheckedCreateInput;
     if (data.sku && await db.inventoryItem.findFirst({ where: { ...scope(auth), sku: data.sku, ...(id ? { NOT: { id } } : {}) } })) throw conflict('An item with this SKU already exists');
     row = id ? await db.inventoryItem.update({ where: { id }, data }) : await db.inventoryItem.create({ data: { ...data, ...scope(auth) } });
-    if (!id && row.quantity) await db.stockMovement.create({ data: { ...scope(auth), itemId: row.id, type: 'adjustment_increase', quantity: row.quantity, quantityAfter: row.quantity, referenceType: 'opening_stock', referenceId: row.id, reason: 'Opening stock', createdById: auth.userId } });
+    if (!id) await openingStock(db, auth, row);
   }
   return row;
 }

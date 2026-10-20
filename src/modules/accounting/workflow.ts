@@ -11,7 +11,7 @@ export const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value =
 export const pastDateSchema = dateSchema.refine(value => value <= new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' }), 'Date cannot be in the future');
 const money = z.number().int().min(0).max(2147483647);
 export const lineSchema = z.object({ description: z.string().trim().min(1).max(200), quantity: z.number().positive().max(1000000).refine(n => Math.abs(n * 1000 - Math.round(n * 1000)) < 0.00001, 'Use up to 3 decimal places'), unit_price: money, item_id: z.string().min(1).optional() }).strict();
-export const documentSchema = z.object({ tax_selection: taxSelectionSchema.optional(), kind: kindSchema, customer_id: z.string().min(1), document_date: dateSchema, due_date: dateSchema.optional(), lines: z.array(lineSchema).min(1).max(100), discount: money.default(0), tax: money.default(0), note: z.string().max(1000).optional(), request_key: z.string().uuid() }).strict();
+export const documentSchema = z.object({ location_id: z.string().min(1).nullable().optional(), tax_selection: taxSelectionSchema.optional(), kind: kindSchema, customer_id: z.string().min(1), document_date: dateSchema, due_date: dateSchema.optional(), lines: z.array(lineSchema).min(1).max(100), discount: money.default(0), tax: money.default(0), note: z.string().max(1000).optional(), request_key: z.string().uuid() }).strict();
 export function calculate(lines: z.infer<typeof lineSchema>[], discount: number, tax: number) {
     const normalized = lines.map(line => ({ ...line, line_total: Math.round(line.quantity * line.unit_price) }));
     const subtotal = normalized.reduce((n, line) => n + line.line_total, 0);

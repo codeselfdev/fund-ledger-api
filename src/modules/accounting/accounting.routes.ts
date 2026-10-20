@@ -1,3 +1,4 @@
+import { changeStock as changeItemStock, stockEnabled, stockLocation } from '../inventory/stock.service.js';
 import { buildBillingPdf } from '../billing/billing.pdf.js';
 import { taxPdfLines } from '../business-setup/pdf.js';
 import { documentTax, postTax, lockSetup } from '../business-setup/service.js';
@@ -24,7 +25,7 @@ const scoped = (auth: {
 }) => ({ tenantId: auth.tenantId, projectId: auth.projectId });
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const atDate = (value: string) => new Date(`${value}T00:00:00Z`);
-const docInclude = { payments: { orderBy: { createdAt: 'desc' as const } }, source: { select: { id: true, kind: true, number: true } }, next: { select: { id: true, kind: true, number: true } } };
+const docInclude = { stockLocation: true, payments: { orderBy: { createdAt: 'desc' as const } }, source: { select: { id: true, kind: true, number: true } }, next: { select: { id: true, kind: true, number: true } } };
 const mapDoc = (d: BusinessDocument) => ({ ...d, remaining: d.total - d.paidAmount, payment_status: paymentStatus(d) });
 router.use(requireProject, read, asyncHandler(async (req, _res, next) => {
     const auth = requireProjectContext(req);
@@ -38,7 +39,7 @@ router.get('/overview', asyncHandler(async (req, res) => {
     const auth = requireProjectContext(req);
     const [p, docs, customers] = await Promise.all([prisma.project.findFirstOrThrow({ where: { id: auth.projectId, tenantId: auth.tenantId } }), prisma.businessDocument.findMany({ where: scoped(auth), orderBy: { createdAt: 'desc' } }), prisma.customer.count({ where: { ...scoped(auth), isActive: true } })]);
     const sales = docs.filter(d => d.kind === 'sale' && d.status === 'issued');
-    return ok(res, { workflow: workflow(p.commerceSettings), customers, invoiced: sales.reduce((n, d) => n + d.total, 0), collected: sales.reduce((n, d) => n + d.paidAmount, 0), receivable: sales.reduce((n, d) => n + d.total - d.paidAmount, 0), overdue: sales.filter(d => paymentStatus(d) === 'overdue').reduce((n, d) => n + d.total - d.paidAmount, 0), counts: { quotation: docs.filter(d => d.kind === 'quotation').length, order: docs.filter(d => d.kind === 'order').length, sale: sales.length }, recent: docs.slice(0, 5).map(mapDoc) });
+    return ok(res, { stock_management_enabled: p.stockManagementEnabled !== false, workflow: workflow(p.commerceSettings), customers, invoiced: sales.reduce((n, d) => n + d.total, 0), collected: sales.reduce((n, d) => n + d.paidAmount, 0), receivable: sales.reduce((n, d) => n + d.total - d.paidAmount, 0), overdue: sales.filter(d => paymentStatus(d) === 'overdue').reduce((n, d) => n + d.total - d.paidAmount, 0), counts: { quotation: docs.filter(d => d.kind === 'quotation').length, order: docs.filter(d => d.kind === 'order').length, sale: sales.length }, recent: docs.slice(0, 5).map(mapDoc) });
 }));
 router.put('/workflow', requireRoles('admin'), validateBody(workflowSchema), asyncHandler(async (req, res) => {
     const auth = requireProjectContext(req);
@@ -89,7 +90,8 @@ router.post('/documents', write, validateBody(documentSchema), asyncHandler(asyn
         if (b.due_date && b.due_date < b.document_date)
             throw badRequest('Due date must be on or after document date');
         await validateItems(tx, auth, b.lines);
-        const d = await tx.businessDocument.create({ data: { ...scoped(auth), customerId: customer.id, customerSnapshot: json({ name: customer.name, mobile: customer.mobile, email: customer.email, address: customer.address, attributes: customer.attributes }), kind: b.kind, number: `${b.kind === 'quotation' ? 'QUO' : b.kind === 'order' ? 'ORD' : 'INV'}-${randomUUID().slice(0, 8).toUpperCase()}`, status: 'draft', lines: totals.lines, subtotal: totals.subtotal, discount: b.discount, tax: taxSnapshot?.tax ?? b.tax, taxSnapshot: taxSnapshot ? json(taxSnapshot) : Prisma.DbNull, total: totals.total, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: b.note, workflow: settings, events: [event('draft', auth.userId)], requestKey: b.request_key, createdById: auth.userId } });
+        const location = b.location_id ? await stockLocation(tx, auth, b.location_id) : null;
+        const d = await tx.businessDocument.create({ data: { ...scoped(auth), stockLocationId: location?.id, customerId: customer.id, customerSnapshot: json({ name: customer.name, mobile: customer.mobile, email: customer.email, address: customer.address, attributes: customer.attributes }), kind: b.kind, number: `${b.kind === 'quotation' ? 'QUO' : b.kind === 'order' ? 'ORD' : 'INV'}-${randomUUID().slice(0, 8).toUpperCase()}`, status: 'draft', lines: totals.lines, subtotal: totals.subtotal, discount: b.discount, tax: taxSnapshot?.tax ?? b.tax, taxSnapshot: taxSnapshot ? json(taxSnapshot) : Prisma.DbNull, total: totals.total, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: b.note, workflow: settings, events: [event('draft', auth.userId)], requestKey: b.request_key, createdById: auth.userId } });
         await audit(tx, auth, d.id, 'accounting.document.created', { number: d.number, total: d.total, kind: d.kind });
         return d;
     });
@@ -115,7 +117,8 @@ router.patch('/documents/:id', write, validateBody(editSchema), asyncHandler(asy
         const taxSnapshot = await documentTax(tx, auth, old.kind === 'quotation' ? 'quotation' : 'sale', b.lines.map(l => Math.round(l.quantity * l.unit_price)), b.discount, b.tax_selection, b.tax, old.taxSnapshot ?? { legacy: true, tax: old.tax });
         const legacy = calculate(b.lines, b.discount, b.tax);
         const totals = taxSnapshot ? { ...legacy, subtotal: taxSnapshot.subtotal + b.discount, total: taxSnapshot.payable } : legacy;
-        const row = await tx.businessDocument.update({ where: { id: old.id }, data: { customerId: customer.id, customerSnapshot: json({ name: customer.name, mobile: customer.mobile, email: customer.email, address: customer.address, attributes: customer.attributes }), lines: totals.lines, subtotal: totals.subtotal, total: totals.total, discount: b.discount, tax: taxSnapshot?.tax ?? b.tax, taxSnapshot: taxSnapshot ? json(taxSnapshot) : Prisma.DbNull, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: b.note ?? null, events: json([...(old.events as unknown[]), event('draft_updated', auth.userId)]) } });
+        const location = b.location_id ? await stockLocation(tx, auth, b.location_id) : null;
+        const row = await tx.businessDocument.update({ where: { id: old.id }, data: { stockLocationId: b.location_id === undefined ? old.stockLocationId : location?.id ?? null, customerId: customer.id, customerSnapshot: json({ name: customer.name, mobile: customer.mobile, email: customer.email, address: customer.address, attributes: customer.attributes }), lines: totals.lines, subtotal: totals.subtotal, total: totals.total, discount: b.discount, tax: taxSnapshot?.tax ?? b.tax, taxSnapshot: taxSnapshot ? json(taxSnapshot) : Prisma.DbNull, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: b.note ?? null, events: json([...(old.events as unknown[]), event('draft_updated', auth.userId)]) } });
         await audit(tx, auth, row.id, 'accounting.document.updated', { total: row.total });
         return row;
     });
@@ -130,10 +133,12 @@ router.post('/documents/:id/status', write, validateBody(actionSchema), asyncHan
         if (!d)
             throw notFound('Document not found');
         const status = nextStatus(kindSchema.parse(d.kind), d.status, b.action, d.paidAmount);
-        if (d.kind === 'sale' && (b.action === 'issue' || b.action === 'cancel' && d.status === 'issued'))
+        const tracked = d.kind === 'sale' && b.action === 'issue' ? await stockEnabled(tx, auth) : d.stockTracked;
+        const location = d.kind === 'sale' && b.action === 'issue' && tracked ? await stockLocation(tx, auth, d.stockLocationId) : null;
+        if (d.kind === 'sale' && (b.action === 'issue' && tracked || b.action === 'cancel' && d.status === 'issued' && d.stockTracked !== false))
             await changeStock(tx, auth, d, b.action === 'issue' ? -1 : 1);
         if (d.kind === 'sale' && (b.action === 'issue' || b.action === 'cancel' && d.status === 'issued')) await postTax(tx, auth, 'business_sale', d.id, d.taxSnapshot, 'output', b.action === 'cancel');
-        const row = await tx.businessDocument.update({ where: { id: d.id }, data: { status, events: json([...(d.events as unknown[]), event(status, auth.userId)]) } });
+        const row = await tx.businessDocument.update({ where: { id: d.id }, data: { status, ...(b.action === 'issue' ? { stockTracked: tracked, stockLocationId: location?.id ?? d.stockLocationId } : {}), events: json([...(d.events as unknown[]), event(status, auth.userId)]) } });
         await audit(tx, auth, d.id, `accounting.document.${b.action}`, { before: d.status, status });
         return row;
     });
@@ -158,7 +163,7 @@ router.post('/documents/:id/convert', write, validateBody(convertSchema), asyncH
         conversion(kindSchema.parse(source.kind), source.status, b.kind, workflow(source.workflow));
         if (b.due_date && b.due_date < b.document_date)
             throw badRequest('Due date must be on or after document date');
-        const d = await tx.businessDocument.create({ data: { ...scoped(auth), customerId: source.customerId, customerSnapshot: json(source.customerSnapshot), kind: b.kind, number: `${b.kind === 'order' ? 'ORD' : 'INV'}-${randomUUID().slice(0, 8).toUpperCase()}`, status: 'draft', lines: json(source.lines), subtotal: source.subtotal, discount: source.discount, tax: source.tax, taxSnapshot: source.taxSnapshot ? json(source.taxSnapshot) : Prisma.DbNull, total: source.total, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: source.note, workflow: json(source.workflow), events: [event('draft', auth.userId)], sourceId: source.id, requestKey: b.request_key, createdById: auth.userId } });
+        const d = await tx.businessDocument.create({ data: { ...scoped(auth), stockLocationId: source.stockLocationId, customerId: source.customerId, customerSnapshot: json(source.customerSnapshot), kind: b.kind, number: `${b.kind === 'order' ? 'ORD' : 'INV'}-${randomUUID().slice(0, 8).toUpperCase()}`, status: 'draft', lines: json(source.lines), subtotal: source.subtotal, discount: source.discount, tax: source.tax, taxSnapshot: source.taxSnapshot ? json(source.taxSnapshot) : Prisma.DbNull, total: source.total, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: source.note, workflow: json(source.workflow), events: [event('draft', auth.userId)], sourceId: source.id, requestKey: b.request_key, createdById: auth.userId } });
         await tx.businessDocument.update({ where: { id: source.id }, data: { status: source.kind === 'quotation' ? 'converted' : 'completed', events: json([...(source.events as unknown[]), event(source.kind === 'quotation' ? 'converted' : 'completed', auth.userId)]) } });
         await audit(tx, auth, d.id, 'accounting.document.converted', { source_id: source.id, kind: b.kind });
         return d;
@@ -218,13 +223,7 @@ async function changeStock(tx: Prisma.TransactionClient, auth: ReturnType<typeof
         if (l.item_id)
             quantities.set(l.item_id, (quantities.get(l.item_id) ?? 0) + l.quantity);
     for (const [id, qty] of [...quantities.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-        const item = await tx.inventoryItem.findFirst({ where: { id, ...scoped(auth) } });
-        if (!item)
-            throw notFound('Inventory item not found');
-        const result = await tx.inventoryItem.updateMany({ where: { id, ...scoped(auth), ...(direction < 0 ? { quantity: { gte: qty } } : {}) }, data: { quantity: { increment: qty * direction } } });
-        if (!result.count)
-            throw conflict(`Insufficient stock for ${item.name}`);
-        await tx.stockMovement.create({ data: { ...scoped(auth), itemId: id, type: direction < 0 ? 'sale' : 'adjustment_increase', quantity: qty * direction, quantityAfter: item.quantity + qty * direction, referenceType: 'business_sale', referenceId: d.id, reason: direction < 0 ? 'Invoice issued' : 'Unpaid invoice cancelled', createdById: auth.userId } });
+        await changeItemStock(tx, auth, { itemId: id, delta: qty * direction, locationId: d.stockLocationId, type: direction < 0 ? 'sale' : 'adjustment_increase', referenceType: 'business_sale', referenceId: d.id, reason: direction < 0 ? 'Invoice issued' : 'Unpaid invoice cancelled', restoring: direction > 0 });
     }
 }
 router.get('/documents/:id/document.pdf', asyncHandler(async (req, res) => {

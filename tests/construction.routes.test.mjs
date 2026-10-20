@@ -16,10 +16,11 @@ const { cycleAmount, aging, today } = await import('../dist/modules/billing/bill
 const { normalizePortalSettings, portalSettingsSchema } = await import('../dist/core/projects/project-settings.js');
 let db, counter, server, base, failAudit, retry, queue = Promise.resolve();
 const copy = value => structuredClone(value);
-const models = { project: 'projects', customer: 'customers', account: 'accounts', constructionCostHead:'heads', constructionBoq:'boq', constructionCostAllocation:'allocations', constructionContractor:'contractors', constructionContract:'contracts', constructionRunningBill:'bills', constructionSupplierBill:'supplierBills', constructionLaborEntry:'labor', constructionMaterialEntry:'materials', constructionPayment:'payments', constructionChangeOrder:'changes', expense:'expenses', vendor:'vendors', purchase:'purchases', inventoryItem:'inventory', stockMovement:'stock', due:'dues', deposit:'deposits', member:'members', schedule:'schedules', activity: 'activity', accountTransaction: 'transactions', session: 'sessions', projectMembership: 'memberships' };
+const models = { inventoryLocation: 'locations', project: 'projects', customer: 'customers', account: 'accounts', constructionCostHead:'heads', constructionBoq:'boq', constructionCostAllocation:'allocations', constructionContractor:'contractors', constructionContract:'contracts', constructionRunningBill:'bills', constructionSupplierBill:'supplierBills', constructionLaborEntry:'labor', constructionMaterialEntry:'materials', constructionPayment:'payments', constructionChangeOrder:'changes', expense:'expenses', vendor:'vendors', purchase:'purchases', inventoryItem:'inventory', stockMovement:'stock', due:'dues', deposit:'deposits', member:'members', schedule:'schedules', activity: 'activity', accountTransaction: 'transactions', session: 'sessions', projectMembership: 'memberships' };
 function reset() {
   counter = 0; failAudit = false; retry = false;
   db = Object.fromEntries(Object.values(models).map(t => [t, []]));
+  db.locations = [{id:'main',tenantId:'t',projectId:'p',name:'Main store',isDefault:true,isActive:true}];
   db.projects = [{ id: 'p', tenantId: 't', projectType: 'construction', name: 'Community', isActive: true, billingSettings: null }, { id: 'fund', tenantId: 't', projectType: 'fund_shares', isActive: true }, { id: 'foreign', tenantId: 'other', projectType: 'construction', isActive: true }];
   db.customers = [{ id: 'c', tenantId: 't', projectId: 'p', name: 'Customer', isActive: true, email: 'customer@example.test', mobile: null, address: null }, { id: 'c2', tenantId: 't', projectId: 'p', name: 'Second', isActive: true, email: null }, { id: 'foreign-c', tenantId: 'other', projectId: 'foreign', name: 'Private', isActive: true }];
   db.accounts = [{ id: 'a', tenantId: 't', projectId: 'p', name: 'Cash', balance: 5000000 }, { id: 'foreign-a', tenantId: 'other', projectId: 'foreign', balance: 1000 }];
@@ -76,6 +77,7 @@ function mock(table) {
     return rows.slice(skip, skip + take).map(r => decorate(table, r, include));
   };
   return {
+    groupBy:async({where,by})=>{const groups=new Map();for(const row of db[table].filter(r=>match(r,where))){const key=JSON.stringify(by.map(k=>row[k]??null));if(!groups.has(key))groups.set(key,{...Object.fromEntries(by.map(k=>[k,row[k]??null])),_sum:{quantity:0}});groups.get(key)._sum.quantity+=row.quantity??0;}return [...groups.values()];},
     aggregate:async({where})=>({_sum:{amount:db[table].filter(r=>match(r,where)).reduce((n,r)=>n+r.amount,0)}}),
     findMany, findFirst: async args => (await findMany({ ...args, take: 1 }))[0] ?? null,
     findFirstOrThrow: async args => { const row = (await findMany({ ...args, take: 1 }))[0]; assert.ok(row, `${table} missing`); return row; },

@@ -174,7 +174,7 @@
       "key": "delegates",
       "group": "people",
       "label": "Delegate payers",
-      "description": "Who pays on someone’s behalf",
+      "description": "Who pays on someone\u2019s behalf",
       "icon": "M8 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M2 21c0-3.5 2.5-6 6-6 1.6 0 3 .5 4 1.3 M14 17h8 M19 14l3 3-3 3",
       "keywords": "proxy pay behalf",
       "roles": [
@@ -554,10 +554,10 @@
     {
       "key": "inventory",
       "group": "money",
-      "label": "Inventory",
-      "description": "Items, stock and purchase orders",
+      "label": "Items",
+      "description": "Stock levels, movement history and item imports",
       "icon": "M3 7h18v14H3z M5 3h14l2 4H3z M9 11h6 M12 7v4",
-      "keywords": "",
+      "keywords": "inventory stock sku product import",
       "roles": [
         "owner",
         "admin",
@@ -566,7 +566,8 @@
         "auditor"
       ],
       "project_types": [
-        "accounting"
+        "accounting",
+        "billing"
       ]
     },
     {
@@ -1059,6 +1060,46 @@
       ],
       "project_types": [
         "construction"
+      ]
+    },
+    {
+      "key": "purchases",
+      "group": "money",
+      "label": "Purchases",
+      "description": "Order from dealers and receive stock",
+      "icon": "M3 3h2l3 12h11l2-8H6 M9 21h.01 M18 21h.01 M10 3v7 M7 7l3 3 3-3",
+      "keywords": "purchase buying supplier vendor stock receive",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "cashier",
+        "approver",
+        "auditor"
+      ],
+      "project_types": [
+        "accounting",
+        "billing"
+      ]
+    },
+    {
+      "key": "dealers",
+      "group": "people",
+      "label": "Dealers",
+      "description": "Shared dealer, vendor and supplier directory",
+      "icon": "M3 21V9l9-6 9 6v12 M7 21v-6h10v6 M8 10h.01 M12 10h.01 M16 10h.01",
+      "keywords": "supplier vendor dealer import",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "cashier",
+        "approver",
+        "auditor"
+      ],
+      "project_types": [
+        "accounting",
+        "billing"
       ]
     }
   ],

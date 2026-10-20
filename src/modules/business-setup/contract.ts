@@ -26,6 +26,12 @@ export const BUILTINS: Record<BusinessEntity, BuiltinField[]> = {
 };
 export const keywordType = (type: ValueType) => ['text', 'long_text', 'phone', 'email', 'select', 'multi_select'].includes(type);
 export const choiceType = (type: ValueType) => type === 'select' || type === 'multi_select';
+/** Conversions that can preserve every saved value without guessing its meaning. */
+export const canConvertFieldType = (from: ValueType, to: ValueType) =>
+  (from === 'text' || from === 'long_text') && choiceType(to) || from === 'select' && to === 'multi_select';
+export interface FieldConversionPreview {
+  fieldId: string; revision: number; fromType: ValueType; toType: ValueType; options: string[]; records: number;
+}
 export function fieldKey(label: string) { return label.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 48); }
 export function validDate(value: string) { const date = new Date(value + 'T00:00:00Z'); return /^\d{4}-\d{2}-\d{2}$/.test(value) && !isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value; }
 export function attributeValue(type: ValueType, raw: unknown, options: string[] = []): AttributeValue {

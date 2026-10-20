@@ -94,3 +94,14 @@ test('accountants can discover and save the schedules shortcut',async()=>{
  assert.deepEqual((await request('',undefined,'accountant')).data.pinned,['schedules','members']);
  for(const role of ['member','cashier','auditor'])assert.equal((await put(['schedules'],0,role)).status,400);
 });
+
+test('business defaults include stock tools without overwriting personal choices or exposing Accounting documents in Billing',async()=>{
+ for(const project of ['accounting','billing']){
+  const config=(await request('',undefined,'admin',project)).data;
+  for(const key of ['inventory','purchases'])assert.ok(config.pinned.includes(key));
+  assert.equal(config.pinned.includes('quotation'),project==='accounting');
+  if(project==='billing')assert.ok(!config.tools.some(t=>['quotation','order','sale'].includes(t.key)));
+  assert.equal((await put(['customers'],0,'admin',project)).status,200);
+  assert.deepEqual((await request('',undefined,'admin',project)).data.pinned,['customers']);
+ }
+});

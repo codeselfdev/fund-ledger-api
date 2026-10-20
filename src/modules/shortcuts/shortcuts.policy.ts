@@ -18,8 +18,8 @@ export function defaultPins(projectType: string, roles: readonly string[], porta
     const available = new Set(availableCatalog(projectType, roles).tools.map(t => t.key));
     const defaults: Record<string, string[]> = {
         fund_shares: ['members', 'income', 'expenses', 'schedules', 'notices', 'reports', 'accounts', 'assets'],
-        accounting: ['customers', 'sale', 'receivables', 'income', 'expenses', 'accounts', 'assets', 'quotation'],
-        billing: ['customers', 'billing_invoices', 'billing_collections', 'billing_outstanding', 'billing_subscriptions', 'billing_plans', 'billing_reports', 'assets'],
+        accounting: ['customers', 'inventory', 'purchases', 'quotation', 'sale', 'receivables', 'expenses', 'accounts'],
+        billing: ['customers', 'inventory', 'purchases', 'billing_invoices', 'billing_collections', 'billing_outstanding', 'billing_subscriptions', 'accounts'],
         construction: ['construction_budgets', 'construction_boq', 'construction_running_bills', 'construction_suppliers', 'construction_materials', 'construction_funding', 'expenses', 'assets'],
     };
     const raw = portalSettings as {

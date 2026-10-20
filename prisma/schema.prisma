@@ -210,6 +210,8 @@ enum DepositApprovalRoute {
 }
 
 model Project {
+  stockManagementEnabled Boolean @default(true) @map("stock_management_enabled")
+  inventoryLocations InventoryLocation[]
   businessConfiguration BusinessConfiguration?
   businessFields BusinessField[]
   businessImports BusinessImport[]
@@ -819,6 +821,8 @@ model InventoryItem {
 }
 
 model StockMovement {
+  locationId String? @map("location_id")
+  location InventoryLocation? @relation(fields: [locationId], references: [id], onDelete: Restrict)
   id            String             @id @default(cuid())
   tenantId      String             @map("tenant_id")
   projectId     String             @map("project_id")
@@ -836,10 +840,14 @@ model StockMovement {
   item    InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, projectId, itemId])
+  @@index([projectId, itemId, locationId])
   @@map("stock_movements")
 }
 
 model Purchase {
+  stockLocationId String? @map("stock_location_id")
+  stockLocation InventoryLocation? @relation(fields: [stockLocationId], references: [id], onDelete: Restrict)
+  stockTracked Boolean @default(false) @map("stock_tracked")
   taxSnapshot Json? @map("tax_snapshot")
   constructionSupplierBill ConstructionSupplierBill?
   id            String         @id @default(cuid())
@@ -884,6 +892,9 @@ model PurchaseItem {
 }
 
 model Sale {
+  stockLocationId String? @map("stock_location_id")
+  stockLocation InventoryLocation? @relation(fields: [stockLocationId], references: [id], onDelete: Restrict)
+  stockTracked Boolean @default(false) @map("stock_tracked")
   taxSnapshot Json? @map("tax_snapshot")
   id            String     @id @default(cuid())
   tenantId      String     @map("tenant_id")
@@ -1324,6 +1335,9 @@ model Customer {
 }
 
 model BusinessDocument {
+  stockLocationId String? @map("stock_location_id")
+  stockLocation InventoryLocation? @relation(fields: [stockLocationId], references: [id], onDelete: Restrict)
+  stockTracked Boolean @default(false) @map("stock_tracked")
   taxSnapshot Json? @map("tax_snapshot")
   id String @id @default(cuid())
   tenantId String @map("tenant_id")
@@ -2462,4 +2476,24 @@ model PlatformBroadcastDelivery {
   @@unique([broadcastId, tokenHash])
   @@index([status, nextAttemptAt])
   @@map("platform_broadcast_deliveries")
+}
+
+model InventoryLocation {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  name String
+  address String?
+  isDefault Boolean @default(false) @map("is_default")
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  movements StockMovement[]
+  purchases Purchase[]
+  sales Sale[]
+  documents BusinessDocument[]
+  @@unique([projectId, name])
+  @@index([tenantId, projectId, isActive])
+  @@map("inventory_locations")
 }

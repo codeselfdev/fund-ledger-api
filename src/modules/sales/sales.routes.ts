@@ -1,3 +1,5 @@
+import { changeStock, stockEnabled, stockLocation } from '../inventory/stock.service.js';
+import { financialTransaction } from '../accounting/transaction.js';
 import { documentTax, postTax, json, lockSetup } from '../business-setup/service.js';
 import { taxSelectionSchema } from '../business-setup/validation.js';
 import { Router } from "express";
@@ -23,6 +25,7 @@ const saleLineSchema = z.object({
 });
 
 const createSaleSchema = z.object({
+  location_id: z.string().min(1).optional(),
   account_id: z.string().min(1),
   customer_name: z.string().max(120).optional(),
   tax_selection: taxSelectionSchema.optional(),
@@ -50,12 +53,6 @@ router.post("/", requireProject, requireRoles("cashier", "accountant", "admin"),
   if (missing.length > 0) throw notFound("Item not found", { missing_item_ids: missing });
 
   const itemsById = new Map(items.map((item) => [item.id, item]));
-  for (const line of body.lines) {
-    const item = itemsById.get(line.item_id)!;
-    if (line.quantity > item.quantity) {
-      throw badRequest(`Insufficient stock for "${item.name}"`, { item_id: item.id, available: item.quantity });
-    }
-  }
 
   const resolvedLines = body.lines.map((line) => {
     const item = itemsById.get(line.item_id)!;
@@ -64,8 +61,10 @@ router.post("/", requireProject, requireRoles("cashier", "accountant", "admin"),
   });
 
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await financialTransaction(async (tx) => {
     await lockSetup(tx, auth);
+    const trackStock = await stockEnabled(tx, auth);
+    const location = trackStock ? await stockLocation(tx, auth, body.location_id) : null;
     const taxSnapshot = await documentTax(tx, auth, 'sale', resolvedLines.map(line => line.lineTotal), 0, body.tax_selection);
     const totalAmount = taxSnapshot?.payable ?? resolvedLines.map(line => line.lineTotal).reduce((a, b) => a + b, 0);
     const sale = await tx.sale.create({
@@ -73,6 +72,8 @@ router.post("/", requireProject, requireRoles("cashier", "accountant", "admin"),
         tenantId: auth.tenantId,
         projectId: auth.projectId,
         accountId: account.id,
+        stockLocationId: location?.id,
+        stockTracked: trackStock,
         customerName: body.customer_name,
         totalAmount,
         taxSnapshot: taxSnapshot ? json(taxSnapshot) : undefined,
@@ -93,27 +94,8 @@ router.post("/", requireProject, requireRoles("cashier", "accountant", "admin"),
       }))
     });
 
-    for (const line of resolvedLines) {
-      const changed = await tx.inventoryItem.updateMany({
-        where: { id: line.item.id, tenantId: auth.tenantId, projectId: auth.projectId, quantity: { gte: line.quantity } },
-        data: { quantity: { decrement: line.quantity } }
-      });
-      if (!changed.count) throw badRequest(`Insufficient stock for "${line.item.name}"`);
-      const item = await tx.inventoryItem.findFirstOrThrow({ where: { id: line.item.id, tenantId: auth.tenantId, projectId: auth.projectId } });
-
-      await tx.stockMovement.create({
-        data: {
-          tenantId: auth.tenantId,
-          projectId: auth.projectId,
-          itemId: line.item.id,
-          type: "sale",
-          quantity: line.quantity,
-          quantityAfter: item.quantity,
-          referenceType: "sale",
-          referenceId: sale.id,
-          createdById: auth.userId
-        }
-      });
+    if (trackStock) for (const line of [...resolvedLines].sort((a, b) => a.item.id.localeCompare(b.item.id))) {
+      await changeStock(tx, auth, { itemId: line.item.id, delta: -line.quantity, locationId: location!.id, type: 'sale', referenceType: 'sale', referenceId: sale.id });
     }
 
     const updatedAccount = await tx.account.update({
@@ -175,7 +157,7 @@ router.get("/", requireProject, requireRoles("staff", "cashier"), validateQuery(
       projectId: auth.projectId,
       ...(query.status ? { status: query.status } : {})
     },
-    include: { account: true, lines: { include: { item: true } } },
+    include: { account: true, stockLocation: true, lines: { include: { item: true } } },
     orderBy: { createdAt: "desc" }
   });
 
@@ -188,7 +170,7 @@ router.get("/:id", requireProject, requireRoles("staff", "cashier"), validatePar
 
   const sale = await prisma.sale.findFirst({
     where: { id, tenantId: auth.tenantId, projectId: auth.projectId },
-    include: { account: true, lines: { include: { item: true } } }
+    include: { account: true, stockLocation: true, lines: { include: { item: true } } }
   });
   if (!sale) throw notFound("Sale not found");
 
@@ -213,7 +195,7 @@ router.post("/:id/cancel", requireProject, requireRoles("accountant", "admin"), 
     throw badRequest("Account has insufficient balance to reverse this sale");
   }
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await financialTransaction(async (tx) => {
     await lockSetup(tx, auth);
     const current = await tx.sale.findFirst({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId, status: 'completed' } });
     if (!current) throw badRequest('Only completed sales can be cancelled');
@@ -222,26 +204,8 @@ router.post("/:id/cancel", requireProject, requireRoles("accountant", "admin"), 
       data: { status: "cancelled", cancelledById: auth.userId, cancelledAt: new Date() }
     });
 
-    for (const line of before.lines) {
-      const item = await tx.inventoryItem.update({
-        where: { id: line.itemId },
-        data: { quantity: { increment: line.quantity } }
-      });
-
-      await tx.stockMovement.create({
-        data: {
-          tenantId: auth.tenantId,
-          projectId: auth.projectId,
-          itemId: line.itemId,
-          type: "adjustment_increase",
-          quantity: line.quantity,
-          quantityAfter: item.quantity,
-          referenceType: "sale_cancel",
-          referenceId: id,
-          reason: "Sale cancelled",
-          createdById: auth.userId
-        }
-      });
+    if (current.stockTracked) for (const line of [...before.lines].sort((a, b) => a.itemId.localeCompare(b.itemId))) {
+      await changeStock(tx, auth, { itemId: line.itemId, delta: line.quantity, locationId: current.stockLocationId, type: 'adjustment_increase', referenceType: 'sale_cancel', referenceId: id, reason: 'Sale cancelled', restoring: true });
     }
 
     const debited = await tx.account.updateMany({

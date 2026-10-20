@@ -1,3 +1,4 @@
+import { changeStock, stockEnabled, stockLocation } from '../inventory/stock.service.js';
 import { postTax } from '../business-setup/service.js';
 import { Prisma } from '@prisma/client';
 import type { z } from 'zod';
@@ -159,10 +160,10 @@ export async function moveMaterial(a: ConstructionScope, b: z.infer<typeof mater
         }
         else if (item.quantity < b.quantity)
             throw conflict('Insufficient stock for consumption or wastage');
+        if (!await stockEnabled(tx, a)) throw badRequest('Enable stock management before recording material stock movements');
         const change = b.kind === 'return' ? b.quantity : -b.quantity;
-        const updated = await tx.inventoryItem.update({ where: { id: item.id }, data: { quantity: { increment: change } } });
         const row = await tx.constructionMaterialEntry.create({ data: { ...scope(a), itemId: item.id, boqId: b.boq_id, kind: b.kind, quantity: b.quantity, entryDate: atDate(b.entry_date), reason: b.reason, sourceId: b.source_id, requestKey: b.request_key, requestHash: hash(b), createdById: a.userId } });
-        await tx.stockMovement.create({ data: { ...scope(a), itemId: item.id, type: change > 0 ? 'adjustment_increase' : 'adjustment_decrease', quantity: change, quantityAfter: updated.quantity, referenceType: `construction_${b.kind}`, referenceId: row.id, reason: b.reason, createdById: a.userId } });
+        await changeStock(tx, a, { itemId: item.id, delta: change, type: change > 0 ? 'adjustment_increase' : 'adjustment_decrease', referenceType: `construction_${b.kind}`, referenceId: row.id, reason: b.reason, restoring: b.kind === 'return' });
         await audit(tx, a, 'material.recorded', 'construction_material_entry', row.id, row);
         return row;
     });
@@ -176,16 +177,18 @@ export async function receiveSupplierPurchase(tx: Tx, a: ConstructionScope, bill
     const purchase = await tx.purchase.findFirst({ where: { id: bill.purchaseId, ...scope(a), status: 'ordered' }, include: { lines: true } });
     if (!purchase)
         throw conflict('Purchase is not awaiting receipt');
-    for (const line of purchase.lines) {
+    const trackStock = await stockEnabled(tx, a);
+    const location = trackStock ? await stockLocation(tx, a, purchase.stockLocationId) : null;
+    for (const line of [...purchase.lines].sort((a, b) => a.itemId.localeCompare(b.itemId))) {
         const item = await tx.inventoryItem.findFirst({ where: { id: line.itemId, ...scope(a) } });
         if (!item)
             throw notFound('Purchase material not found');
         checkedMoney(item.quantity + line.quantity);
-        const updated = await tx.inventoryItem.update({ where: { id: item.id }, data: { quantity: { increment: line.quantity }, costPrice: line.unitCost } });
-        await tx.stockMovement.create({ data: { ...scope(a), itemId: item.id, type: 'purchase_received', quantity: line.quantity, quantityAfter: updated.quantity, referenceType: 'construction_supplier_bill', referenceId: bill.id, createdById: a.userId } });
+        await tx.inventoryItem.update({ where: { id: item.id }, data: { costPrice: line.unitCost } });
+        if (trackStock) await changeStock(tx, a, { itemId: item.id, delta: line.quantity, locationId: location!.id, type: 'purchase_received', referenceType: 'construction_supplier_bill', referenceId: bill.id });
     }
     await postTax(tx, a, 'purchase', purchase.id, purchase.taxSnapshot, 'input');
-    await tx.purchase.update({ where: { id: purchase.id }, data: { status: 'received', accountId: null, receivedById: a.userId, receivedAt: new Date() } });
+    await tx.purchase.update({ where: { id: purchase.id }, data: { stockTracked: trackStock, stockLocationId: location?.id ?? purchase.stockLocationId, status: 'received', accountId: null, receivedById: a.userId, receivedAt: new Date() } });
     const row = await tx.constructionSupplierBill.update({ where: { id: bill.id }, data: { receivedAt: new Date() } });
     await audit(tx, a, 'purchase.received', 'construction_supplier_bill', row.id, row);
     return row;

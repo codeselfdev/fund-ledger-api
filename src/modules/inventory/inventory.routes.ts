@@ -1,3 +1,5 @@
+import { changeStock, stockEnabled, locationStocks, openingStock } from './stock.service.js';
+import { financialTransaction } from '../accounting/transaction.js';
 import { attributesFor, lockSetup } from '../business-setup/service.js';
 import { attributeSchema } from '../business-setup/validation.js';
 import { Router } from "express";
@@ -15,6 +17,7 @@ import { writeAudit } from "../../core/audit/audit.service.js";
 const router = Router();
 
 const createItemSchema = z.object({
+  location_id: z.string().min(1).optional(),
   attributes: attributeSchema,
   name: z.string().min(2).max(120),
   sku: z.string().min(1).max(64).optional(),
@@ -48,6 +51,7 @@ const listQuerySchema = z.object({
 });
 
 const adjustSchema = z.object({
+  location_id: z.string().min(1).optional(),
   type: z.enum(["increase", "decrease"]),
   quantity: z.number().int().positive(),
   reason: z.string().min(3)
@@ -79,7 +83,8 @@ router.get("/items", requireProject, requireRoles("staff", "cashier"), validateQ
   });
 
   const filtered = query.low_stock ? rows.filter((row) => row.quantity <= row.reorderLevel) : rows;
-  return ok(res, filtered.map(withPhotoUrl));
+  const balances = await financialTransaction(db => locationStocks(db, auth, filtered));
+  return ok(res, filtered.map(item => ({ ...withPhotoUrl(item), locationStocks: balances.get(item.id) })));
 }));
 
 router.get("/items/:id", requireProject, requireRoles("staff", "cashier"), validateParams(idParamSchema), asyncHandler(async (req, res) => {
@@ -129,7 +134,7 @@ router.post("/items", requireProject, requireRoles("accountant", "admin"), valid
       photoFileId: body.photo_file_id
     }
   });
-    if (row.quantity) await tx.stockMovement.create({ data: { tenantId: auth.tenantId, projectId: auth.projectId, itemId: row.id, type: 'adjustment_increase', quantity: row.quantity, quantityAfter: row.quantity, referenceType: 'opening_stock', referenceId: row.id, reason: 'Opening stock', createdById: auth.userId } });
+    await openingStock(tx, auth, row, body.location_id);
     return row;
   });
 
@@ -226,33 +231,9 @@ router.post("/items/:id/adjust", requireProject, requireRoles("accountant", "adm
   });
   if (!before) throw notFound("Item not found");
 
-  if (body.type === "decrease" && body.quantity > before.quantity) {
-    throw badRequest("Cannot decrease stock below zero", { current_quantity: before.quantity });
-  }
-
-  const quantityAfter = body.type === "increase" ? before.quantity + body.quantity : before.quantity - body.quantity;
-
-  const result = await prisma.$transaction(async (tx) => {
-    const item = await tx.inventoryItem.update({
-      where: { id },
-      data: { quantity: quantityAfter }
-    });
-
-    const movement = await tx.stockMovement.create({
-      data: {
-        tenantId: auth.tenantId,
-        projectId: auth.projectId,
-        itemId: id,
-        type: body.type === "increase" ? "adjustment_increase" : "adjustment_decrease",
-        quantity: body.quantity,
-        quantityAfter,
-        referenceType: "adjustment",
-        reason: body.reason,
-        createdById: auth.userId
-      }
-    });
-
-    return { item, movement };
+  const result = await financialTransaction(async tx => {
+    if (!await stockEnabled(tx, auth)) throw badRequest('Stock management is disabled for this project');
+    return changeStock(tx, auth, { itemId: id, delta: body.type === 'increase' ? body.quantity : -body.quantity, locationId: body.location_id, type: body.type === 'increase' ? 'adjustment_increase' : 'adjustment_decrease', referenceType: 'adjustment', reason: body.reason });
   });
 
   await writeAudit({
@@ -280,10 +261,12 @@ router.get("/items/:id/movements", requireProject, requireRoles("staff"), valida
 
   const movements = await prisma.stockMovement.findMany({
     where: { tenantId: auth.tenantId, projectId: auth.projectId, itemId: id },
+    include: { location: true },
     orderBy: { createdAt: "desc" }
   });
 
-  return ok(res, { item: withPhotoUrl(item), movements });
+  const details = await financialTransaction(async db => { const current = await db.inventoryItem.findFirstOrThrow({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId } }); const balances = await locationStocks(db, auth, [current]); return { ...withPhotoUrl(current), locationStocks: balances.get(id) }; });
+  return ok(res, { item: details, movements });
 }));
 
 export { router as inventoryRouter };

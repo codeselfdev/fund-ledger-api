@@ -28,6 +28,7 @@ import { expensesRouter } from "./modules/expenses/expenses.routes.js";
 import { expenseCategoriesRouter } from "./modules/expense-categories/expense-categories.routes.js";
 import { incomesRouter } from "./modules/incomes/incomes.routes.js";
 import { inventoryCategoriesRouter } from "./modules/inventory-categories/inventory-categories.routes.js";
+import { stockRouter } from './modules/inventory/stock.routes.js';
 import { inventoryRouter } from "./modules/inventory/inventory.routes.js";
 import { purchasesRouter } from "./modules/purchases/purchases.routes.js";
 import { salesRouter } from "./modules/sales/sales.routes.js";
@@ -99,7 +100,7 @@ export function registerRoutes(app: Express) {
   app.use("/v1/fixed-assets", fixedAssetsRouter);
   app.use("/v1/shortcuts", shortcutsRouter);
   app.use("/v1/inventory-categories", inventoryCategoriesRouter);
-  app.use("/v1/inventory", inventoryRouter);
+  app.use("/v1/inventory", stockRouter, inventoryRouter);
   app.use("/v1/purchases", purchasesRouter);
   app.use("/v1/sales", salesRouter);
   app.use("/v1/transfers", transfersRouter);
