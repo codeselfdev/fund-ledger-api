@@ -87,3 +87,12 @@ export async function requestLoginOtp(input: {
   if (!payload.sessionInfo) throw serviceUnavailable("SMS verification could not be started. Please try again later.");
   return { sent: true, emailed: false, delivery: "sms" as const, verification_id: payload.sessionInfo, sms_limit_reached: false };
 }
+
+/** Email OTPs work for existing accounts and unregistered addresses alike. */
+export async function requestEmailOtp(email: string) {
+  const normalized = email.trim().toLowerCase();
+  const otp = await issueOtp(`email:${normalized}`, normalized);
+  if (!otp.emailed && process.env.NODE_ENV === "production") throw serviceUnavailable("Could not deliver the email code. Please try again later.");
+  return { sent: true, delivery: "email" as const, emailed: otp.emailed,
+    ...(process.env.NODE_ENV === "production" ? {} : { dev_code: otp.code }) };
+}

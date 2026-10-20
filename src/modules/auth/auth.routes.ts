@@ -1,8 +1,10 @@
+import { assertSignupMobileAvailable } from "./signup-contact.js";
+import { verifiedSignup } from "./signup-identity.js";
 import { linkedIdentityUsers } from "../../core/security/linked-identity.js";
 import { getActiveUserForLogin } from "./auth.service.js";
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { requestLoginOtp } from "./otp-delivery.service.js";
+import { requestEmailOtp, requestLoginOtp } from "./otp-delivery.service.js";
 import { z } from "zod";
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { badRequest, forbidden, unauthorized } from "../../core/http/api-error.js";
@@ -29,21 +31,23 @@ function isEmailOtpAmbiguous(users: Array<{ id: string; email: string | null }>)
 }
 
 const otpRequestSchema = z.object({
-  mobile: z.string().regex(/^\+[1-9]\d{6,14}$/, "Enter a mobile number with country code"),
+  mobile: z.string().regex(/^\+[1-9]\d{6,14}$/, "Enter a mobile number with country code").optional(),
+  email: z.string().trim().email().max(254).optional(),
   recaptcha_token: z.string().min(1).max(10000).optional(),
   signup: z.boolean().optional()
-});
+}).refine(value => Boolean(value.email) !== Boolean(value.mobile), { message: "Enter either email or mobile" });
 
 const loginSchema = z
   .object({
     mobile: z.string().min(6).optional(),
+    email: z.string().trim().email().max(254).optional(),
     otp: z.string().min(4).optional(),
     id_token: z.string().min(20).optional(),
     tenant_slug: z.string().min(3).optional(),
     project_id: z.string().optional()
   })
-  .refine((value) => Boolean(value.id_token || value.mobile), {
-    message: "id_token or mobile is required"
+  .refine((value) => Boolean(value.id_token || value.mobile || value.email) && !(value.mobile && value.email), {
+    message: "Enter an email, mobile, or verified identity"
   });
 
 const switchProjectSchema = z.object({
@@ -114,14 +118,21 @@ router.post("/google/signup", validateBody(googleSignupSchema), asyncHandler(asy
   return ok(res, payload);
 }));
 
-router.post("/otp/request", rateLimit({ windowMs: 60_000, limit: 10, standardHeaders: true, legacyHeaders: false }), validateBody(otpRequestSchema), asyncHandler(async (req, res) => {
-  const body = req.body as z.infer<typeof otpRequestSchema>;
-  const users = await findActiveUsersByMobile(body.mobile, undefined, false);
-  if (!users.length && !body.signup) throw badRequest("No active user found for this mobile number");
-  return ok(res, await requestLoginOtp({ mobile: body.mobile, users, recaptchaToken: body.recaptcha_token, signup: body.signup }));
+router.post("/signup/check-mobile", rateLimit({ windowMs: 60_000, limit: 15 }), validateBody(z.object({ mobile: z.string().regex(/^\+[1-9]\d{6,14}$/) })), asyncHandler(async (req, res) => {
+  await assertSignupMobileAvailable(req.body.mobile);
+  return ok(res, { available: true });
 }));
 
-router.post("/login", validateBody(loginSchema), asyncHandler(async (req, res) => {
+router.post("/otp/request", rateLimit({ windowMs: 60_000, limit: 10, standardHeaders: true, legacyHeaders: false }), validateBody(otpRequestSchema), asyncHandler(async (req, res) => {
+  const body = req.body as z.infer<typeof otpRequestSchema>;
+  if (body.email) return ok(res, await requestEmailOtp(body.email));
+  const mobile = body.mobile!;
+  if (body.signup) await assertSignupMobileAvailable(mobile);
+  const users = await findActiveUsersByMobile(mobile, undefined, false);
+  return ok(res, await requestLoginOtp({ mobile, users, recaptchaToken: body.recaptcha_token, signup: body.signup }));
+}));
+
+router.post("/login", rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeaders: true, legacyHeaders: false }), validateBody(loginSchema), asyncHandler(async (req, res) => {
   const body = req.body as z.infer<typeof loginSchema>;
 
   let users;
@@ -163,8 +174,17 @@ router.post("/login", validateBody(loginSchema), asyncHandler(async (req, res) =
         });
       }
     } else {
-      users = await findActiveUsersByMobile(identity.phoneNumber!, body.tenant_slug);
+      const mobile = identity.phoneNumber!;
+      const allUsers = await findActiveUsersByMobile(mobile);
+      if (!allUsers.length) return ok(res, verifiedSignup({ provider: "mobile", mobile }));
+      users = body.tenant_slug ? await findActiveUsersByMobile(mobile, body.tenant_slug) : allUsers;
     }
+  } else if (body.email) {
+    const email = body.email.trim().toLowerCase();
+    if (!await verifyOtp(`email:${email}`, body.otp)) throw unauthorized("Invalid or expired OTP");
+    const allUsers = await findActiveUsersByEmail(email);
+    if (!allUsers.length) return ok(res, verifiedSignup({ provider: "email", email }));
+    users = body.tenant_slug ? await findActiveUsersByEmail(email, body.tenant_slug) : allUsers;
   } else {
     const mobile = body.mobile?.trim() ?? "";
     const validOtp = await verifyOtp(mobile, body.otp);

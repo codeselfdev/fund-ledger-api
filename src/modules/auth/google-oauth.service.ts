@@ -410,11 +410,11 @@ export async function signupWithGoogleTicket(input: {
       adminName: ownerName,
       adminMobile: ownerMobile,
       adminEmail: row.identity.email,
-      verifiedGoogleEmail: row.identity.email,
       source: "self_signup"
     });
   } catch (error) {
     tickets.set(input.ticket, { ...row, expiresAt: Date.now() + IDENTITY_TICKET_TTL_MS });
+    if ((error as { code?: string }).code === "MOBILE_TAKEN") throw conflict("This mobile already has a FundLedger login. Sign in instead.");
     if ((error as { code?: string }).code === "SLUG_TAKEN") {
       throw conflict("This organization slug is already taken. Choose another organization name.");
     }

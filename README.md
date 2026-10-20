@@ -354,3 +354,8 @@ Billing projects now use `/v1/billing` for category-specific menus, customers, u
 `project_type: construction` opens saved construction budgets, BOQ cost allocation, contractors, certified running bills, supplier/labor payables, site material movements, change orders, financial reports and the existing member/share contribution ledger. See [Construction Financial Management](docs/CONSTRUCTION_FINANCIAL_MANAGEMENT.md) for menu, API, recognition and rollout details.
 
 See [Reports and integrations](docs/REPORTS_INTEGRATIONS.md) for the Excel reporting migration, admin schedule configuration, SMTP/Telegram setup and disabled-by-default automation.
+
+
+## Configurable business data and tax
+
+The Business setup API serves shared customer/dealer/item field definitions, typed search, reviewed spreadsheet imports and tax/VAT defaults with historical document snapshots. Apply migration `20261020000000_business_setup` and regenerate Prisma before deploying the matching mobile update. See [Business setup architecture and rollout](docs/BUSINESS_SETUP.md).

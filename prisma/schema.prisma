@@ -210,6 +210,10 @@ enum DepositApprovalRoute {
 }
 
 model Project {
+  businessConfiguration BusinessConfiguration?
+  businessFields BusinessField[]
+  businessImports BusinessImport[]
+  businessTaxEntries BusinessTaxEntry[]
   shortcutPreferences ShortcutPreference[]
   fixedAssets FixedAsset[]
   fixedAssetOperations FixedAssetOperation[]
@@ -725,6 +729,7 @@ model Expense {
 }
 
 model Vendor {
+  attributes Json @default("{}")
   constructionSupplierBills ConstructionSupplierBill[]
   id        String   @id @default(cuid())
   tenantId  String   @map("tenant_id")
@@ -745,6 +750,7 @@ model Vendor {
   @@unique([projectId, name])
   @@index([tenantId, projectId, isActive])
   @@map("vendors")
+  @@index([attributes], type: Gin, map: "vendors_attributes_gin")
 }
 
 model ExpenseCategoryDef {
@@ -782,6 +788,7 @@ model InventoryCategory {
 }
 
 model InventoryItem {
+  attributes Json @default("{}")
   constructionMaterials ConstructionMaterialEntry[]
   id           String   @id @default(cuid())
   tenantId     String   @map("tenant_id")
@@ -808,6 +815,7 @@ model InventoryItem {
   @@unique([projectId, sku])
   @@index([tenantId, projectId, isActive])
   @@map("inventory_items")
+  @@index([attributes], type: Gin, map: "inventory_items_attributes_gin")
 }
 
 model StockMovement {
@@ -832,6 +840,7 @@ model StockMovement {
 }
 
 model Purchase {
+  taxSnapshot Json? @map("tax_snapshot")
   constructionSupplierBill ConstructionSupplierBill?
   id            String         @id @default(cuid())
   tenantId      String         @map("tenant_id")
@@ -875,6 +884,7 @@ model PurchaseItem {
 }
 
 model Sale {
+  taxSnapshot Json? @map("tax_snapshot")
   id            String     @id @default(cuid())
   tenantId      String     @map("tenant_id")
   projectId     String     @map("project_id")
@@ -1290,6 +1300,7 @@ model AccountDeletionRequest {
 
 
 model Customer {
+  attributes Json @default("{}")
   id String @id @default(cuid())
   tenantId String @map("tenant_id")
   projectId String @map("project_id")
@@ -1309,9 +1320,11 @@ model Customer {
   billingAdjustments BillingAdjustment[]
   @@index([tenantId, projectId, isActive])
   @@map("customers")
+  @@index([attributes], type: Gin, map: "customers_attributes_gin")
 }
 
 model BusinessDocument {
+  taxSnapshot Json? @map("tax_snapshot")
   id String @id @default(cuid())
   tenantId String @map("tenant_id")
   projectId String @map("project_id")
@@ -1467,6 +1480,7 @@ model BillingMeterReading {
 }
 
 model BillingInvoice {
+  taxSnapshot Json? @map("tax_snapshot")
   id String @id @default(cuid())
   tenantId String @map("tenant_id")
   projectId String @map("project_id")
@@ -2339,4 +2353,113 @@ model SubscriptionPaymentReceipt {
   tenant Tenant @relation(fields:[tenantId],references:[id],onDelete:Cascade)
   @@index([tenantId,invoiceId])
   @@map("subscription_payment_receipts")
+}
+
+model BusinessConfiguration {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @unique @map("project_id")
+  revision Int @default(0)
+  builtinSearch Json @default("{}") @map("builtin_search")
+  taxSetup Json? @map("tax_setup")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@index([tenantId, projectId])
+  @@map("business_configurations")
+}
+model BusinessField {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  entity String
+  key String
+  label String
+  type String
+  options Json @default("[]")
+  required Boolean @default(false)
+  searchable Boolean @default(false)
+  match String @default("contains")
+  filterable Boolean @default(false)
+  showInList Boolean @default(false) @map("show_in_list")
+  position Int @default(0)
+  archived Boolean @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@unique([projectId, entity, key])
+  @@index([tenantId, projectId, entity, archived])
+  @@map("business_fields")
+}
+model BusinessImport {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  entity String
+  createdById String @map("created_by_id")
+  payload Json
+  preview Json
+  result Json?
+  revision Int
+  status String @default("preview")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@index([tenantId, projectId, createdById, status])
+  @@index([expiresAt, status])
+  @@map("business_imports")
+}
+model BusinessTaxEntry {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  sourceType String @map("source_type")
+  sourceId String @map("source_id")
+  rateId String @map("rate_id")
+  name String
+  kind String
+  amount Int
+  base Int
+  rateBps Int @map("rate_bps")
+  reversal Boolean @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  @@unique([projectId, sourceType, sourceId, rateId, reversal])
+  @@index([tenantId, projectId, kind, createdAt])
+  @@map("business_tax_entries")
+}
+
+model PlatformBroadcast {
+  id String @id @default(cuid())
+  actor String
+  requestKey String @map("request_key")
+  payloadHash String @map("payload_hash")
+  title String
+  body String
+  deviceCount Int @map("device_count")
+  accountCount Int @map("account_count")
+  organizationCount Int @map("organization_count")
+  createdAt DateTime @default(now()) @map("created_at")
+  deliveries PlatformBroadcastDelivery[]
+  @@unique([actor, requestKey])
+  @@index([createdAt, id])
+  @@map("platform_broadcasts")
+}
+
+model PlatformBroadcastDelivery {
+  id String @id @default(cuid())
+  broadcastId String @map("broadcast_id")
+  tokenHash String @map("token_hash")
+  recipientIds String[] @map("recipient_ids")
+  status String @default("pending")
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at")
+  leaseToken String? @map("lease_token")
+  leaseUntil DateTime? @map("lease_until")
+  lastError String? @map("last_error")
+  sentAt DateTime? @map("sent_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  broadcast PlatformBroadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  @@unique([broadcastId, tokenHash])
+  @@index([status, nextAttemptAt])
+  @@map("platform_broadcast_deliveries")
 }

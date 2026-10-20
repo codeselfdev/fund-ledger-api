@@ -1,3 +1,4 @@
+import { assertSignupMobileAvailable, signupMobile } from "../auth/signup-contact.js";
 import { withAvailableOrganizationSlug } from "../../core/onboarding/available-slug.js";
 import { Prisma, TenantPlan, ProjectType } from "@prisma/client";
 import { prisma } from "../../core/prisma/client.js";
@@ -17,8 +18,6 @@ export type ProvisionTenantInput = {
   adminName: string;
   adminMobile: string;
   adminEmail?: string;
-  /** Server-verified Google email; never accepted from a signup request body. */
-  verifiedGoogleEmail?: string;
   projectName?: string;
   projectTotalShares?: number;
   projectType?: ProjectType;
@@ -65,30 +64,17 @@ async function provisionTenantOnce(input: ProvisionTenantInput): Promise<Provisi
   if (existingSlug) {
     throw Object.assign(new Error("Tenant slug already exists"), { code: "SLUG_TAKEN" });
   }
-  if (input.adminEmail) {
-    const existingEmail = await prisma.user.findFirst({
-      where: { isActive: true, email: { equals: input.adminEmail.trim().toLowerCase(), mode: "insensitive" } },
-      select: { id: true }
-    });
-    if (existingEmail) {
+  const result = await prisma.$transaction(async (tx) => {
+    const mobile = signupMobile(input.adminMobile);
+    const email = input.adminEmail?.trim().toLowerCase();
+    // Lock contact identities before checking, so concurrent signups cannot both pass.
+    for (const scope of [`signup:mobile:${mobile}`, ...(email ? [`signup:email:${email}`] : [])].sort()) {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${scope}, 0))`;
+    }
+    await assertSignupMobileAvailable(mobile, tx);
+    if (email && await tx.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } }, select: { id: true } })) {
       throw Object.assign(new Error("Email already registered"), { code: "EMAIL_TAKEN" });
     }
-  }
-  // A Google signup is identified by its verified email. Contact mobiles may
-  // repeat across organizations without linking users or granting existing access.
-  const verifiedGoogleSignup = source === "self_signup" && Boolean(input.verifiedGoogleEmail)
-    && input.verifiedGoogleEmail?.trim().toLowerCase() === input.adminEmail?.trim().toLowerCase();
-  if (input.adminMobile && !verifiedGoogleSignup) {
-    const existingMobile = await prisma.user.findFirst({
-      where: { isActive: true, mobile: input.adminMobile },
-      select: { id: true }
-    });
-    if (existingMobile) {
-      throw Object.assign(new Error("Mobile already registered"), { code: "MOBILE_TAKEN" });
-    }
-  }
-
-  const result = await prisma.$transaction(async (tx) => {
     const contact = jsonValue({ subscription: input.trialDays === undefined ? createThreeMonthTrial() : createTrialSubscription(input.trialDays) });
     const onboarding = createProvisionedOnboardingSeed({ source });
 
@@ -117,8 +103,8 @@ async function provisionTenantOnce(input: ProvisionTenantInput): Promise<Provisi
       data: {
         tenantId: tenant.id,
         name: input.adminName,
-        mobile: input.adminMobile,
-        email: input.adminEmail
+        mobile,
+        email
       }
     });
 

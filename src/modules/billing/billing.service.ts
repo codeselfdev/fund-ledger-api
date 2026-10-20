@@ -1,3 +1,4 @@
+import { documentTax, postTax, lockSetup } from '../business-setup/service.js';
 import { randomUUID } from 'node:crypto';
 import { Prisma, type BillingInvoice, type BillingPayment } from '@prisma/client';
 import { prisma } from '../../core/prisma/client.js';
@@ -6,6 +7,7 @@ import { financialTransaction } from '../accounting/transaction.js';
 import { atDate, checkedMoney, day, hash, json, netTotal, outstanding, settings, cycleIndex, cycleAmount, addDays, lateFee, type invoiceSchema, type paymentSchema, type adjustmentSchema } from './billing.policy.js';
 import type { z } from 'zod';
 export type BillingScope = {
+    roles?: string[];
     tenantId: string;
     projectId: string;
     userId: string;
@@ -76,9 +78,13 @@ async function insertInvoice(tx: Tx, a: BillingScope, b: z.infer<typeof invoiceS
     periodStart: Date;
     policy: unknown;
 }) {
+    await lockSetup(tx, a);
+    const taxSnapshot = await documentTax(tx, { ...a, roles: a.roles ?? [] }, 'sale', b.lines.map(l => Math.round(l.quantity * l.unit_price)), b.discount, b.tax_selection, b.tax);
+    if (taxSnapshot) totals = { ...totals, subtotal: taxSnapshot.subtotal + b.discount, total: taxSnapshot.payable };
     const c = await customer(tx, a, b.customer_id);
     const project = await tx.project.findFirstOrThrow({ where: { id: a.projectId, tenantId: a.tenantId } });
-    const i = await tx.billingInvoice.create({ data: { ...scope(a), customerId: c.id, assignmentId: extra?.assignmentId, periodStart: extra?.periodStart, number: `BILL-${randomUUID().toUpperCase()}`, customerSnapshot: json({ name: c.name, mobile: c.mobile, email: c.email, address: c.address }), lines: json(totals.lines), subtotal: totals.subtotal, discount: b.discount, tax: b.tax, total: totals.total, invoiceDate: atDate(b.invoice_date), dueDate: atDate(b.due_date), note: b.note, policy: json(extra?.policy ?? { late_fee_type: 'none', late_fee_value: 0, grace_days: 0 }), requestKey: b.request_key, requestHash: hash(b), createdById: a.userId } });
+    const i = await tx.billingInvoice.create({ data: { ...scope(a), customerId: c.id, assignmentId: extra?.assignmentId, periodStart: extra?.periodStart, number: `BILL-${randomUUID().toUpperCase()}`, customerSnapshot: json({ name: c.name, mobile: c.mobile, email: c.email, address: c.address, attributes: c.attributes }), lines: json(totals.lines), subtotal: totals.subtotal, discount: b.discount, tax: taxSnapshot?.tax ?? b.tax, taxSnapshot: taxSnapshot ? json(taxSnapshot) : undefined, total: totals.total, invoiceDate: atDate(b.invoice_date), dueDate: atDate(b.due_date), note: b.note, policy: json(extra?.policy ?? { late_fee_type: 'none', late_fee_value: 0, grace_days: 0 }), requestKey: b.request_key, requestHash: hash(b), createdById: a.userId } });
+    await postTax(tx, a, 'billing_invoice', i.id, taxSnapshot, 'output');
     await audit(tx, a, 'invoice.issued', 'billing_invoice', i.id, { number: i.number, total: i.total, customer_id: c.id });
     if (settings(project.billingSettings).automatic_advance)
         await applyAdvance(tx, a, c.id);
@@ -219,6 +225,7 @@ export async function decideAdjustment(a: BillingScope, adjustmentId: string, de
                         await tx.billingPayment.update({ where: { id: item.paymentId }, data: { remainingAmount: { increment: item.amount } } });
                         await tx.billingAllocation.update({ where: { id: item.id }, data: { releasedAt: new Date() } });
                     }
+                    await postTax(tx, a, 'billing_invoice', i.id, i.taxSnapshot, 'output', true);
                     await tx.billingInvoice.update({ where: { id: i.id }, data: { status: 'cancelled', paidAmount: 0 } });
                 }
                 else if (row.kind === 'debit_note') {

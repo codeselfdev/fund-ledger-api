@@ -1,3 +1,4 @@
+import { businessSetupRouter } from './modules/business-setup/business-setup.routes.js';
 import { aiServiceRouter } from './modules/ai-service/ai-service.routes.js';
 import { shortcutsRouter } from './modules/shortcuts/shortcuts.routes.js';
 import { memberInvitationRouter } from './modules/members/member-invitation.routes.js';
@@ -90,6 +91,7 @@ export function registerRoutes(app: Express) {
   app.use("/v1/vendors", vendorsRouter);
   app.use("/v1/accounts", accountsRouter);
   app.use("/v1/incomes", incomesRouter);
+  app.use("/v1/business-setup", businessSetupRouter);
   app.use("/v1/customers", customersRouter);
   app.use("/v1/accounting", accountingRouter);
   app.use("/v1/billing", billingRouter);

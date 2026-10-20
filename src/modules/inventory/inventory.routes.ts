@@ -1,3 +1,5 @@
+import { attributesFor, lockSetup } from '../business-setup/service.js';
+import { attributeSchema } from '../business-setup/validation.js';
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../../core/http/async-handler.js";
@@ -13,6 +15,7 @@ import { writeAudit } from "../../core/audit/audit.service.js";
 const router = Router();
 
 const createItemSchema = z.object({
+  attributes: attributeSchema,
   name: z.string().min(2).max(120),
   sku: z.string().min(1).max(64).optional(),
   category_id: z.string().min(1).optional(),
@@ -25,6 +28,7 @@ const createItemSchema = z.object({
 });
 
 const updateItemSchema = z.object({
+  attributes: attributeSchema,
   name: z.string().min(2).max(120).optional(),
   sku: z.string().min(1).max(64).nullable().optional(),
   category_id: z.string().min(1).nullable().optional(),
@@ -109,8 +113,9 @@ router.post("/items", requireProject, requireRoles("accountant", "admin"), valid
     if (existing) throw conflict("An item with this SKU already exists");
   }
 
-  const item = await prisma.inventoryItem.create({
+  const item = await prisma.$transaction(async tx => { await lockSetup(tx, auth); const attributes = await attributesFor(tx, auth, 'item', body.attributes, undefined); const row = await tx.inventoryItem.create({
     data: {
+      attributes,
       tenantId: auth.tenantId,
       projectId: auth.projectId,
       name: body.name,
@@ -123,6 +128,9 @@ router.post("/items", requireProject, requireRoles("accountant", "admin"), valid
       reorderLevel: body.reorder_level,
       photoFileId: body.photo_file_id
     }
+  });
+    if (row.quantity) await tx.stockMovement.create({ data: { tenantId: auth.tenantId, projectId: auth.projectId, itemId: row.id, type: 'adjustment_increase', quantity: row.quantity, quantityAfter: row.quantity, referenceType: 'opening_stock', referenceId: row.id, reason: 'Opening stock', createdById: auth.userId } });
+    return row;
   });
 
   await writeAudit({
@@ -162,9 +170,10 @@ router.patch("/items/:id", requireProject, requireRoles("accountant", "admin"), 
     if (clash) throw conflict("An item with this SKU already exists");
   }
 
-  const item = await prisma.inventoryItem.update({
+  const item = await prisma.$transaction(async tx => { await lockSetup(tx, auth); const current = await tx.inventoryItem.findFirstOrThrow({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId } }); const attributes = await attributesFor(tx, auth, 'item', body.attributes, current.attributes); return tx.inventoryItem.update({
     where: { id },
     data: {
+      attributes,
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.sku !== undefined ? { sku: body.sku } : {}),
       ...(body.category_id !== undefined ? { categoryId: body.category_id } : {}),
@@ -175,7 +184,7 @@ router.patch("/items/:id", requireProject, requireRoles("accountant", "admin"), 
       ...(body.photo_file_id !== undefined ? { photoFileId: body.photo_file_id } : {}),
       ...(body.is_active !== undefined ? { isActive: body.is_active } : {})
     }
-  });
+  }); });
 
   await writeAudit({
     tenantId: auth.tenantId,

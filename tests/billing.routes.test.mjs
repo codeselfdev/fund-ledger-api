@@ -79,6 +79,11 @@ function mock(table) {
   };
 }
 before(async () => {
+  prisma.member.findMany = async () => [{ id: 'member' }];
+  prisma.businessConfiguration.findFirst = async () => null;
+  prisma.businessField.findMany = async () => [];
+  prisma.$queryRaw = async () => [];
+
   for (const [model, table] of Object.entries(models)) Object.assign(prisma[model], mock(table));
   prisma.tenant.findUnique = async () => ({ contact: { subscription: { status: 'trial', trial_ends_at: new Date(Date.now() + 86400000).toISOString() } } });
   prisma.$transaction = async fn => {

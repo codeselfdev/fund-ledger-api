@@ -23,6 +23,7 @@ export function createApp() {
   app.use(cors({ origin: env.corsOrigin === "*" ? true : env.corsOrigin }));
   app.use("/v1/webhooks/whatsapp", express.raw({ type: "application/json", limit: "256kb" }), whatsappBotWebhookRouter);
   app.use("/v1/members/import-fund", express.json({ limit: "8mb" }));
+  app.use("/v1/business-setup/imports", express.json({ limit: "8mb" }));
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ extended: true }));
   app.use(morgan(isProduction ? "combined" : "dev"));

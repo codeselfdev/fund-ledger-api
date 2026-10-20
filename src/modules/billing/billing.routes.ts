@@ -1,3 +1,4 @@
+import { taxPdfLines } from '../business-setup/pdf.js';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../core/prisma/client.js';
@@ -215,3 +216,16 @@ router.get('/overview', validateQuery(overviewSchema), asyncHandler(async (req, 
 router.get('/reports', validateQuery(rangeSchema), asyncHandler(async (req, res) => { const a = requireProjectContext(req), q = rangeSchema.parse(req.query); const from = q.from ?? `${(q.to ?? today()).slice(0, 7)}-01`, to = q.to ?? today(); if (from > to)
     throw badRequest('Date range is reversed'); return ok(res, await report(a, from, to)); }));
 export { router as billingRouter };
+
+router.get('/invoices/:id/invoice.pdf', asyncHandler(async (req, res) => {
+  const a = requireProjectContext(req), i = await invoice(prisma, a, req.params.id);
+  const project = await prisma.project.findFirstOrThrow({ where: { id: a.projectId, tenantId: a.tenantId }, include: { tenant: true } });
+  const rows = i.lines as { description: string; quantity: number; unit_price: number; line_total: number }[];
+  const buffer = await buildBillingPdf(`Invoice ${i.number}`, project.name, project.tenant.currency, (i.customerSnapshot as { name: string }).name, [
+    `Date: ${day(i.invoiceDate)} | Due: ${day(i.dueDate)} | Status: ${i.status}`,
+    ...rows.map(l => `${l.description}: ${l.quantity} x ${l.unit_price} = ${l.line_total}`),
+    ...taxPdfLines(i.taxSnapshot, i),
+    `Total: ${i.total} | Paid: ${i.paidAmount} | Outstanding: ${outstanding(i)}`, i.note ?? '',
+  ].filter(Boolean));
+  res.type('pdf').setHeader('Content-Disposition', 'inline; filename="invoice.pdf"'); return res.send(buffer);
+}));

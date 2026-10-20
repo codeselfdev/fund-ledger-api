@@ -157,3 +157,24 @@ Member profile: `GET /v1/members/:id/invitation` returns saved email, first nati
 ## Verification
 
 TypeScript builds, focused regression tests and `platform-admin.test.mjs` use synthetic fixtures. `platform-support.integration.test.mjs` is opt-in (`RUN_PLATFORM_INTEGRATION=true`) and refuses every database except localhost database `fundnesta_verify`. It verifies actual PostgreSQL transactions/constraints, quota triggers, late-added email invitation (mocked SMTP), support ownership/screenshots/replies, same-day repeated quota resets, export scoping, cleanup eligibility/stale tokens/shared identities and removal of every tenant-scoped model while preserving another tenant and its files. It never targets the deployment database. Production SMTP and R2 network delivery still require environment verification.
+
+
+## Platform notification broadcasts
+
+Apply `20261020010000_platform_broadcasts`, regenerate Prisma Client and restart the API and control room. Reuse Firebase Admin and the internal API key. This is a separate platform-wide queue; project notification campaigns retain their existing scope.
+
+| Method | Path | Result |
+| --- | --- | --- |
+| GET | `/notifications/audience` | `{devices, accounts, organizations, push_configured}` |
+| POST | `/notifications/preview` | `{title, body}` → audience counts, normalized `draft`, signed `preview_token`, `expires_at` |
+| POST | `/notifications` | `{draft, request_key: UUID, preview_token, expires_at}` → queued notification summary |
+| GET | `/notifications?offset=0` | `{notifications, next_offset}`; 30 summaries per page |
+| POST | `/notifications/:id/retry` | Requeue failed devices only; returns the notification summary |
+
+Writes require `X-Internal-Actor`; the authenticated admin proxy supplies it. Only the internal key is accepted. Titles have 3–65 characters and bodies 3–500 after trimming; extra draft fields are rejected. The signed review binds the operator, message and exact eligible user/device snapshot for 15 minutes. A stale or altered preview returns 409. Reusing an operator/request UUID with the same message returns the original summary, even if its preview has expired; changing the message with that UUID returns 409. Sends are limited to five requests per minute in addition to the internal route limit.
+
+Audience is all active accounts with nonempty registered device tokens in organizations not being deleted, regardless of role, project or subscription. One delivery per unique token prevents duplicate pushes for linked organization accounts. Every eligible account receives a project-independent inbox notification in the enqueue transaction. New registrations after enqueue are excluded. Push payloads contain only the public announcement and broadcast ID, without project routing. No device tokens or recipient IDs are returned to the browser. The outbox stores token hashes and recipient IDs, not raw tokens.
+
+The worker runs every 15 seconds, claims up to 50 devices using five-minute leases and rechecks active accounts, organization deletion and the token hash before delivery. Removed or replaced registrations are skipped. Invalid tokens are cleared and skipped. Transient failures retry with exponential backoff up to five attempts, then become failed. Stale final-attempt leases are finalized as failed. Manual retries reset failed rows and are audited; accepted deliveries are not requeued. Provider acceptance is not proof of display or reading, and a crash after provider acceptance can cause an at-least-once duplicate.
+
+Summary fields: `id`, `title`, `body`, `created_at`, `created_by`, `devices`, `accounts`, `organizations`, and `delivery: {pending, sent, failed, skipped}`. Operator audit records persist queue/retry actions and counts without recipient contact data. No production migration or real notification is performed by the tests.

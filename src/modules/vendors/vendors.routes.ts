@@ -1,3 +1,5 @@
+import { attributesFor, lockSetup } from '../business-setup/service.js';
+import { attributeSchema } from '../business-setup/validation.js';
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../../core/http/async-handler.js";
@@ -12,6 +14,7 @@ import { validateBody, validateParams } from "../../core/validation/validate.js"
 const router = Router();
 
 const createSchema = z.object({
+  attributes: attributeSchema,
   name: z.string().min(2).max(120),
   phone: z.string().min(6).max(32).optional(),
   email: z.string().email().optional(),
@@ -20,6 +23,7 @@ const createSchema = z.object({
 });
 
 const updateSchema = z.object({
+  attributes: attributeSchema,
   name: z.string().min(2).max(120).optional(),
   phone: z.string().min(6).max(32).nullable().optional(),
   email: z.string().email().nullable().optional(),
@@ -58,8 +62,9 @@ router.post("/", requireProject, requireRoles("accountant", "admin"), validateBo
   });
   if (existing) throw conflict("A vendor with this name already exists");
 
-  const row = await prisma.vendor.create({
+  const row = await prisma.$transaction(async tx => { await lockSetup(tx, auth); const attributes = await attributesFor(tx, auth, 'dealer', body.attributes, undefined); return tx.vendor.create({
     data: {
+      attributes,
       tenantId: auth.tenantId,
       projectId: auth.projectId,
       name: body.name,
@@ -68,7 +73,7 @@ router.post("/", requireProject, requireRoles("accountant", "admin"), validateBo
       address: body.address,
       notes: body.notes
     }
-  });
+  }); });
   return created(res, row);
 }));
 
@@ -89,9 +94,10 @@ router.patch("/:id", requireProject, requireRoles("accountant", "admin"), valida
     if (clash) throw conflict("A vendor with this name already exists");
   }
 
-  const row = await prisma.vendor.update({
+  const row = await prisma.$transaction(async tx => { await lockSetup(tx, auth); const current = await tx.vendor.findFirstOrThrow({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId } }); const attributes = await attributesFor(tx, auth, 'dealer', body.attributes, current.attributes); return tx.vendor.update({
     where: { id },
     data: {
+      attributes,
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.phone !== undefined ? { phone: body.phone } : {}),
       ...(body.email !== undefined ? { email: body.email } : {}),
@@ -99,7 +105,7 @@ router.patch("/:id", requireProject, requireRoles("accountant", "admin"), valida
       ...(body.notes !== undefined ? { notes: body.notes } : {}),
       ...(body.is_active !== undefined ? { isActive: body.is_active } : {})
     }
-  });
+  }); });
   return ok(res, row);
 }));
 

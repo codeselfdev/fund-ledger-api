@@ -1,3 +1,6 @@
+import { buildBillingPdf } from '../billing/billing.pdf.js';
+import { taxPdfLines } from '../business-setup/pdf.js';
+import { documentTax, postTax, lockSetup } from '../business-setup/service.js';
 import { customersRouter } from '../customers/customers.routes.js';
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
@@ -79,11 +82,14 @@ router.post('/documents', write, validateBody(documentSchema), asyncHandler(asyn
         const customer = await tx.customer.findFirst({ where: { id: b.customer_id, ...scoped(auth), isActive: true } });
         if (!customer)
             throw notFound('Active customer not found');
-        const totals = calculate(b.lines, b.discount, b.tax);
+        await lockSetup(tx, auth);
+        const taxSnapshot = await documentTax(tx, auth, b.kind === 'order' ? 'sale' : b.kind, b.lines.map(l => Math.round(l.quantity * l.unit_price)), b.discount, b.tax_selection, b.tax, undefined);
+        const legacy = calculate(b.lines, b.discount, b.tax);
+        const totals = taxSnapshot ? { ...legacy, subtotal: taxSnapshot.subtotal + b.discount, total: taxSnapshot.payable } : legacy;
         if (b.due_date && b.due_date < b.document_date)
             throw badRequest('Due date must be on or after document date');
         await validateItems(tx, auth, b.lines);
-        const d = await tx.businessDocument.create({ data: { ...scoped(auth), customerId: customer.id, customerSnapshot: json({ name: customer.name, mobile: customer.mobile, email: customer.email, address: customer.address }), kind: b.kind, number: `${b.kind === 'quotation' ? 'QUO' : b.kind === 'order' ? 'ORD' : 'INV'}-${randomUUID().slice(0, 8).toUpperCase()}`, status: 'draft', lines: totals.lines, subtotal: totals.subtotal, discount: b.discount, tax: b.tax, total: totals.total, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: b.note, workflow: settings, events: [event('draft', auth.userId)], requestKey: b.request_key, createdById: auth.userId } });
+        const d = await tx.businessDocument.create({ data: { ...scoped(auth), customerId: customer.id, customerSnapshot: json({ name: customer.name, mobile: customer.mobile, email: customer.email, address: customer.address, attributes: customer.attributes }), kind: b.kind, number: `${b.kind === 'quotation' ? 'QUO' : b.kind === 'order' ? 'ORD' : 'INV'}-${randomUUID().slice(0, 8).toUpperCase()}`, status: 'draft', lines: totals.lines, subtotal: totals.subtotal, discount: b.discount, tax: taxSnapshot?.tax ?? b.tax, taxSnapshot: taxSnapshot ? json(taxSnapshot) : Prisma.DbNull, total: totals.total, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: b.note, workflow: settings, events: [event('draft', auth.userId)], requestKey: b.request_key, createdById: auth.userId } });
         await audit(tx, auth, d.id, 'accounting.document.created', { number: d.number, total: d.total, kind: d.kind });
         return d;
     });
@@ -105,8 +111,11 @@ router.patch('/documents/:id', write, validateBody(editSchema), asyncHandler(asy
         if (b.due_date && b.due_date < b.document_date)
             throw badRequest('Due date must be on or after document date');
         await validateItems(tx, auth, b.lines);
-        const totals = calculate(b.lines, b.discount, b.tax);
-        const row = await tx.businessDocument.update({ where: { id: old.id }, data: { customerId: customer.id, customerSnapshot: json({ name: customer.name, mobile: customer.mobile, email: customer.email, address: customer.address }), lines: totals.lines, subtotal: totals.subtotal, total: totals.total, discount: b.discount, tax: b.tax, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: b.note ?? null, events: json([...(old.events as unknown[]), event('draft_updated', auth.userId)]) } });
+        await lockSetup(tx, auth);
+        const taxSnapshot = await documentTax(tx, auth, old.kind === 'quotation' ? 'quotation' : 'sale', b.lines.map(l => Math.round(l.quantity * l.unit_price)), b.discount, b.tax_selection, b.tax, old.taxSnapshot ?? { legacy: true, tax: old.tax });
+        const legacy = calculate(b.lines, b.discount, b.tax);
+        const totals = taxSnapshot ? { ...legacy, subtotal: taxSnapshot.subtotal + b.discount, total: taxSnapshot.payable } : legacy;
+        const row = await tx.businessDocument.update({ where: { id: old.id }, data: { customerId: customer.id, customerSnapshot: json({ name: customer.name, mobile: customer.mobile, email: customer.email, address: customer.address, attributes: customer.attributes }), lines: totals.lines, subtotal: totals.subtotal, total: totals.total, discount: b.discount, tax: taxSnapshot?.tax ?? b.tax, taxSnapshot: taxSnapshot ? json(taxSnapshot) : Prisma.DbNull, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: b.note ?? null, events: json([...(old.events as unknown[]), event('draft_updated', auth.userId)]) } });
         await audit(tx, auth, row.id, 'accounting.document.updated', { total: row.total });
         return row;
     });
@@ -123,6 +132,7 @@ router.post('/documents/:id/status', write, validateBody(actionSchema), asyncHan
         const status = nextStatus(kindSchema.parse(d.kind), d.status, b.action, d.paidAmount);
         if (d.kind === 'sale' && (b.action === 'issue' || b.action === 'cancel' && d.status === 'issued'))
             await changeStock(tx, auth, d, b.action === 'issue' ? -1 : 1);
+        if (d.kind === 'sale' && (b.action === 'issue' || b.action === 'cancel' && d.status === 'issued')) await postTax(tx, auth, 'business_sale', d.id, d.taxSnapshot, 'output', b.action === 'cancel');
         const row = await tx.businessDocument.update({ where: { id: d.id }, data: { status, events: json([...(d.events as unknown[]), event(status, auth.userId)]) } });
         await audit(tx, auth, d.id, `accounting.document.${b.action}`, { before: d.status, status });
         return row;
@@ -148,7 +158,7 @@ router.post('/documents/:id/convert', write, validateBody(convertSchema), asyncH
         conversion(kindSchema.parse(source.kind), source.status, b.kind, workflow(source.workflow));
         if (b.due_date && b.due_date < b.document_date)
             throw badRequest('Due date must be on or after document date');
-        const d = await tx.businessDocument.create({ data: { ...scoped(auth), customerId: source.customerId, customerSnapshot: json(source.customerSnapshot), kind: b.kind, number: `${b.kind === 'order' ? 'ORD' : 'INV'}-${randomUUID().slice(0, 8).toUpperCase()}`, status: 'draft', lines: json(source.lines), subtotal: source.subtotal, discount: source.discount, tax: source.tax, total: source.total, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: source.note, workflow: json(source.workflow), events: [event('draft', auth.userId)], sourceId: source.id, requestKey: b.request_key, createdById: auth.userId } });
+        const d = await tx.businessDocument.create({ data: { ...scoped(auth), customerId: source.customerId, customerSnapshot: json(source.customerSnapshot), kind: b.kind, number: `${b.kind === 'order' ? 'ORD' : 'INV'}-${randomUUID().slice(0, 8).toUpperCase()}`, status: 'draft', lines: json(source.lines), subtotal: source.subtotal, discount: source.discount, tax: source.tax, taxSnapshot: source.taxSnapshot ? json(source.taxSnapshot) : Prisma.DbNull, total: source.total, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: source.note, workflow: json(source.workflow), events: [event('draft', auth.userId)], sourceId: source.id, requestKey: b.request_key, createdById: auth.userId } });
         await tx.businessDocument.update({ where: { id: source.id }, data: { status: source.kind === 'quotation' ? 'converted' : 'completed', events: json([...(source.events as unknown[]), event(source.kind === 'quotation' ? 'converted' : 'completed', auth.userId)]) } });
         await audit(tx, auth, d.id, 'accounting.document.converted', { source_id: source.id, kind: b.kind });
         return d;
@@ -217,4 +227,16 @@ async function changeStock(tx: Prisma.TransactionClient, auth: ReturnType<typeof
         await tx.stockMovement.create({ data: { ...scoped(auth), itemId: id, type: direction < 0 ? 'sale' : 'adjustment_increase', quantity: qty * direction, quantityAfter: item.quantity + qty * direction, referenceType: 'business_sale', referenceId: d.id, reason: direction < 0 ? 'Invoice issued' : 'Unpaid invoice cancelled', createdById: auth.userId } });
     }
 }
+router.get('/documents/:id/document.pdf', asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req);
+  const d = await prisma.businessDocument.findFirst({ where: { id: req.params.id, ...scoped(auth) } });
+  if (!d) throw notFound('Document not found');
+  const p = await prisma.project.findFirstOrThrow({ where: { id: auth.projectId, tenantId: auth.tenantId }, include: { tenant: true } });
+  const lines = d.lines as { description: string; quantity: number; unit_price: number; line_total: number }[];
+  const buffer = await buildBillingPdf(`${d.kind === 'quotation' ? 'Quotation' : d.kind === 'order' ? 'Order' : 'Invoice'} ${d.number}`, p.name, p.tenant.currency, (d.customerSnapshot as { name: string }).name, [
+    `Date: ${d.documentDate.toISOString().slice(0, 10)} | Status: ${d.status}`, ...(d.dueDate ? [`Due / expiry: ${d.dueDate.toISOString().slice(0, 10)}`] : []),
+    ...lines.map(l => `${l.description}: ${l.quantity} x ${l.unit_price} = ${l.line_total}`), ...taxPdfLines(d.taxSnapshot, d), d.note ?? '',
+  ].filter(Boolean));
+  res.type('pdf').setHeader('Content-Disposition', 'inline; filename="business-document.pdf"'); return res.send(buffer);
+}));
 export { router as accountingRouter };

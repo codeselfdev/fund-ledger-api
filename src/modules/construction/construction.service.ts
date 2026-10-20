@@ -1,3 +1,4 @@
+import { postTax } from '../business-setup/service.js';
 import { Prisma } from '@prisma/client';
 import type { z } from 'zod';
 import { financialTransaction } from '../accounting/transaction.js';
@@ -183,6 +184,7 @@ export async function receiveSupplierPurchase(tx: Tx, a: ConstructionScope, bill
         const updated = await tx.inventoryItem.update({ where: { id: item.id }, data: { quantity: { increment: line.quantity }, costPrice: line.unitCost } });
         await tx.stockMovement.create({ data: { ...scope(a), itemId: item.id, type: 'purchase_received', quantity: line.quantity, quantityAfter: updated.quantity, referenceType: 'construction_supplier_bill', referenceId: bill.id, createdById: a.userId } });
     }
+    await postTax(tx, a, 'purchase', purchase.id, purchase.taxSnapshot, 'input');
     await tx.purchase.update({ where: { id: purchase.id }, data: { status: 'received', accountId: null, receivedById: a.userId, receivedAt: new Date() } });
     const row = await tx.constructionSupplierBill.update({ where: { id: bill.id }, data: { receivedAt: new Date() } });
     await audit(tx, a, 'purchase.received', 'construction_supplier_bill', row.id, row);

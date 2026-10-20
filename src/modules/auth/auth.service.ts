@@ -58,55 +58,39 @@ export async function createSessionToken(input: {
   return { token, sessionId: session.id };
 }
 
-export async function createOtp(mobile: string) {
+export async function createOtp(contact: string) {
   const code = String(randomInt(100000, 1000000));
-  await prisma.otpCode.create({
-    data: {
-      mobile,
-      codeHash: await bcrypt.hash(code, 10),
-      expiresAt: new Date(Date.now() + 5 * 60 * 1000)
-    }
+  const codeHash = await bcrypt.hash(code, 10);
+  await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`otp:${contact}`}, 0))`;
+    await tx.otpCode.updateMany({ where: { mobile: contact, consumedAt: null }, data: { consumedAt: new Date() } });
+    await tx.otpCode.create({ data: { mobile: contact, codeHash, expiresAt: new Date(Date.now() + 5 * 60 * 1000) } });
   });
   return code;
 }
 
-export async function issueOtp(mobile: string, email?: string | null) {
-  const code = await createOtp(mobile);
-
+export async function issueOtp(contact: string, email?: string | null) {
+  const code = await createOtp(contact);
   let emailed = false;
   if (email) {
-    try {
-      emailed = await sendOtpEmail(email, code);
-    } catch (err) {
-      console.error("[mailer] failed to send OTP email", err);
-    }
+    try { emailed = await sendOtpEmail(email, code); }
+    catch (err) { console.error("[mailer] failed to send OTP email", err); }
   }
-
   return { code, emailed };
 }
 
-export async function verifyOtp(mobile: string, code?: string) {
-  if (!code && process.env.NODE_ENV !== "production") return true;
-
+export async function verifyOtp(contact: string, code?: string) {
+  if (!code || !/^\d{6}$/.test(code)) return false;
+  // Email challenges use an exact namespaced key, never phone suffix matching.
   const otp = await prisma.otpCode.findFirst({
-    where: {
-      mobile: { in: mobileLookupValues(mobile) },
-      consumedAt: null,
-      expiresAt: { gt: new Date() }
-    },
-    orderBy: { createdAt: "desc" }
+    where: { mobile: contact.startsWith("email:") ? contact : { in: mobileLookupValues(contact) },
+      consumedAt: null, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" }
   });
-
-  if (!otp || !code) return false;
-  const valid = await bcrypt.compare(code, otp.codeHash);
-  if (!valid) return false;
-
-  await prisma.otpCode.update({
-    where: { id: otp.id },
-    data: { consumedAt: new Date() }
+  if (!otp || !await bcrypt.compare(code, otp.codeHash)) return false;
+  const claimed = await prisma.otpCode.updateMany({
+    where: { id: otp.id, consumedAt: null, expiresAt: { gt: new Date() } }, data: { consumedAt: new Date() }
   });
-
-  return true;
+  return claimed.count === 1;
 }
 
 export function mobileLookupValues(input: string): string[] {
@@ -126,14 +110,17 @@ export function mobileLookupValues(input: string): string[] {
   return [...values];
 }
 
+export function canonicalMobile(input: string): string {
+  const trimmed = input.trim(), digits = trimmed.replace(/\D/g, "");
+  if (!digits) return trimmed;
+  if (trimmed.startsWith("+")) return `+${digits}`;
+  if (digits.startsWith("00")) return `+${digits.slice(2)}`;
+  if (/^01\d{9}$/.test(digits)) return `+880${digits.slice(1)}`;
+  if (/^1\d{9}$/.test(digits)) return `+880${digits}`;
+  return `+${digits}`;
+}
 export function mobilesEquivalent(left: string, right: string): boolean {
-  const a = left.replace(/\D/g, "");
-  const b = right.replace(/\D/g, "");
-  if (!a || !b) return false;
-  if (a === b) return true;
-  const a10 = a.slice(-10);
-  const b10 = b.slice(-10);
-  return a10.length === 10 && a10 === b10;
+  return Boolean(left.replace(/\D/g, "")) && canonicalMobile(left) === canonicalMobile(right);
 }
 
 export async function resolveFirebasePhone(idToken: string): Promise<string> {

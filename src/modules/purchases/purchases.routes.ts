@@ -1,3 +1,5 @@
+import { documentTax, postTax, json, lockSetup } from '../business-setup/service.js';
+import { taxSelectionSchema } from '../business-setup/validation.js';
 import { financialTransaction } from "../accounting/transaction.js";
 import { Router } from "express";
 import { z } from "zod";
@@ -25,6 +27,7 @@ const createPurchaseSchema = z.object({
   vendor_id: z.string().min(1).optional(),
   account_id: z.string().min(1).optional(),
   doc_file_id: z.string().optional(),
+  tax_selection: taxSelectionSchema.optional(),
   lines: z.array(purchaseLineSchema).min(1)
 });
 
@@ -61,9 +64,12 @@ router.post("/", requireProject, requireRoles("accountant", "admin"), validateBo
     if (!account) throw notFound("Account not found");
   }
 
-  const totalAmount = body.lines.reduce((sum, line) => sum + line.quantity * line.unit_cost, 0);
+
 
   const purchase = await prisma.$transaction(async (tx) => {
+    await lockSetup(tx, auth);
+    const taxSnapshot = await documentTax(tx, auth, 'purchase', body.lines.map(line => line.quantity * line.unit_cost), 0, body.tax_selection);
+    const totalAmount = taxSnapshot?.payable ?? body.lines.map(line => line.quantity * line.unit_cost).reduce((a, b) => a + b, 0);
     const createdPurchase = await tx.purchase.create({
       data: {
         tenantId: auth.tenantId,
@@ -72,6 +78,7 @@ router.post("/", requireProject, requireRoles("accountant", "admin"), validateBo
         accountId: body.account_id,
         docFileId: body.doc_file_id,
         totalAmount,
+        taxSnapshot: taxSnapshot ? json(taxSnapshot) : undefined,
         status: "ordered",
         createdById: auth.userId
       }
@@ -211,6 +218,7 @@ router.post("/:id/receive", requireProject, requireRoles("accountant", "admin"),
       }
     });
 
+    await postTax(tx, auth, 'purchase', id, before.taxSnapshot, 'input');
     return purchase;
   });
 

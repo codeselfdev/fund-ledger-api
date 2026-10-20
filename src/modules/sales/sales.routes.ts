@@ -1,3 +1,5 @@
+import { documentTax, postTax, json, lockSetup } from '../business-setup/service.js';
+import { taxSelectionSchema } from '../business-setup/validation.js';
 import { Router } from "express";
 import { z } from "zod";
 import { SaleStatus } from "@prisma/client";
@@ -23,6 +25,7 @@ const saleLineSchema = z.object({
 const createSaleSchema = z.object({
   account_id: z.string().min(1),
   customer_name: z.string().max(120).optional(),
+  tax_selection: taxSelectionSchema.optional(),
   lines: z.array(saleLineSchema).min(1)
 });
 
@@ -59,9 +62,12 @@ router.post("/", requireProject, requireRoles("cashier", "accountant", "admin"),
     const unitPrice = line.unit_price ?? item.sellPrice;
     return { item, quantity: line.quantity, unitPrice, lineTotal: line.quantity * unitPrice };
   });
-  const totalAmount = resolvedLines.reduce((sum, line) => sum + line.lineTotal, 0);
+
 
   const result = await prisma.$transaction(async (tx) => {
+    await lockSetup(tx, auth);
+    const taxSnapshot = await documentTax(tx, auth, 'sale', resolvedLines.map(line => line.lineTotal), 0, body.tax_selection);
+    const totalAmount = taxSnapshot?.payable ?? resolvedLines.map(line => line.lineTotal).reduce((a, b) => a + b, 0);
     const sale = await tx.sale.create({
       data: {
         tenantId: auth.tenantId,
@@ -69,6 +75,7 @@ router.post("/", requireProject, requireRoles("cashier", "accountant", "admin"),
         accountId: account.id,
         customerName: body.customer_name,
         totalAmount,
+        taxSnapshot: taxSnapshot ? json(taxSnapshot) : undefined,
         status: "completed",
         soldById: auth.userId
       }
@@ -87,10 +94,12 @@ router.post("/", requireProject, requireRoles("cashier", "accountant", "admin"),
     });
 
     for (const line of resolvedLines) {
-      const item = await tx.inventoryItem.update({
-        where: { id: line.item.id },
+      const changed = await tx.inventoryItem.updateMany({
+        where: { id: line.item.id, tenantId: auth.tenantId, projectId: auth.projectId, quantity: { gte: line.quantity } },
         data: { quantity: { decrement: line.quantity } }
       });
+      if (!changed.count) throw badRequest(`Insufficient stock for "${line.item.name}"`);
+      const item = await tx.inventoryItem.findFirstOrThrow({ where: { id: line.item.id, tenantId: auth.tenantId, projectId: auth.projectId } });
 
       await tx.stockMovement.create({
         data: {
@@ -127,6 +136,7 @@ router.post("/", requireProject, requireRoles("cashier", "accountant", "admin"),
       }
     });
 
+    await postTax(tx, auth, 'sale', sale.id, taxSnapshot, 'output');
     return sale;
   });
 
@@ -147,7 +157,7 @@ router.post("/", requireProject, requireRoles("cashier", "accountant", "admin"),
     roles: ["accountant", "auditor"],
     type: "sale.created",
     title: "Sale recorded",
-    body: `A sale of ${totalAmount} was recorded.`,
+    body: `A sale of ${result.totalAmount} was recorded.`,
     entityType: "sale",
     entityId: result.id
   });
@@ -204,6 +214,9 @@ router.post("/:id/cancel", requireProject, requireRoles("accountant", "admin"), 
   }
 
   const result = await prisma.$transaction(async (tx) => {
+    await lockSetup(tx, auth);
+    const current = await tx.sale.findFirst({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId, status: 'completed' } });
+    if (!current) throw badRequest('Only completed sales can be cancelled');
     const sale = await tx.sale.update({
       where: { id },
       data: { status: "cancelled", cancelledById: auth.userId, cancelledAt: new Date() }
@@ -231,10 +244,12 @@ router.post("/:id/cancel", requireProject, requireRoles("accountant", "admin"), 
       });
     }
 
-    const updatedAccount = await tx.account.update({
-      where: { id: account.id },
+    const debited = await tx.account.updateMany({
+      where: { id: account.id, tenantId: auth.tenantId, projectId: auth.projectId, balance: { gte: before.totalAmount } },
       data: { balance: { decrement: before.totalAmount } }
     });
+    if (!debited.count) throw badRequest('Account has insufficient balance to reverse this sale');
+    const updatedAccount = await tx.account.findFirstOrThrow({ where: { id: account.id, tenantId: auth.tenantId, projectId: auth.projectId } });
 
     await tx.accountTransaction.create({
       data: {
@@ -251,6 +266,7 @@ router.post("/:id/cancel", requireProject, requireRoles("accountant", "admin"), 
       }
     });
 
+    await postTax(tx, auth, 'sale', id, before.taxSnapshot, 'output', true);
     return sale;
   });
 

@@ -91,6 +91,10 @@ function mock(table) {
   };
 }
 before(async () => {
+  prisma.businessConfiguration.findFirst = async () => null;
+  prisma.businessField.findMany = async () => [];
+  prisma.$queryRaw = async () => [];
+
   for (const [model, table] of Object.entries(models)) Object.assign(prisma[model], mock(table));
   prisma.$transaction = async fn => {
     const previous = queue; let release; queue = new Promise(r => release = r); await previous;

@@ -17,10 +17,19 @@ import { customerDetails } from "./customers.service.js";
 import { platformAlerts, retryPlatformAlert } from "./alerts.service.js";
 import { deletionRequests, deletionRequest, reviewDeletionRequest, deletionPreview, executeAccountDeletion } from './account-deletion.service.js';
 import { billingRequests, billingRequestCounts } from './billing-requests.service.js';
+import { broadcastDraftSchema, broadcastSendSchema, platformBroadcasts } from './platform-broadcasts.service.js';
 const router = Router();
 router.use(requireInternalApiKey, rateLimit({ windowMs: 60000, limit: 120, standardHeaders: true, legacyHeaders: false }));
 const page = z.object({ offset: z.coerce.number().int().min(0).max(100000).default(0), search: z.string().trim().max(120).optional() });
 router.use("/support", buildSupportRouter(true));
+router.get('/notifications/audience', asyncHandler(async (_req, res) => ok(res, await platformBroadcasts.reach())));
+router.post('/notifications/preview', asyncHandler(async (req, res) => ok(res, await platformBroadcasts.preview(internalActor(req), broadcastDraftSchema.parse(req.body)))));
+router.post('/notifications', rateLimit({ windowMs: 60000, limit: 5 }), asyncHandler(async (req, res) => ok(res, await platformBroadcasts.send(internalActor(req), broadcastSendSchema.parse(req.body)))));
+router.get('/notifications', asyncHandler(async (req, res) => {
+    const q = page.parse(req.query);
+    return ok(res, await platformBroadcasts.history(q.offset));
+}));
+router.post('/notifications/:id/retry', asyncHandler(async (req, res) => ok(res, await platformBroadcasts.retry(internalActor(req), String(req.params.id)))));
 router.get('/account-deletion-requests', asyncHandler(async (req, res) => {
     const q = z.object({ offset: z.coerce.number().int().min(0).max(100000).default(0), status: z.enum(['pending', 'in_review', 'needs_information', 'processing', 'processing_failed', 'completed', 'rejected']).optional() }).parse(req.query);
     return ok(res, await deletionRequests(q.offset, q.status));

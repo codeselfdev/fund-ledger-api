@@ -19,11 +19,13 @@ beforeEach(() => {
   nodemailer.createTransport = () => ({ sendMail: async message => { if (mailFails) throw Error('test mail failure'); emails.push(message); } });
   prisma.$transaction = async fn => { const snapshot = new Map(usage); try { return await fn(prisma); } catch (error) { usage = snapshot; throw error; } };
   prisma.$queryRaw = async (_strings, scope, day, limit) => {
+    if (_strings.join("").includes("pg_advisory_xact_lock")) return [];
     const key = scope + ':' + day, count = usage.get(key) ?? 0;
     if (count >= limit) return [];
     usage.set(key, count + 1); return [{ count: count + 1 }];
   };
   prisma.smsDailyUsage.findMany = async ({where}) => where.scope.in.map(scope => ({ scope, count: usage.get(scope + ':' + where.day.toISOString().slice(0,10)) ?? 0 }));
+  prisma.otpCode.updateMany = async () => ({count:0});
   prisma.otpCode.create = async ({data}) => { otpRows.push(data); return data; };
   prisma.user.update = async ({where,data}) => { updates.push({where,data}); return { id:where.id,...data }; };
   prisma.user.updateMany = async args => { updates.push(args); return {count:1}; };

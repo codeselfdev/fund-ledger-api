@@ -1,3 +1,5 @@
+import { assertSignupMobileAvailable, signupMobile } from "../auth/signup-contact.js";
+import { readSignupIdentity } from "../auth/signup-identity.js";
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
@@ -46,6 +48,7 @@ const signupSchema = z.object({
   owner_name: z.string().min(2).max(120).optional(),
   owner_mobile: z.string().min(6).max(32).optional(),
   owner_email: z.string().email().optional(),
+  signup_token: z.string().min(20).optional(),
   id_token: z.string().min(20).optional()
 });
 
@@ -159,9 +162,17 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
   let ownerMobile = body.owner_mobile;
   let ownerName = body.owner_name;
   let ownerEmail = body.owner_email?.trim().toLowerCase();
-  let verifiedGoogleEmail: string | undefined;
 
-  if (body.id_token) {
+  if (body.signup_token) {
+    const identity = readSignupIdentity(body.signup_token);
+    if (identity.provider === "email") {
+      ownerEmail = identity.email;
+    } else {
+      ownerEmail = undefined;
+      if (body.owner_mobile && !mobilesEquivalent(identity.mobile, body.owner_mobile)) throw badRequest("Mobile does not match your verified number.");
+      ownerMobile = identity.mobile;
+    }
+  } else if (body.id_token) {
     let identity;
     try {
       identity = await resolveFirebaseIdentity(body.id_token);
@@ -172,7 +183,6 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
     if (identity.provider === "google") {
       if (!identity.email || identity.emailVerified !== true) throw badRequest("Google email is not verified");
       ownerEmail = identity.email;
-      verifiedGoogleEmail = identity.email;
       ownerName = body.owner_name?.trim() || identity.name;
       ownerMobile = body.owner_mobile?.trim();
       if (!ownerMobile || !/^\+?\d{7,15}$/.test(ownerMobile)) throw badRequest("Enter a valid owner mobile number.");
@@ -197,12 +207,9 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
       throw conflict("This email already has a FundLedger login. Sign in instead.");
     }
   }
-  if (ownerMobile && !verifiedGoogleEmail) {
-    const existingMobile = await findActiveUsersByMobile(ownerMobile);
-    if (existingMobile.length > 0) {
-      throw conflict("This mobile already has a FundLedger login. Sign in instead.");
-    }
-  }
+  await assertSignupMobileAvailable(ownerMobile);
+  ownerMobile = signupMobile(ownerMobile);
+  if (!body.id_token && !body.signup_token) throw badRequest("Verify your email or mobile before creating an account.");
 
   const slug = body.slug ?? slugifyOrgName(body.org_name);
 
@@ -219,7 +226,6 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
       adminName: ownerName,
       adminMobile: ownerMobile,
       adminEmail: ownerEmail,
-      verifiedGoogleEmail,
       source: "self_signup"
     });
   } catch (error) {

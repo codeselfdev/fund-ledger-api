@@ -1,3 +1,4 @@
+import { taxSelectionSchema } from '../business-setup/validation.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { BillingInvoice } from '@prisma/client';
@@ -32,7 +33,7 @@ export const planSchema = z.object({
 });
 export const unitSchema = z.object({ name: z.string().trim().min(1).max(120), kind: z.enum(['flat', 'shop', 'connection', 'property', 'service']), note: z.string().max(1000).optional(), is_active: z.boolean().default(true) }).strict();
 export const assignmentSchema = z.object({ customer_id: id, plan_id: id, unit_id: id.optional(), label: z.string().trim().min(1).max(150), start_date: dateSchema, end_date: dateSchema.optional() }).strict().refine(p => !p.end_date || p.end_date >= p.start_date, 'End date must follow start date');
-export const invoiceSchema = z.object({ customer_id: id, invoice_date: dateSchema, due_date: dateSchema, lines: z.array(lineSchema.omit({ item_id: true })).min(1).max(100), discount: money.default(0), tax: money.default(0), note: z.string().max(1000).optional(), request_key: requestKey }).strict().refine(p => p.due_date >= p.invoice_date, 'Due date must follow invoice date');
+export const invoiceSchema = z.object({ tax_selection: taxSelectionSchema.optional(), customer_id: id, invoice_date: dateSchema, due_date: dateSchema, lines: z.array(lineSchema.omit({ item_id: true })).min(1).max(100), discount: money.default(0), tax: money.default(0), note: z.string().max(1000).optional(), request_key: requestKey }).strict().refine(p => p.due_date >= p.invoice_date, 'Due date must follow invoice date');
 export const allocationSchema = z.object({ invoice_id: id, amount: money.refine(v => v > 0) }).strict();
 export const paymentSchema = z.object({ customer_id: id, account_id: id, amount: money.refine(v => v > 0), method: z.enum(['cash', 'bank', 'bkash', 'nagad', 'card', 'cheque']), payment_date: pastDateSchema, reference: z.string().max(200).optional(), allocations: z.array(allocationSchema).max(5000).optional(), request_key: requestKey }).strict();
 export const adjustmentSchema = z.object({ customer_id: id, invoice_id: id.optional(), payment_id: id.optional(), kind: z.enum(['credit_note', 'debit_note', 'waiver', 'write_off', 'cancel', 'refund']), amount: money.refine(v => v > 0).optional(), reason: z.string().trim().min(3).max(1000), request_key: requestKey }).strict().superRefine((v, ctx) => {

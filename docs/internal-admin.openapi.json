@@ -979,6 +979,213 @@
           }
         }
       }
+    },
+    "/notifications/audience": {
+      "get": {
+        "summary": "Count registered push devices across all organizations",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success; see INTERNAL_ADMIN_API.md for response fields"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal API key"
+          },
+          "409": {
+            "description": "Stale preview or conflicting idempotency key"
+          },
+          "503": {
+            "description": "Push or internal API not configured"
+          }
+        }
+      }
+    },
+    "/notifications/preview": {
+      "post": {
+        "summary": "Preview a platform announcement without sending",
+        "parameters": [
+          {
+            "name": "X-Internal-Actor",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success; see INTERNAL_ADMIN_API.md for response fields"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal API key"
+          },
+          "409": {
+            "description": "Stale preview or conflicting idempotency key"
+          },
+          "503": {
+            "description": "Push or internal API not configured"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BroadcastDraft"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "summary": "Paginated broadcast history and delivery counts",
+        "parameters": [
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success; see INTERNAL_ADMIN_API.md for response fields"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal API key"
+          },
+          "409": {
+            "description": "Stale preview or conflicting idempotency key"
+          },
+          "503": {
+            "description": "Push or internal API not configured"
+          }
+        }
+      },
+      "post": {
+        "summary": "Queue a reviewed announcement for all registered devices",
+        "parameters": [
+          {
+            "name": "X-Internal-Actor",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success; see INTERNAL_ADMIN_API.md for response fields"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal API key"
+          },
+          "409": {
+            "description": "Stale preview or conflicting idempotency key"
+          },
+          "503": {
+            "description": "Push or internal API not configured"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "draft",
+                  "request_key",
+                  "preview_token",
+                  "expires_at"
+                ],
+                "properties": {
+                  "draft": {
+                    "$ref": "#/components/schemas/BroadcastDraft"
+                  },
+                  "request_key": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "preview_token": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64
+                  },
+                  "expires_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications/{id}/retry": {
+      "post": {
+        "summary": "Retry failed devices without resending accepted deliveries",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Internal-Actor",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success; see INTERNAL_ADMIN_API.md for response fields"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Invalid internal API key"
+          },
+          "409": {
+            "description": "Stale preview or conflicting idempotency key"
+          },
+          "503": {
+            "description": "Push or internal API not configured"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1128,6 +1335,26 @@
           "data": {
             "type": "object",
             "additionalProperties": true
+          }
+        }
+      },
+      "BroadcastDraft": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "body"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 65
+          },
+          "body": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500
           }
         }
       }

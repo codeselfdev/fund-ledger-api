@@ -31,6 +31,11 @@ findFirst:async({where,include})=>decorated(name,db[name].find(r=>match(r,where)
  },update:async({where,data,include})=>{const r=db[name].find(r=>match(r,where));assert.ok(r);for(const[k,v]of Object.entries(data))if(v!==undefined)r[k]=v&&typeof v==='object'&&'increment'in v?r[k]+v.increment:copy(v);return decorated(name,r,include);},updateMany:async({where,data})=>{const rows=db[name].filter(r=>match(r,where));for(const r of rows)for(const[k,v]of Object.entries(data))if(v!==undefined)r[k]=v&&typeof v==='object'&&'increment'in v?r[k]+v.increment:copy(v);return {count:rows.length};}};}
 function token(role='admin',project='p'){const userId=`user-${role}`,id=randomUUID();const token=signAccessToken({userId,sessionId:id,tenantId:'t'});db.sessions.push({id,userId,tenantId:'t',activeProjectId:project,tokenHash:hashToken(token),revokedAt:null,expiresAt:new Date(Date.now()+60000),user:{id:userId,isActive:true,lastActiveAt:new Date()}});db.memberships.push({userId,tenantId:'t',projectId:project,role,isActive:true,memberId:role==='member'?'member':null});return token;}
 before(async()=>{
+  prisma.member.findMany = async () => [{ id: 'member' }];
+  prisma.businessConfiguration.findFirst = async () => null;
+  prisma.businessField.findMany = async () => [];
+  prisma.$queryRaw = async () => [];
+
  for(const[model,table]of Object.entries({project:'projects',customer:'customers',account:'accounts',businessDocument:'documents',businessPayment:'payments',inventoryItem:'inventory',accountTransaction:'transactions',activity:'activity',stockMovement:'stock',projectMembership:'memberships',incomeCategory:'categories'}))Object.assign(prisma[model],mockModel(table));
  prisma.session.findFirst=async({where})=>copy(db.sessions.find(r=>match(r,where))??null);prisma.onboardingProgress.findUnique=async()=>({incomeApprovalFlow:incomeFlow});
  prisma.$transaction=async(fn,options)=>{assert.equal(options.isolationLevel,'Serializable');const before=queue;let release;queue=new Promise(r=>release=r);await before;const snapshot=copy(db);try{if(retryConflict){retryConflict=false;throw new Prisma.PrismaClientKnownRequestError('retry',{code:'P2034',clientVersion:'test'});}return await fn(prisma);}catch(e){db=snapshot;throw e;}finally{release();}};
