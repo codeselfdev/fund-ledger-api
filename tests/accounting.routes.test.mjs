@@ -18,15 +18,15 @@ function compare(actual,op){if('not'in op)return actual!==op.not;if('equals'in o
 
 function match(row,where={}){return !!row&&Object.entries(where).every(([k,v])=>v===undefined||(k==='OR'?v.some(w=>match(row,w)):v instanceof Date?row[k]?.getTime()===v.getTime():v&&typeof v==='object'?(['gte','gt','lt','lte','in','equals','not'].some(key=>key in v)?compare(row[k],v):k==='project'?match(db.projects.find(p=>p.id===row.projectId),v):match(row[k],v)):row[k]===v));}
 
-function reset(){incomeFlow='accountant_only';nextId=0;failAudit=false;retryConflict=false;db={locations:[{id:'main',tenantId:'t',projectId:'p',name:'Main store',isDefault:true,isActive:true}],categories:[{id:'cat',tenantId:'t',projectId:'p',name:'Interest',isActive:true},{id:'foreign-cat',tenantId:'other',projectId:'foreign',name:'Private',isActive:true}],projects:[{id:'p',tenantId:'t',projectType:'accounting',isActive:true,commerceSettings:null},{id:'fund',tenantId:'t',projectType:'fund_shares',isActive:true},{id:'billing',tenantId:'t',projectType:'billing',isActive:true},{id:'foreign',tenantId:'other',projectType:'accounting',isActive:true}],customers:[{id:'c',tenantId:'t',projectId:'p',name:'Customer',isActive:true,mobile:null,email:null,address:null},{id:'foreign-c',tenantId:'other',projectId:'foreign',name:'Private',isActive:true}],accounts:[{id:'a',tenantId:'t',projectId:'p',name:'Cash',balance:0},{id:'fund-a',tenantId:'t',projectId:'fund',name:'Fund cash',balance:0},{id:'billing-a',tenantId:'t',projectId:'billing',name:'Billing cash',balance:0},{id:'foreign-a',tenantId:'other',projectId:'foreign',name:'Private cash',balance:0}],inventory:[{id:'i',tenantId:'t',projectId:'p',name:'Product',quantity:5,isActive:true}],documents:[],payments:[],transactions:[],activity:[],stock:[],sessions:[],memberships:[]};}
-function decorated(model,row,include){if(!row)return null;const r=copy(row);if(model==='documents'&&include){if(include.payments)r.payments=db.payments.filter(p=>p.documentId===row.id).map(copy);if(include.source)r.source=copy(db.documents.find(d=>d.id===row.sourceId)??null);if(include.next)r.next=copy(db.documents.find(d=>d.sourceId===row.id)??null);}if(model==='transactions'&&include?.account)r.account={name:db.accounts.find(a=>a.id===row.accountId)?.name};if(model==='transactions'&&include?.incomeCategory)r.incomeCategory=db.categories.find(c=>c.id===row.incomeCategoryId)??null;if(model==='transactions'&&include?.incomeCustomer)r.incomeCustomer=db.customers.find(c=>c.id===row.incomeCustomerId)??null;return r;}
+function reset(){incomeFlow='accountant_only';nextId=0;failAudit=false;retryConflict=false;db={tenants:[{id:'t',name:'Test Company',currency:'BDT',documentPrefix:'TST',documentPrefixRevision:0}],sequences:[],contacts:[{id:'person',tenantId:'t',projectId:'p',name:'Original buyer',designation:'Manager',mobile:'+8801700000001',email:'buyer@example.com',isActive:true}],contactLinks:[{tenantId:'t',projectId:'p',customerId:'c',contactPersonId:'person'}],locations:[{id:'main',tenantId:'t',projectId:'p',name:'Main store',isDefault:true,isActive:true}],categories:[{id:'cat',tenantId:'t',projectId:'p',name:'Interest',isActive:true},{id:'foreign-cat',tenantId:'other',projectId:'foreign',name:'Private',isActive:true}],projects:[{id:'p',tenantId:'t',projectType:'accounting',isActive:true,commerceSettings:null},{id:'fund',tenantId:'t',projectType:'fund_shares',isActive:true},{id:'billing',tenantId:'t',projectType:'billing',isActive:true},{id:'foreign',tenantId:'other',projectType:'accounting',isActive:true}],customers:[{id:'c',tenantId:'t',projectId:'p',name:'Customer',isActive:true,mobile:null,email:null,address:null},{id:'foreign-c',tenantId:'other',projectId:'foreign',name:'Private',isActive:true}],accounts:[{id:'a',tenantId:'t',projectId:'p',name:'Cash',balance:0},{id:'fund-a',tenantId:'t',projectId:'fund',name:'Fund cash',balance:0},{id:'billing-a',tenantId:'t',projectId:'billing',name:'Billing cash',balance:0},{id:'foreign-a',tenantId:'other',projectId:'foreign',name:'Private cash',balance:0}],inventory:[{id:'i',tenantId:'t',projectId:'p',name:'Product',quantity:5,isActive:true}],documents:[],payments:[],transactions:[],activity:[],stock:[],sessions:[],memberships:[]};}
+function decorated(model,row,include){if(!row)return null;const r=copy(row);if(model==='projects'&&include?.tenant)r.tenant=copy(db.tenants.find(t=>t.id===row.tenantId));if(model==='documents'&&include){if(include.payments)r.payments=db.payments.filter(p=>p.documentId===row.id).map(copy);if(include.source)r.source=copy(db.documents.find(d=>d.id===row.sourceId)??null);if(include.next)r.next=copy(db.documents.find(d=>d.sourceId===row.id)??null);}if(model==='transactions'&&include?.account)r.account={name:db.accounts.find(a=>a.id===row.accountId)?.name};if(model==='transactions'&&include?.incomeCategory)r.incomeCategory=db.categories.find(c=>c.id===row.incomeCategoryId)??null;if(model==='transactions'&&include?.incomeCustomer)r.incomeCustomer=db.customers.find(c=>c.id===row.incomeCustomerId)??null;return r;}
 function mockModel(name){return {
  aggregate:async({where})=>{const rows=db[name].filter(r=>match(r,where));return {_sum:{amount:rows.reduce((n,r)=>n+r.amount,0)},_count:rows.length};},
  groupBy:async({where,by})=>{const groups=new Map();for(const r of db[name].filter(r=>match(r,where))){const key=JSON.stringify(by.map(k=>r[k]??null));if(!groups.has(key))groups.set(key,{...Object.fromEntries(by.map(k=>[k,r[k]??null])),_sum:{amount:0,quantity:0},_count:0});const g=groups.get(key);g._sum.amount+=r.amount??0;g._sum.quantity+=r.quantity??0;g._count++;}return [...groups.values()];},
-findFirst:async({where,include})=>decorated(name,db[name].find(r=>match(r,where)),include),findFirstOrThrow:async({where})=>{const r=db[name].find(r=>match(r,where));assert.ok(r);return copy(r);},findMany:async({where,include,skip=0,take=100000}={})=>db[name].filter(r=>match(r,where)).slice(skip,skip+take).map(r=>decorated(name,r,include)),count:async({where})=>db[name].filter(r=>match(r,where)).length,create:async({data,include})=>{
+findFirst:async({where,include})=>decorated(name,db[name].find(r=>match(r,where)),include),findFirstOrThrow:async({where,include})=>{const r=db[name].find(r=>match(r,where));assert.ok(r);return decorated(name,r,include);},findMany:async({where,include,skip=0,take=100000}={})=>db[name].filter(r=>match(r,where)).slice(skip,skip+take).map(r=>decorated(name,r,include)),count:async({where})=>db[name].filter(r=>match(r,where)).length,create:async({data,include})=>{
  if(name==='activity'&&failAudit)throw new Error('Injected audit failure');
  if(data.requestKey&&db[name].some(r=>r.projectId===data.projectId&&r.requestKey===data.requestKey)||name==='documents'&&data.sourceId&&db[name].some(r=>r.sourceId===data.sourceId))throw new Prisma.PrismaClientKnownRequestError('unique',{code:'P2002',clientVersion:'test'});
- const defaults=name==='documents'?{paidAmount:0,dueDate:null,note:null,sourceId:null}:name==='transactions'?{incomeSource:null,incomeCategoryId:null,incomeCustomerId:null,occurredOn:null,description:null,requestKey:null}:name==='payments'?{reference:null}:['customers','categories'].includes(name)?{isActive:true,mobile:null,email:null,address:null}:{};
+ const defaults=name==='documents'?{paidAmount:0,dueDate:null,note:null,sourceId:null,revision:0,referrerId:null,referrerSnapshot:null}:name==='transactions'?{incomeSource:null,incomeCategoryId:null,incomeCustomerId:null,occurredOn:null,description:null,requestKey:null}:name==='payments'?{reference:null}:['customers','categories'].includes(name)?{isActive:true,mobile:null,email:null,address:null}:{};
  const r={id:`${name}-${++nextId}`,createdAt:new Date(),updatedAt:new Date(),...defaults,...Object.fromEntries(Object.entries(data).filter(([,v])=>v!==undefined))};db[name].push(r);return decorated(name,r,include);
  },update:async({where,data,include})=>{const r=db[name].find(r=>match(r,where));assert.ok(r);for(const[k,v]of Object.entries(data))if(v!==undefined)r[k]=v&&typeof v==='object'&&'increment'in v?r[k]+v.increment:copy(v);return decorated(name,r,include);},updateMany:async({where,data})=>{const rows=db[name].filter(r=>match(r,where));for(const r of rows)for(const[k,v]of Object.entries(data))if(v!==undefined)r[k]=v&&typeof v==='object'&&'increment'in v?r[k]+v.increment:copy(v);return {count:rows.length};}};}
 function token(role='admin',project='p'){const userId=`user-${role}`,id=randomUUID();const token=signAccessToken({userId,sessionId:id,tenantId:'t'});db.sessions.push({id,userId,tenantId:'t',activeProjectId:project,tokenHash:hashToken(token),revokedAt:null,expiresAt:new Date(Date.now()+60000),user:{id:userId,isActive:true,lastActiveAt:new Date()}});db.memberships.push({userId,tenantId:'t',projectId:project,role,isActive:true,memberId:role==='member'?'member':null});return token;}
@@ -35,8 +35,15 @@ before(async()=>{
   prisma.businessConfiguration.findFirst = async () => null;
   prisma.businessField.findMany = async () => [];
   prisma.$queryRaw = async () => [];
+  prisma.user.findFirst = async () => ({name:'Test administrator'});
+  prisma.documentNumberSequence.upsert = async ({where,create}) => {const key=where.tenantId_kind_period;let row=db.sequences.find(r=>match(r,key));if(row)row.lastValue++;else{row=copy(create);db.sequences.push(row);}return copy(row);};
 
- for(const[model,table]of Object.entries({inventoryLocation:'locations',project:'projects',customer:'customers',account:'accounts',businessDocument:'documents',businessPayment:'payments',inventoryItem:'inventory',accountTransaction:'transactions',activity:'activity',stockMovement:'stock',projectMembership:'memberships',incomeCategory:'categories'}))Object.assign(prisma[model],mockModel(table));
+  prisma.contactPerson.findFirst = async ({where}) => {
+    const {customerLinks,...fields}=where;
+    return copy(db.contacts.find(row=>match(row,fields)&&(!customerLinks||db.contactLinks.some(link=>link.contactPersonId===row.id&&match(link,customerLinks.some))))??null);
+  };
+
+ for(const[model,table]of Object.entries({tenant:'tenants',inventoryLocation:'locations',project:'projects',customer:'customers',account:'accounts',businessDocument:'documents',businessPayment:'payments',inventoryItem:'inventory',accountTransaction:'transactions',activity:'activity',stockMovement:'stock',projectMembership:'memberships',incomeCategory:'categories'}))Object.assign(prisma[model],mockModel(table));
  prisma.session.findFirst=async({where})=>copy(db.sessions.find(r=>match(r,where))??null);prisma.onboardingProgress.findUnique=async()=>({incomeApprovalFlow:incomeFlow});
  prisma.$transaction=async(fn,options)=>{assert.equal(options.isolationLevel,'Serializable');const before=queue;let release;queue=new Promise(r=>release=r);await before;const snapshot=copy(db);try{if(retryConflict){retryConflict=false;throw new Prisma.PrismaClientKnownRequestError('retry',{code:'P2034',clientVersion:'test'});}return await fn(prisma);}catch(e){db=snapshot;throw e;}finally{release();}};
  const app=express();app.use(express.json());app.use(authenticate);app.use('/accounting',accountingRouter);app.use('/incomes',incomesRouter);app.use('/customers',customersRouter);app.use(errorHandler);server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));base=`http://127.0.0.1:${server.address().port}`;
@@ -217,4 +224,76 @@ test('dashboard reports issued invoices, payments, and linked conversions withou
  const d=response.body.data;assert.equal(d.metrics.invoiced,1000);assert.equal(d.metrics.collected,400);assert.equal(d.pipeline.stages[0].conversionRate,100);assert.equal(d.pipeline.stages[1].conversionRate,100);
  assert.ok(d.activity.paid.some(row=>row.kind==='payment'));assert.ok(d.activity.unpaid.some(row=>row.documentId===sale.id));
  assert.ok(d.activity.all.every(row=>!row.id.includes('foreign')));
+});
+
+test('quotation contact identity and snapshot persist through edits and conversion',async()=>{
+ const q=await newDoc('quotation',{quotation_person_id:'person'});
+ assert.equal(q.quotationPersonId,'person');assert.equal(q.quotationPersonSnapshot.name,'Original buyer');
+ db.contacts[0].name='Changed directory name';db.contactLinks=[];
+ const {kind,request_key,...editBody}=newBody('quotation',{quotation_person_id:'person'});
+ const edited=await request(`/accounting/documents/${q.id}`,editBody,'admin','PATCH');assert.equal(edited.status,200);assert.equal(edited.body.data.quotationPersonSnapshot.name,'Original buyer');
+ await action(q,'send');await action(q,'accept');const order=await convert(q,'order');assert.equal(order.quotationPersonId,'person');assert.equal(order.quotationPersonSnapshot.name,'Original buyer');
+});
+test('quotation routes reject unlinked contacts and conflicting retry identities',async()=>{
+ const payload=newBody('quotation',{quotation_person_id:'person'});assert.equal((await request('/accounting/documents',payload)).status,201);
+ assert.equal((await request('/accounting/documents',{...payload,quotation_person_id:null})).status,409);
+ assert.equal((await request('/accounting/documents',newBody('quotation',{quotation_person_id:'foreign-person'}))).status,400);
+ db.contactLinks=[];assert.equal((await request('/accounting/documents',newBody('quotation',{quotation_person_id:'person'}))).status,400);
+});
+
+test('monthly organization numbers are separate per type and request retries do not consume another serial',async()=>{
+ const body=newBody('quotation');const q=(await request('/accounting/documents',body)).body.data;
+ assert.equal(q.number,'TSTQ26011001');assert.equal((await request('/accounting/documents',body)).body.data.number,q.number);
+ assert.equal((await newDoc('quotation')).number,'TSTQ26011002');assert.equal((await newDoc('order')).number,'TSTSO26011001');assert.equal((await newDoc('sale')).number,'TSTSI26011001');
+ assert.equal((await newDoc('quotation',{document_date:'2026-02-01',due_date:'2026-02-02'})).number,'TSTQ26021001');
+});
+test('concurrent document creations allocate distinct serials and overflow rolls back',async()=>{
+ const rows=await Promise.all(Array.from({length:4},()=>newDoc('quotation')));assert.equal(new Set(rows.map(r=>r.number)).size,4);
+ db.sequences.find(s=>s.kind==='quotation').lastValue=999;
+ assert.equal((await request('/accounting/documents',newBody('quotation'))).status,409);assert.equal(db.sequences.find(s=>s.kind==='quotation').lastValue,999);
+});
+test('sent quotations can be negotiated without changing their number, and stale edits are rejected',async()=>{
+ const q=await newDoc('quotation');const sent=(await request(`/accounting/documents/${q.id}/status`,{action:'send'})).body.data;
+ const {kind,request_key,...body}=newBody('quotation',{expected_revision:sent.revision,lines:[{description:'Negotiated kit',quantity:1,unit_price:750,item_id:'i'}]});
+ const edited=await request(`/accounting/documents/${q.id}`,body,'admin','PATCH');assert.equal(edited.status,200);assert.equal(edited.body.data.status,'sent');assert.equal(edited.body.data.number,q.number);assert.equal(edited.body.data.total,750);assert.equal(edited.body.data.revision,sent.revision+1);assert.equal(edited.body.data.events.at(-1).status,'quotation_revised');
+ assert.equal((await request(`/accounting/documents/${q.id}`,body,'admin','PATCH')).status,409);assert.equal(db.inventory[0].quantity,5);
+ const revisionAudit=db.activity.find(a=>a.action==='accounting.document.updated');assert.equal(revisionAudit.before.total,1000);assert.equal(revisionAudit.after.total,750);
+ await action(q,'accept');assert.equal((await request(`/accounting/documents/${q.id}`,{...body,expected_revision:edited.body.data.revision},'admin','PATCH')).status,409);
+});
+test('admin settings support paragraphs, validate prefixes, preserve snapshots and forbid non-admin writes',async()=>{
+ const settings=(await request('/accounting/document-settings')).body.data;
+ const configured={...settings,prefix:'abc',terms:{enabled:true,text:'**Payment**\n1. First line\n\n*Italic* [Support](https://example.com)'},disclaimer:{enabled:false,text:'Optional legal paragraph'}};
+ assert.equal((await request('/accounting/document-settings',configured,'accountant','PUT')).status,403);
+ assert.equal((await request('/accounting/document-settings',{...configured,prefix:'ABCD'},'admin','PUT')).status,400);
+ const saved=await request('/accounting/document-settings',configured,'admin','PUT');assert.equal(saved.status,200);assert.equal(saved.body.data.prefix,'ABC');
+ assert.equal((await request('/accounting/document-settings',configured,'admin','PUT')).status,409);
+ const q=await newDoc('quotation');assert.equal(q.number,'ABCQ26011001');assert.equal(q.presentationSnapshot.terms.text,configured.terms.text);
+ await request('/accounting/document-settings',{...saved.body.data,terms:{enabled:true,text:'Changed defaults'}},'admin','PUT');
+ assert.equal(db.documents[0].presentationSnapshot.terms.text,configured.terms.text);
+ const {kind,request_key,...edit}=newBody('quotation',{expected_revision:q.revision,presentation:{revision:q.presentationSnapshot.settingsRevision,terms:false,disclaimer:true}});
+ const response=await request(`/accounting/documents/${q.id}`,edit,'admin','PATCH');assert.equal(response.status,200);assert.equal(response.body.data.presentationSnapshot.terms.enabled,false);assert.equal(response.body.data.presentationSnapshot.disclaimer.enabled,true);assert.equal(response.body.data.presentationSnapshot.terms.text,configured.terms.text);
+});
+test('PDF preview uses current edited values without creating a document or consuming a serial',async()=>{
+ const {request_key,...body}=newBody('quotation',{lines:[{description:'External instrument',quantity:1,unit_price:250,source:'external',unit:'pcs',model:'Model-1'}]});
+ const response=await request('/accounting/documents/preview',body);assert.equal(response.status,200,JSON.stringify(response.body));assert.match(response.body.data.html,/External/);assert.match(response.body.data.html,/250.00/);assert.ok(Buffer.from(response.body.data.base64,'base64').subarray(0,5).equals(Buffer.from('%PDF-')));assert.equal(db.documents.length,0);assert.equal(db.sequences.length,0);assert.equal(db.inventory[0].quantity,5);
+});
+test('external lines are linked without receiving stock and issuing requires a catalog link',async()=>{
+ const invoice=await newDoc('sale',{lines:[{description:'External instrument',quantity:1,unit_price:250,source:'external'}]});
+ assert.equal((await request(`/accounting/documents/${invoice.id}/status`,{action:'issue'})).status,409);
+ const before=db.inventory[0].quantity;
+ const linked=await request(`/accounting/documents/${invoice.id}/source-items`,{expected_revision:invoice.revision,mappings:[{line:0,item_id:'i'}]});assert.equal(linked.status,200);assert.equal(db.inventory[0].quantity,before);assert.equal(linked.body.data.lines[0].unit_price,250);
+ assert.equal((await request(`/accounting/documents/${invoice.id}/source-items`,{expected_revision:invoice.revision,mappings:[{line:0,item_id:'i'}]})).status,409);
+ await action(invoice,'issue');assert.equal(db.inventory[0].quantity,before-1);
+});
+test('foreign source mappings and unconfirmed quotation sourcing are rejected',async()=>{
+ const q=await newDoc('quotation',{lines:[{description:'External',quantity:1,unit_price:200,source:'external'}]});
+ assert.equal((await request(`/accounting/documents/${q.id}/source-items`,{expected_revision:q.revision,mappings:[{line:0,item_id:'i'}]})).status,409);
+ const invoice=await newDoc('sale',{lines:q.lines.map(({line_total,...l})=>l)});
+ assert.equal((await request(`/accounting/documents/${invoice.id}/source-items`,{expected_revision:invoice.revision,mappings:[{line:0,item_id:'foreign'}]})).status,404);
+});
+test('referrer attribution is scoped and copied through orders and invoices for commission reporting',async()=>{
+ assert.equal((await request('/accounting/documents',newBody('quotation',{referrer_id:'foreign-person'}))).status,400);
+ const q=await newDoc('quotation',{referrer_id:'person'});await action(q,'send');await action(q,'accept');const order=await convert(q,'order');assert.equal(order.referrerId,'person');await action(order,'confirm');
+ const report=(await request('/accounting/referrals')).body.data;assert.equal(report[0].workOrders,1);assert.equal(report[0].invoices,0);
+ const invoice=await convert(order,'sale');await action(invoice,'issue');const next=(await request('/accounting/referrals')).body.data;assert.equal(next[0].workOrders,1);assert.equal(next[0].invoices,1);assert.equal(next[0].invoiced,1000);assert.equal(invoice.referrerSnapshot.name,q.referrerSnapshot.name);
 });

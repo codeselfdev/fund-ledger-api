@@ -1,3 +1,4 @@
+import { selectionSchema } from './document-settings.js';
 import { taxSelectionSchema } from '../business-setup/validation.js';
 import { z } from 'zod';
 import { badRequest, conflict } from '../../core/http/api-error.js';
@@ -10,8 +11,8 @@ export type Kind = z.infer<typeof kindSchema>;
 export const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => { const d = new Date(`${value}T00:00:00Z`); return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value; }, 'Choose a valid date');
 export const pastDateSchema = dateSchema.refine(value => value <= new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dhaka' }), 'Date cannot be in the future');
 const money = z.number().int().min(0).max(2147483647);
-export const lineSchema = z.object({ description: z.string().trim().min(1).max(200), quantity: z.number().positive().max(1000000).refine(n => Math.abs(n * 1000 - Math.round(n * 1000)) < 0.00001, 'Use up to 3 decimal places'), unit_price: money, item_id: z.string().min(1).optional() }).strict();
-export const documentSchema = z.object({ location_id: z.string().min(1).nullable().optional(), tax_selection: taxSelectionSchema.optional(), kind: kindSchema, customer_id: z.string().min(1), document_date: dateSchema, due_date: dateSchema.optional(), lines: z.array(lineSchema).min(1).max(100), discount: money.default(0), tax: money.default(0), note: z.string().max(1000).optional(), request_key: z.string().uuid() }).strict();
+export const lineSchema = z.object({ description: z.string().trim().min(1).max(200), quantity: z.number().positive().max(1000000).refine(n => Math.abs(n * 1000 - Math.round(n * 1000)) < 0.00001, 'Use up to 3 decimal places'), unit_price: money, item_id: z.string().min(1).optional(), source: z.enum(['inventory', 'external', 'service']).optional(), unit: z.string().trim().min(1).max(16).optional(), item_code: z.string().trim().max(64).optional(), model: z.string().trim().max(100).optional(), brand: z.string().trim().max(100).optional(), country: z.string().trim().max(80).optional() }).strict();
+export const documentSchema = z.object({ location_id: z.string().min(1).nullable().optional(), tax_selection: taxSelectionSchema.optional(), kind: kindSchema, expected_revision: z.number().int().nonnegative().optional(), presentation: selectionSchema.optional(), referrer_id: z.string().min(1).nullable().optional(), quotation_person_id: z.string().min(1).nullable().optional(), customer_id: z.string().min(1), document_date: dateSchema, due_date: dateSchema.optional(), lines: z.array(lineSchema).min(1).max(100), discount: money.default(0), tax: money.default(0), note: z.string().max(1000).optional(), request_key: z.string().uuid() }).strict();
 export function calculate(lines: z.infer<typeof lineSchema>[], discount: number, tax: number) {
     const normalized = lines.map(line => ({ ...line, line_total: Math.round(line.quantity * line.unit_price) }));
     const subtotal = normalized.reduce((n, line) => n + line.line_total, 0);

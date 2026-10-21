@@ -168,6 +168,9 @@ enum CallOutcome {
 }
 
 model Tenant {
+  documentPrefix String? @map("document_prefix") @db.VarChar(3)
+  documentPrefixRevision Int @default(0) @map("document_prefix_revision")
+  documentSequences DocumentNumberSequence[]
   subscriptionPaymentReceipts SubscriptionPaymentReceipt[]
   platformAlerts PlatformAlert[]
   supportTickets SupportTicket[]
@@ -210,6 +213,8 @@ enum DepositApprovalRoute {
 }
 
 model Project {
+  documentSettings Json? @map("document_settings")
+  contactPersons ContactPerson[]
   recurringExpenseBills RecurringExpenseBill[]
   stockManagementEnabled Boolean @default(true) @map("stock_management_enabled")
   inventoryLocations InventoryLocation[]
@@ -739,6 +744,7 @@ model Expense {
 }
 
 model Vendor {
+  contactPersons DealerContactPerson[]
   attributes Json @default("{}")
   constructionSupplierBills ConstructionSupplierBill[]
   id        String   @id @default(cuid())
@@ -1319,6 +1325,7 @@ model AccountDeletionRequest {
 
 
 model Customer {
+  contactPersons CustomerContactPerson[]
   attributes Json @default("{}")
   id String @id @default(cuid())
   tenantId String @map("tenant_id")
@@ -1344,6 +1351,14 @@ model Customer {
 }
 
 model BusinessDocument {
+  revision Int @default(0)
+  presentationSnapshot Json? @map("presentation_snapshot")
+  referrerId String? @map("referrer_id")
+  referrerSnapshot Json? @map("referrer_snapshot")
+  referrer ContactPerson? @relation("DocumentReferrer", fields: [referrerId], references: [id], onDelete: Restrict)
+  quotationPersonId String? @map("quotation_person_id")
+  quotationPersonSnapshot Json? @map("quotation_person_snapshot")
+  quotationPerson ContactPerson? @relation(fields: [quotationPersonId], references: [id], onDelete: Restrict)
   stockLocationId String? @map("stock_location_id")
   stockLocation InventoryLocation? @relation(fields: [stockLocationId], references: [id], onDelete: Restrict)
   stockTracked Boolean @default(false) @map("stock_tracked")
@@ -2617,4 +2632,58 @@ model RecurringExpensePeriod {
   expense Expense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
   @@unique([billId, dueDate])
   @@map("recurring_expense_periods")
+}
+
+model ContactPerson {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  name String
+  designation String?
+  mobile String?
+  email String?
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  customerLinks CustomerContactPerson[]
+  dealerLinks DealerContactPerson[]
+  documents BusinessDocument[]
+  referredDocuments BusinessDocument[] @relation("DocumentReferrer")
+  @@index([tenantId, projectId, isActive, name])
+  @@map("contact_persons")
+}
+
+model CustomerContactPerson {
+  customerId String @map("customer_id")
+  contactPersonId String @map("contact_person_id")
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  contactPerson ContactPerson @relation(fields: [contactPersonId], references: [id], onDelete: Cascade)
+  @@id([customerId, contactPersonId])
+  @@index([tenantId, projectId, contactPersonId])
+  @@map("customer_contact_persons")
+}
+
+model DealerContactPerson {
+  dealerId String @map("dealer_id")
+  contactPersonId String @map("contact_person_id")
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  dealer Vendor @relation(fields: [dealerId], references: [id], onDelete: Cascade)
+  contactPerson ContactPerson @relation(fields: [contactPersonId], references: [id], onDelete: Cascade)
+  @@id([dealerId, contactPersonId])
+  @@index([tenantId, projectId, contactPersonId])
+  @@map("dealer_contact_persons")
+}
+
+model DocumentNumberSequence {
+  tenantId String @map("tenant_id")
+  kind String
+  period String
+  lastValue Int @map("last_value")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@id([tenantId, kind, period])
+  @@map("document_number_sequences")
 }

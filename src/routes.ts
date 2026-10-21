@@ -1,3 +1,4 @@
+import { contactPersonsRouter } from './modules/contact-persons/contact-persons.routes.js';
 import { recurringExpensesRouter } from './modules/expenses/recurring-expenses.routes.js';
 import { businessSetupRouter } from './modules/business-setup/business-setup.routes.js';
 import { aiServiceRouter } from './modules/ai-service/ai-service.routes.js';
@@ -95,6 +96,7 @@ export function registerRoutes(app: Express) {
   app.use("/v1/accounts", accountsRouter);
   app.use("/v1/incomes", incomesRouter);
   app.use("/v1/business-setup", businessSetupRouter);
+  app.use("/v1/contact-persons", contactPersonsRouter);
   app.use("/v1/customers", customersRouter);
   app.use("/v1/accounting", accountingRouter);
   app.use("/v1/billing", billingRouter);
