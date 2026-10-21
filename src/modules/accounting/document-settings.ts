@@ -3,17 +3,18 @@ import { Prisma } from '@prisma/client';
 import { conflict, notFound, badRequest } from '../../core/http/api-error.js';
 import type { Kind } from './workflow.js';
 export const sectionSchema = z.object({ enabled: z.boolean(), text: z.string().max(16000) }).strict().refine(value => !value.enabled || !!value.text.trim(), 'Add paragraph text before enabling this section');
-export const profileSchema = z.object({ name: z.string().trim().min(2).max(160), address: z.string().max(500), phone: z.string().max(80), email: z.string().max(200), website: z.string().max(250).refine(v => !v || /^https?:\/\/[^\s]+$/i.test(v), 'Use a complete https:// website URL'), footer: z.string().max(300), preparedBy: z.string().max(120), designation: z.string().max(120) }).strict();
-export const settingsSchema = z.object({ revision: z.number().int().nonnegative(), prefixRevision: z.number().int().nonnegative(), prefix: z.string().trim().regex(/^[A-Za-z0-9]{1,3}$/).transform(v => v.toUpperCase()), profile: profileSchema, terms: sectionSchema, disclaimer: sectionSchema }).strict();
-export const selectionSchema = z.object({ revision: z.number().int().nonnegative(), terms: z.boolean(), disclaimer: z.boolean() }).strict();
+export const profileSchema = z.object({ name: z.string().trim().min(2).max(160), address: z.string().max(500), phone: z.string().max(80), email: z.string().max(200), website: z.string().max(250).refine(v => !v || /^https?:\/\/[^\s]+$/i.test(v), 'Use a complete https:// website URL'), footer: z.string().max(300) }).strip();
+export const templateIds = ['classic', 'executive', 'minimal', 'corporate', 'elegant'] as const;
+export const settingsSchema = z.object({ revision: z.number().int().nonnegative(), prefixRevision: z.number().int().nonnegative(), templateId: z.enum(templateIds).default('classic'), accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().default(null), prefix: z.string().trim().regex(/^[A-Za-z0-9]{1,3}$/).transform(v => v.toUpperCase()), profile: profileSchema, terms: sectionSchema, disclaimer: sectionSchema }).strict();
+export const selectionSchema = z.object({ revision: z.number().int().nonnegative(), terms: z.boolean(), disclaimer: z.boolean(), terms_text: z.string().max(16000).optional(), disclaimer_text: z.string().max(16000).optional() }).strict();
 export type DocumentSettings = z.infer<typeof settingsSchema>;
-export type DocumentPresentation = { version: 1; profile: DocumentSettings['profile']; terms: z.infer<typeof sectionSchema>; disclaimer: z.infer<typeof sectionSchema>; settingsRevision: number; preparedByName: string };
+export type DocumentPresentation = { version: 1; profile: DocumentSettings['profile']; terms: z.infer<typeof sectionSchema>; disclaimer: z.infer<typeof sectionSchema>; settingsRevision: number; preparedByName: string; preparedBy?: { id: string; name: string; designation: string; mobile: string; email: string }; templateId?: typeof templateIds[number]; accentColor?: string | null; logoFileId?: string | null };
 export type Scope = { tenantId: string; projectId: string; userId?: string };
 export async function getDocumentSettings(db: Prisma.TransactionClient, auth: Scope): Promise<DocumentSettings> {
   const [project, tenant] = await Promise.all([db.project.findFirst({ where: { id: auth.projectId, tenantId: auth.tenantId } }), db.tenant.findFirst({ where: { id: auth.tenantId } })]);
   if (!project || !tenant) throw notFound('Organization or project not found');
   const raw = project.documentSettings as Partial<DocumentSettings> | null;
-  return { revision: raw?.revision ?? 0, prefixRevision: tenant.documentPrefixRevision, prefix: tenant.documentPrefix || tenant.name.replace(/[^a-z0-9]/gi, '').slice(0, 3).toUpperCase() || 'ORG', profile: raw?.profile ?? { name: tenant.name, address: '', phone: '', email: '', website: '', footer: '', preparedBy: '', designation: '' }, terms: raw?.terms ?? { enabled: false, text: '' }, disclaimer: raw?.disclaimer ?? { enabled: false, text: '' } };
+  return { revision: raw?.revision ?? 0, prefixRevision: tenant.documentPrefixRevision, templateId: raw?.templateId ?? 'classic', accentColor: raw?.accentColor ?? null, prefix: tenant.documentPrefix || tenant.name.replace(/[^a-z0-9]/gi, '').slice(0, 3).toUpperCase() || 'ORG', profile: profileSchema.parse(raw?.profile ?? { name: tenant.name, address: '', phone: '', email: '', website: '', footer: '' }), terms: raw?.terms ?? { enabled: false, text: '' }, disclaimer: raw?.disclaimer ?? { enabled: false, text: '' } };
 }
 export async function nextDocumentNumber(db: Prisma.TransactionClient, auth: Scope, kind: Kind, date: string) {
   const tenant = await db.tenant.findFirst({ where: { id: auth.tenantId } });
@@ -26,16 +27,24 @@ export async function nextDocumentNumber(db: Prisma.TransactionClient, auth: Sco
 }
 export async function documentPresentation(db: Prisma.TransactionClient, auth: Scope, selection?: z.infer<typeof selectionSchema>, previous?: unknown): Promise<DocumentPresentation> {
   const old = previous as DocumentPresentation | null;
-  // An unchanged selection preserves the document's historical paragraphs and identity.
-  if (old?.version === 1 && (!selection || selection.revision === old.settingsRevision)) {
-    if (selection?.terms && !old.terms.text.trim() || selection?.disclaimer && !old.disclaimer.text.trim()) throw badRequest('Configure paragraph text before enabling this section');
-    return { ...old, terms: { ...old.terms, enabled: selection?.terms ?? old.terms.enabled }, disclaimer: { ...old.disclaimer, enabled: selection?.disclaimer ?? old.disclaimer.enabled } };
+  let result: DocumentPresentation;
+  if (old?.version === 1 && (!selection || selection.revision === old.settingsRevision)) result = structuredClone(old);
+  else {
+    const settings = await getDocumentSettings(db, auth);
+    if (selection && settings.revision !== selection.revision) throw conflict('Document templates changed. Reload them before saving.');
+    const project = await db.project.findFirst({ where: { id: auth.projectId, tenantId: auth.tenantId } });
+    result = { version: 1, profile: settings.profile, terms: settings.terms, disclaimer: settings.disclaimer, settingsRevision: settings.revision, preparedByName: '', templateId: settings.templateId, accentColor: settings.accentColor, logoFileId: project?.logoFileId ?? null, ...(old?.preparedBy ? { preparedBy: old.preparedBy, preparedByName: old.preparedBy.name } : {}) };
   }
-  const settings = await getDocumentSettings(db, auth);
-  if (selection && settings.revision !== selection.revision) throw conflict('Document templates changed. Reload them before saving.');
-  if (selection?.terms && !settings.terms.text.trim() || selection?.disclaimer && !settings.disclaimer.text.trim()) throw badRequest('Configure paragraph text before enabling this section');
-  const user = auth.userId ? await db.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId }, select: { name: true } }) : null;
-  return { version: 1, profile: settings.profile, terms: { ...settings.terms, enabled: selection?.terms ?? settings.terms.enabled }, disclaimer: { ...settings.disclaimer, enabled: selection?.disclaimer ?? settings.disclaimer.enabled }, settingsRevision: settings.revision, preparedByName: settings.profile.preparedBy || user?.name || '' };
+  if (!result.preparedBy) {
+    const user = auth.userId ? await db.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId }, select: { id: true, name: true, mobile: true, email: true, professionalProfile: true } }) : null;
+    const profile = user?.professionalProfile as { designation?: string; mobile?: string; email?: string } | null;
+    result.preparedBy = { id: user?.id ?? '', name: user?.name ?? '', designation: profile?.designation ?? '', mobile: profile?.mobile ?? user?.mobile ?? '', email: profile?.email ?? user?.email ?? '' };
+    result.preparedByName = result.preparedBy.name;
+  }
+  result.terms = { enabled: selection?.terms ?? result.terms.enabled, text: selection?.terms_text ?? result.terms.text };
+  result.disclaimer = { enabled: selection?.disclaimer ?? result.disclaimer.enabled, text: selection?.disclaimer_text ?? result.disclaimer.text };
+  if (result.terms.enabled && !result.terms.text.trim() || result.disclaimer.enabled && !result.disclaimer.text.trim()) throw badRequest('Add paragraph text before enabling this section');
+  return result;
 }
 export async function referrerSnapshot(db: Prisma.TransactionClient, auth: Scope, id: string | null | undefined, previous?: { referrerId: string | null; referrerSnapshot: Prisma.JsonValue | null }) {
   if (previous && (id === undefined || id === previous.referrerId)) return { referrerId: previous.referrerId, referrerSnapshot: previous.referrerSnapshot ? previous.referrerSnapshot as Prisma.InputJsonValue : Prisma.DbNull };

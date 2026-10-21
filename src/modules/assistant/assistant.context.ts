@@ -15,7 +15,7 @@ export async function assistantContext(tenantId: string, projectId: string, user
   const finance = memberships.some(m => ["owner", "admin", "accountant", "auditor"].includes(m.role));
   const memberIds = memberships.flatMap(m => m.memberId ? [m.memberId] : []);
   const linked = await prisma.member.findMany({ where: { tenantId, projectId, status: "active", OR: [{ userId }, { id: { in: memberIds } }] }, select: { id: true } });
-  const authorization_hash = createHash("sha256").update(JSON.stringify({ tenantId, projectId, userId, roles: memberships.map(m => m.role).sort(), members: linked.map(m => m.id).sort() })).digest("hex");
+  const authorization_hash = createHash("sha256").update(JSON.stringify({ tenantId, projectId, projectType: project.projectType, userId, roles: memberships.map(m => m.role).sort(), members: linked.map(m => m.id).sort() })).digest("hex");
   const dueScope = { tenantId, projectId, ...(!finance ? { memberId: { in: linked.map(m => m.id) } } : {}) };
   const dues = await prisma.due.aggregate({ where: dueScope, _sum: { amount: true, paidAmount: true, waivedAmount: true, penaltyDue: true, penaltyPaid: true } });
   const d = dues._sum;

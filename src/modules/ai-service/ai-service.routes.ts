@@ -1,3 +1,4 @@
+import { businessAssistantRouter } from './business.routes.js';
 import { assistantEventScope, assistantEventTicket, publishAssistantPhase } from './assistant-events.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { Router } from 'express';
@@ -57,17 +58,20 @@ router.post('/telegram/resolve',asyncHandler(async(req,res)=>{
 router.use(authenticate,requireProject,requireRoles('owner','admin','accountant'),requireActiveSubscription);
 router.use(asyncHandler(async(req,_res,next)=>{const a=requireProjectContext(req);const t=await prisma.tenant.findUniqueOrThrow({where:{id:a.tenantId}});if(!hasBusinessAssistant(t.contact))throw new ApiError(403,'BUSINESS_REQUIRED','AI Chat and group bots require an active paid Business package.');next();}));
 
+router.use('/business',businessAssistantRouter);
 router.get('/context',asyncHandler(async(req,res)=>{
   const a=requireProjectContext(req);
-  const [user,progress,wa,deposit,tg,identity]=await Promise.all([
+  const [user,progress,wa,deposit,tg,identity,project]=await Promise.all([
     prisma.user.findUniqueOrThrow({where:{id:a.userId},select:{mobile:true}}),
     prisma.onboardingProgress.findUnique({where:{tenantId:a.tenantId},select:{incomeApprovalFlow:true,expenseApprovalFlow:true}}),
     prisma.whatsAppConnection.findFirst({where:{tenantId:a.tenantId,projectId:a.projectId,isActive:true},select:{wabaId:true,phoneNumberId:true,groupId:true}}),
     projectDepositRoute(a.tenantId,a.projectId),
     prisma.telegramConnection.findFirst({where:{tenantId:a.tenantId,projectId:a.projectId}}),
-    prisma.telegramBotIdentity.findUnique({where:{projectId_userId:{projectId:a.projectId,userId:a.userId}}})
+    prisma.telegramBotIdentity.findUnique({where:{projectId_userId:{projectId:a.projectId,userId:a.userId}}}),
+    prisma.project.findFirst({where:{id:a.projectId,tenantId:a.tenantId,isActive:true},select:{projectType:true}})
   ]);
-  return ok(res,{tenant_id:a.tenantId,project_id:a.projectId,user_id:a.userId,mobile:user.mobile,roles:a.roles,member_id:a.memberId,member_ids:a.memberIds,policy:{income:progress?.incomeApprovalFlow??'accountant_only',expense:progress?.expenseApprovalFlow??'accountant_and_approver',deposit,admin_deposit_finalize:true},whatsapp:wa?{waba_id:wa.wabaId,phone_number_id:wa.phoneNumberId,group_id:wa.groupId}:null,telegram:tg&&identity&&identity.tenantId===a.tenantId?{chat_id:tg.chatId,sender_id:identity.telegramUserId,bot_username:process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/,'')??null}:null});
+  if(!project)throw forbidden('Your project access is no longer active.');
+  return ok(res,{tenant_id:a.tenantId,project_id:a.projectId,project_type:project.projectType,user_id:a.userId,mobile:user.mobile,roles:a.roles,member_id:a.memberId,member_ids:a.memberIds,policy:{income:progress?.incomeApprovalFlow??'accountant_only',expense:progress?.expenseApprovalFlow??'accountant_and_approver',deposit,admin_deposit_finalize:true},whatsapp:wa?{waba_id:wa.wabaId,phone_number_id:wa.phoneNumberId,group_id:wa.groupId}:null,telegram:tg&&identity&&identity.tenantId===a.tenantId?{chat_id:tg.chatId,sender_id:identity.telegramUserId,bot_username:process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/,'')??null}:null});
 }));
 const usageSchema=z.object({request_key:z.string().min(1).max(200),channel:z.string().regex(/^(ai_chat|(?:whatsapp_bot|telegram_bot)(?::[^\s]{1,300})?)$/),prompt_hash:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
 router.post('/usage',asyncHandler(async(req,res)=>{

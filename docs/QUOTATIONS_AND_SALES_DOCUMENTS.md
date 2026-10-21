@@ -18,11 +18,14 @@ Contact persons can be linked to multiple customers and dealers. The quotation p
 
 ## Admin templates and PDF preview
 
-Open **Business setup → PDF templates, numbering & referrals** as an accounting admin. Configure company identity/contact details, prepared-by name/designation, footer, and independent Terms and Conditions and DISCLAIMER templates. The company profile and paragraph templates belong to the project; the numbering prefix belongs to the organization.
+The latest [template and branding upgrade](QUOTATION_TEMPLATES.md) adds five admin-only
+layouts, logo support, custom colors, user signature profiles and per-quotation text.
+
+Open **Business setup → PDF templates, numbering & referrals** as an accounting admin. Configure company identity/contact details, footer, and independent Terms and Conditions and DISCLAIMER templates. The company profile and paragraph templates belong to the project; the numbering prefix belongs to the organization.
 
 Each paragraph supports newlines, blank lines, spaces, typed numbered lists, `**bold**`, `*italic*`, `***bold italic***`, bare HTTP(S) URLs and `[link label](https://example.com)`. Toolbar actions apply to the current selection; a live formatted preview appears below the input. HTML is treated as text. Enabling an empty template is rejected.
 
-Document creators independently switch each optional section on or off. Saved documents retain snapshots of the profile and paragraphs. Later admin changes do not silently rewrite them. **Apply latest templates** explicitly adopts current settings. Revision checks reject stale settings saves.
+Document creators independently switch each optional section on or off and edit its wording for the current quotation. Saved documents retain snapshots of the profile and paragraphs. Later admin changes do not silently rewrite them. **Apply latest templates** explicitly adopts current settings. Revision checks reject stale settings saves.
 
 **Preview PDF** renders the current unsaved form without saving a document, consuming a serial, changing status or posting stock/cash. Web, Android and iOS display an HTML/SVG rendition using the same page coordinates, fonts and line wrapping as the PDF, without requiring a browser PDF plugin. Shared/downloaded files use the server PDF renderer. The layout includes customer/recipient information, billing/delivery details, an eight-column items table, tax/discount totals, optional paragraphs, signature details, repeated letterhead and page numbers. Backend font files are embedded in PDFs and are not added to the mobile application bundle.
 

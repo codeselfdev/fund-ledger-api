@@ -376,6 +376,7 @@ model OnboardingProgress {
 }
 
 model User {
+  professionalProfile Json? @map("professional_profile")
   supportTickets SupportTicket[]
   appInstallations AppInstallation[]
   shortcutPreferences ShortcutPreference[]

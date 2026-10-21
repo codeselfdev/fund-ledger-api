@@ -1,3 +1,5 @@
+import { professionalProfile } from '../profile/user-profile.routes.js';
+import { documentLogo } from './document-logo.js';
 import { buildProfessionalDocument } from './document-pdf.js';
 import { documentPresentation, getDocumentSettings, nextDocumentNumber, referrerSnapshot, referralSummary, settingsSchema } from './document-settings.js';
 import { quotationPerson } from '../contact-persons/contact-persons.service.js';
@@ -98,6 +100,18 @@ router.put('/document-settings', requireRoles('admin'), asyncHandler(async (req,
     return { ...body, revision: old.revision + 1, prefixRevision: old.prefixRevision + 1 };
   }); return ok(res, saved);
 }));
+router.post('/document-settings/preview', requireRoles('admin'), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req), settings = settingsSchema.parse(req.body);
+  const result = await financialTransaction(async tx => {
+    const [project, tenant, user] = await Promise.all([tx.project.findFirst({ where: { id: auth.projectId, tenantId: auth.tenantId } }), tx.tenant.findFirstOrThrow({ where: { id: auth.tenantId } }), tx.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId } })]);
+    const author = user ? { id: user.id, ...professionalProfile(user) } : { id: '', name: '', designation: '', mobile: '', email: '' };
+    const presentation = { version: 1 as const, profile: settings.profile, terms: settings.terms, disclaimer: settings.disclaimer, settingsRevision: settings.revision, templateId: settings.templateId, accentColor: settings.accentColor, logoFileId: project?.logoFileId ?? null, preparedBy: author, preparedByName: author.name };
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).map(p => [p.type, p.value]));
+    const date = `${parts.year}-${parts.month}-${parts.day}`;
+    return buildProfessionalDocument({ kind: 'quotation', number: 'SAMPLE - not saved', status: 'sample', documentDate: date, customerSnapshot: { name: 'Sample customer', address: 'Customer address', email: 'customer@example.com' }, presentationSnapshot: presentation, lines: [{ description: 'Sample product with specifications', quantity: 2, unit_price: 12500, line_total: 25000, item_code: 'DEMO-01', model: 'Model A', unit: 'pcs' }], subtotal: 25000, discount: 0, tax: 0, total: 25000, note: 'Template preview using sample items. No document or stock movement is created.' }, tenant.currency, tenant.name, await documentLogo(tx, auth, presentation));
+  }, 15000);
+  res.setHeader('Cache-Control', 'no-store'); return ok(res, { html: result.html, base64: result.pdf.toString('base64'), pages: result.pages });
+}));
 router.get('/referrals', asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   return ok(res, referralSummary(await prisma.businessDocument.findMany({ where: { ...scoped(auth), referrerId: { not: null } }, orderBy: { createdAt: 'desc' } })));
@@ -116,7 +130,7 @@ router.post('/documents/preview', write, validateBody(documentSchema.omit({ requ
     const presentation = await documentPresentation(tx, auth, b.presentation, old?.presentationSnapshot);
     const tax = await documentTax(tx, auth, b.kind === 'quotation' ? 'quotation' : 'sale', b.lines.map(l => Math.round(l.quantity * l.unit_price)), b.discount, b.tax_selection, b.tax, old?.taxSnapshot ?? (old ? { legacy: true, tax: old.tax } : undefined));
     const totals = calculate(b.lines, b.discount, b.tax), tenant = await tx.tenant.findFirstOrThrow({ where: { id: auth.tenantId } });
-    return buildProfessionalDocument({ ...totals, kind: b.kind, number: old?.number ?? 'PREVIEW - number assigned on save', status: old?.status ?? 'draft', revision: old?.revision ?? 0, customerSnapshot: customer, quotationPersonSnapshot: person.quotationPersonSnapshot, presentationSnapshot: presentation, documentDate: b.document_date, dueDate: b.due_date, discount: b.discount, tax: tax?.tax ?? b.tax, taxSnapshot: tax, subtotal: tax ? tax.subtotal + b.discount : totals.subtotal, total: tax?.payable ?? totals.total, note: b.note }, tenant.currency, tenant.name);
+    return buildProfessionalDocument({ ...totals, kind: b.kind, number: old?.number ?? 'PREVIEW - number assigned on save', status: old?.status ?? 'draft', revision: old?.revision ?? 0, customerSnapshot: customer, quotationPersonSnapshot: person.quotationPersonSnapshot, presentationSnapshot: presentation, documentDate: b.document_date, dueDate: b.due_date, discount: b.discount, tax: tax?.tax ?? b.tax, taxSnapshot: tax, subtotal: tax ? tax.subtotal + b.discount : totals.subtotal, total: tax?.payable ?? totals.total, note: b.note }, tenant.currency, tenant.name, await documentLogo(tx, auth, presentation));
   }, 15000);
   res.setHeader('Cache-Control', 'no-store');
   return ok(res, { html: result.html, base64: result.pdf.toString('base64'), pages: result.pages });
@@ -164,6 +178,7 @@ router.post('/documents', write, validateBody(documentSchema), asyncHandler(asyn
         const taxSnapshot = await documentTax(tx, auth, b.kind === 'order' ? 'sale' : b.kind, b.lines.map(l => Math.round(l.quantity * l.unit_price)), b.discount, b.tax_selection, b.tax, undefined);
         const legacy = calculate(b.lines, b.discount, b.tax);
         const totals = taxSnapshot ? { ...legacy, subtotal: taxSnapshot.subtotal + b.discount, total: taxSnapshot.payable } : legacy;
+        if (b.expected_total !== undefined && b.expected_total !== totals.total) throw conflict('The calculated total changed. Review the document again.');
         if (b.due_date && b.due_date < b.document_date)
             throw badRequest('Due date must be on or after document date');
         await validateItems(tx, auth, b.lines);
@@ -205,7 +220,7 @@ router.patch('/documents/:id', write, validateBody(editSchema), asyncHandler(asy
     });
     return ok(res, mapDoc(d));
 }));
-const actionSchema = z.object({ action: z.enum(['send', 'accept', 'reject', 'expire', 'confirm', 'fulfill', 'issue', 'cancel']) }).strict();
+const actionSchema = z.object({ expected_revision: z.number().int().nonnegative().optional(), action: z.enum(['send', 'accept', 'reject', 'expire', 'confirm', 'fulfill', 'issue', 'cancel']) }).strict();
 router.post('/documents/:id/status', write, validateBody(actionSchema), asyncHandler(async (req, res) => {
     const auth = requireProjectContext(req);
     const b = actionSchema.parse(req.body);
@@ -213,6 +228,7 @@ router.post('/documents/:id/status', write, validateBody(actionSchema), asyncHan
         const d = await tx.businessDocument.findFirst({ where: { id: req.params.id, ...scoped(auth) } });
         if (!d)
             throw notFound('Document not found');
+        if (b.expected_revision !== undefined && b.expected_revision !== d.revision) throw conflict('This document changed. Review a fresh draft before changing its status.');
         const status = nextStatus(kindSchema.parse(d.kind), d.status, b.action, d.paidAmount);
         const tracked = d.kind === 'sale' && b.action === 'issue' ? await stockEnabled(tx, auth) : d.stockTracked;
         const location = d.kind === 'sale' && b.action === 'issue' && tracked ? await stockLocation(tx, auth, d.stockLocationId) : null;
@@ -226,7 +242,7 @@ router.post('/documents/:id/status', write, validateBody(actionSchema), asyncHan
     });
     return ok(res, mapDoc(updated));
 }));
-const convertSchema = z.object({ kind: kindSchema, document_date: dateSchema, due_date: dateSchema.optional(), request_key: z.string().uuid() }).strict();
+const convertSchema = z.object({ expected_revision: z.number().int().nonnegative().optional(), kind: kindSchema, document_date: dateSchema, due_date: dateSchema.optional(), request_key: z.string().uuid() }).strict();
 router.post('/documents/:id/convert', write, validateBody(convertSchema), asyncHandler(async (req, res) => {
     const auth = requireProjectContext(req);
     const b = convertSchema.parse(req.body);
@@ -240,6 +256,7 @@ router.post('/documents/:id/convert', write, validateBody(convertSchema), asyncH
         const source = await tx.businessDocument.findFirst({ where: { id: req.params.id, ...scoped(auth) }, include: { next: true } });
         if (!source)
             throw notFound('Document not found');
+        if (b.expected_revision !== undefined && b.expected_revision !== source.revision) throw conflict('This document changed. Review a fresh draft before converting.');
         if (source.next)
             throw conflict('This document has already been converted');
         conversion(kindSchema.parse(source.kind), source.status, b.kind, workflow(source.workflow));
@@ -315,7 +332,7 @@ router.get('/documents/:id/document.pdf', asyncHandler(async (req, res) => {
   const d = await prisma.businessDocument.findFirst({ where: { id: req.params.id, ...scoped(auth) } });
   if (!d) throw notFound('Document not found');
   const p = await prisma.project.findFirstOrThrow({ where: { id: auth.projectId, tenantId: auth.tenantId }, include: { tenant: true } });
-  const result = await buildProfessionalDocument(d, p.tenant.currency, p.tenant.name);
+  const result = await buildProfessionalDocument(d, p.tenant.currency, p.tenant.name, await documentLogo(prisma, auth, d.presentationSnapshot));
   res.setHeader('Cache-Control', 'private, no-store');
   res.type('pdf').setHeader('Content-Disposition', `inline; filename="${d.number.replace(/[^a-z0-9-]/gi, '_')}.pdf"`); return res.send(result.pdf);
 }));

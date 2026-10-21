@@ -1,3 +1,4 @@
+import { userProfileRouter } from '../profile/user-profile.routes.js';
 import { assertSignupMobileAvailable } from "./signup-contact.js";
 import { verifiedSignup } from "./signup-identity.js";
 import { linkedIdentityUsers } from "../../core/security/linked-identity.js";
@@ -25,6 +26,7 @@ import { summarizeProjectMemberships } from "../../core/security/project-access.
 import { completeAccountSelection, createAccountSelection } from "./account-selection.service.js";
 
 const router = Router();
+router.use('/profile', authenticateAccount, userProfileRouter);
 
 function isEmailOtpAmbiguous(users: Array<{ id: string; email: string | null }>) {
   return users.length > 1 && new Set(users.map(user => user.email?.trim().toLowerCase() ?? user.id)).size > 1;
