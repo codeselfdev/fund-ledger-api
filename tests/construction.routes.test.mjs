@@ -16,7 +16,7 @@ const { cycleAmount, aging, today } = await import('../dist/modules/billing/bill
 const { normalizePortalSettings, portalSettingsSchema } = await import('../dist/core/projects/project-settings.js');
 let db, counter, server, base, failAudit, retry, queue = Promise.resolve();
 const copy = value => structuredClone(value);
-const models = { inventoryLocation: 'locations', project: 'projects', customer: 'customers', account: 'accounts', constructionCostHead:'heads', constructionBoq:'boq', constructionCostAllocation:'allocations', constructionContractor:'contractors', constructionContract:'contracts', constructionRunningBill:'bills', constructionSupplierBill:'supplierBills', constructionLaborEntry:'labor', constructionMaterialEntry:'materials', constructionPayment:'payments', constructionChangeOrder:'changes', expense:'expenses', vendor:'vendors', purchase:'purchases', inventoryItem:'inventory', stockMovement:'stock', due:'dues', deposit:'deposits', member:'members', schedule:'schedules', activity: 'activity', accountTransaction: 'transactions', session: 'sessions', projectMembership: 'memberships' };
+const models = { inventoryLocation: 'locations', project: 'projects', customer: 'customers', account: 'accounts', constructionCostHead:'heads', constructionBoq:'boq', constructionCostAllocation:'allocations', constructionContractor:'contractors', constructionContract:'contracts', constructionRunningBill:'bills', constructionSupplierBill:'supplierBills', constructionLaborEntry:'labor', constructionMaterialEntry:'materials', constructionSiteLog:'siteLogs', constructionWasteLimit:'wasteLimits', upload:'uploads', constructionPayment:'payments', constructionChangeOrder:'changes', expense:'expenses', vendor:'vendors', purchase:'purchases', inventoryItem:'inventory', stockMovement:'stock', due:'dues', deposit:'deposits', member:'members', schedule:'schedules', activity: 'activity', accountTransaction: 'transactions', session: 'sessions', projectMembership: 'memberships' };
 function reset() {
   counter = 0; failAudit = false; retry = false;
   db = Object.fromEntries(Object.values(models).map(t => [t, []]));
@@ -35,6 +35,7 @@ function match(row, where = {}) {
     if (v && typeof v === 'object') {
       if (k === 'project') return match(db.projects.find(p => p.id === row.projectId), v);
       if (k === 'user') return match(row.user ?? { isActive: true }, v);
+      if ('has' in v) return Array.isArray(row[k]) && row[k].includes(v.has);
       if ('in' in v) return v.in.includes(row[k]);
       return Object.entries(v).every(([op, n]) => op === 'gt' ? row[k] > n : op === 'gte' ? row[k] >= n : op === 'lt' ? row[k] < n : op === 'lte' ? row[k] <= n : op === 'not' ? row[k] !== n : false);
     }
@@ -44,6 +45,7 @@ function match(row, where = {}) {
 function decorate(table, row, include) {
   if (!row) return null;
   const r = copy(row);
+  if (include?.item) r.item=copy(db.inventory.find(i=>i.id===row.itemId));
   if (include?.expense) r.expense=copy(db.expenses.find(e=>e.id===row.expenseId));
   if (include?.contractor)r.contractor=copy(db.contractors.find(c=>c.id===row.contractorId));
   if (include?.costHead)r.costHead=copy(db.heads.find(h=>h.id===row.costHeadId));
@@ -63,10 +65,11 @@ function mutate(row, data) {
   return row;
 }
 function defaults(table) {
+  if (table==='siteLogs') return {version:1,status:'draft',laborIds:[],materialIds:[],submittedAt:null};
   if (table==='heads')return {status:'pending',decidedById:null};
   if (table==='contracts')return {certifiedAmount:0,advancePaid:0,advanceRecovered:0,retentionHeld:0,retentionReleased:0,status:'active'};
-  if (['bills','supplierBills','labor','changes'].includes(table))return {status:'pending',paidAmount:0,decidedAt:null,purchaseId:null,boqId:null,receivedAt:null};
-  if(table==='materials')return {returnedQuantity:0,boqId:null};
+  if (['bills','supplierBills','labor','changes'].includes(table))return {status:'pending',paidAmount:0,decidedAt:null,purchaseId:null,boqId:null,receivedAt:null,wastageDeduction:0,wasteEntryIds:[]};
+  if(table==='materials')return {returnedQuantity:0,boqId:null,chargeBillId:null};
   return table === 'invoices' ? { status: 'issued', paidAmount: 0, creditAmount: 0, debitAmount: 0, lateFeeAmount: 0, lateFeeAppliedAt: null, assignmentId: null, periodStart: null } : table === 'payments' ? { refundedAmount: 0, reference: null } : table === 'allocations' ? { releasedAt: null } : table === 'assignments' ? { status: 'active', endDate: null, unitId: null } : table === 'adjustments' ? { status: 'pending', decidedAt: null, decidedById: null, invoiceId: null, paymentId: null } : table === 'runs' ? { cursor: 0, status: 'queued' } : table === 'messages' ? { status: 'queued', attempts: 0, leaseUntil: null } : table === 'customers' ? { isActive: true, email: null } : {};
 }
 function mock(table) {
@@ -187,4 +190,70 @@ test('cash forecasts deduct prepaid advances rather than requesting the same con
 test('contract creation fingerprints retry payloads, and a linked supplier invoice blocks purchase cancellation',async()=>{
  const h=await newHead();const contractor=(await request('/contractors',{name:'Retry Contractor'})).body.data;const body={contractor_id:contractor.id,cost_head_id:h.id,title:'Same contract',amount:2000000,retention_bps:500,request_key:randomUUID()};const first=await request('/contracts',body);assert.equal((await request('/contracts',body)).body.data.id,first.body.data.id);assert.equal((await request('/contracts',{...body,amount:3000000})).status,409);
  db.purchases.push({id:'purchase',tenantId:'t',projectId:'p',status:'ordered',totalAmount:100});db.supplierBills.push({id:'bill',tenantId:'t',projectId:'p',purchaseId:'purchase',status:'pending'});assert.equal((await request('/purchases/purchase/cancel',{})).status,400);assert.equal(db.purchases[0].status,'ordered');
+});
+
+const siteContent = (head, extra={}) => ({ labor:[{cost_head_id:head.id,role:'Mason',workers:8,rate:950}],materials:[],expense_ids:[],photo_ids:[],note:'Slab work',...extra });
+async function siteDraft(head,extra={}) { const r=await request('/site-logs',{work_date:'2026-01-01',version:0,content:siteContent(head,extra)},'accountant','PUT');assert.equal(r.status,200,JSON.stringify(r.body));return r.body.data; }
+test('daily site logs persist drafts, reject stale edits, and submit labor exactly once',async()=>{
+ const h=await newHead(),draft=await siteDraft(h);
+ assert.equal((await request('/overview')).body.data.actual_cost,0);
+ assert.equal((await request('/site-logs',{work_date:'2026-01-01',version:0,content:siteContent(h)},'accountant','PUT')).status,409);
+ const body={version:draft.version};const submitted=await request(`/site-logs/${draft.id}/submit`,body);assert.equal(submitted.status,201,JSON.stringify(submitted.body));
+ const again=await request(`/site-logs/${draft.id}/submit`,body);assert.equal(again.body.data.id,draft.id);assert.equal(db.labor.length,1);assert.equal(db.labor[0].amount,7600);
+ assert.equal((await request(`/site-logs/${draft.id}/decision`,{decision:'approve'},'admin','POST','p','user-accountant')).status,409);
+ assert.equal((await request(`/labor/${db.labor[0].id}/decision`,{decision:'approve'},'approver')).status,409);
+ assert.equal((await request('/site-logs',{work_date:'2026-01-01',version:2,content:siteContent(h)},'accountant','PUT')).status,409);
+ assert.equal((await request(`/site-logs/${draft.id}/decision`,{decision:'approve'},'approver')).status,200);
+ assert.equal((await request('/overview')).body.data.actual_cost,7600);assert.equal(db.accounts[0].balance,5000000);
+ const listed=await request('/site-logs?from=2026-01-01&to=2026-01-07');assert.equal(listed.status,200);assert.equal(listed.body.data.length,1);
+});
+test('site submission atomically rolls back wages and stock on insufficient materials',async()=>{
+ const h=await newHead();db.inventory.push({id:'i',tenantId:'t',projectId:'p',name:'Cement',unit:'bags',quantity:10,costPrice:560,isActive:true});
+ const draft=await siteDraft(h,{materials:[{item_id:'i',quantity:11}]});
+ assert.equal((await request(`/site-logs/${draft.id}/submit`,{version:draft.version})).status,409);assert.equal(db.labor.length,0);assert.equal(db.inventory[0].quantity,10);assert.equal(db.siteLogs[0].status,'draft');
+});
+test('site submission and approval retries never duplicate physical stock movements',async()=>{
+ const h=await newHead();db.inventory.push({id:'i',tenantId:'t',projectId:'p',name:'Cement',unit:'bags',quantity:100,costPrice:560,isActive:true});
+ const draft=await siteDraft(h,{materials:[{item_id:'i',quantity:42}]});
+ for(let i=0;i<2;i++)assert.equal((await request(`/site-logs/${draft.id}/submit`,{version:draft.version})).status,201);
+ assert.equal(db.inventory[0].quantity,58);assert.equal(db.materials.length,1);
+ for(let i=0;i<2;i++)assert.equal((await request(`/site-logs/${draft.id}/decision`,{decision:'reject'},'approver')).status,200);
+ assert.equal(db.labor[0].status,'rejected');assert.equal(db.inventory[0].quantity,58);assert.equal((await request('/overview')).body.data.actual_cost,0);
+});
+test('site logs reject future dates, foreign materials/photos/expenses, and unauthorized roles',async()=>{
+ const h=await newHead();const base={work_date:'2026-01-01',version:0,content:siteContent(h)};
+ assert.equal((await request('/site-logs',{...base,work_date:'2999-01-01'},'accountant','PUT')).status,400);
+ for(const extra of [{materials:[{item_id:'foreign',quantity:1}]},{photo_ids:['foreign']},{expense_ids:['foreign']}])assert.ok((await request('/site-logs',{...base,content:siteContent(h,extra)},'accountant','PUT')).status>=400);
+ for(const role of ['auditor','cashier','approver','member'])assert.equal((await request('/site-logs',base,role,'PUT')).status,403);
+ assert.equal((await request('/site-logs?from=2026-01-01&to=2026-12-31')).status,400);
+ assert.equal((await request('/site-logs?from=2026-01-01&to=2026-01-07',undefined,'member')).status,403);
+});
+test('wastage report uses saved valuation, explicit allowances and net consumption',async()=>{
+ const h=await newHead(),contract=await newContract(h);db.inventory.push({id:'i',tenantId:'t',projectId:'p',name:'Cement',unit:'bags',quantity:1000,costPrice:560,isActive:true});
+ assert.equal((await request('/wastage/allowance',{item_id:'i',allowance_bps:200},'accountant','PUT')).status,403);
+ assert.equal((await request('/wastage/allowance',{item_id:'i',allowance_bps:200},'admin','PUT')).status,200);
+ await request('/materials',{item_id:'i',kind:'consume',quantity:100,entry_date:'2026-01-01',reason:'Slab work',request_key:randomUUID()});
+ const body={item_id:'i',kind:'waste',quantity:6,entry_date:'2026-01-01',reason:'Rain damage',charge_contract_id:contract.id,request_key:randomUUID()};
+ assert.equal((await request('/materials',body)).status,201);assert.equal((await request('/materials',body)).status,201);db.inventory[0].costPrice=900;
+ const r=(await request('/wastage')).body.data;assert.equal(r.total,3360);assert.equal(r.chargeable,3360);assert.equal(r.excess,2240);assert.equal(r.materials[0].percent,6);assert.equal(r.materials[0].over,true);assert.equal(db.inventory[0].quantity,894);
+ assert.equal((await request('/materials',{...body,charge_contract_id:'foreign',request_key:randomUUID()})).status,400);
+ assert.equal((await request('/overview')).body.data.actual_cost,0);
+});
+
+test('chargeable wastage is reserved once, independently approved and recovered from a running bill',async()=>{
+ const h=await newHead(),ct=await newContract(h);db.inventory.push({id:'i',tenantId:'t',projectId:'p',name:'Cement',unit:'bags',quantity:100,costPrice:560,isActive:true});
+ const waste=(await request('/materials',{item_id:'i',kind:'waste',quantity:6,entry_date:'2026-01-01',reason:'Breakage',charge_contract_id:ct.id,request_key:randomUUID()})).body.data;
+ const body=billBody(ct,800000,{waste_entry_ids:[waste.id]}),bill=(await request('/running-bills',body)).body.data;
+ assert.equal(bill.wastageDeduction,3360);assert.equal(bill.netPayable,756640);
+ assert.equal((await request('/running-bills',body)).body.data.id,bill.id);
+ assert.equal((await request('/running-bills',{...body,request_key:randomUUID()})).status,409);
+ await approve('running-bills',bill);assert.equal((await request('/overview')).body.data.actual_cost,796640);
+ assert.equal((await request('/wastage')).body.data.chargeable,0);
+});
+test('rejecting a running bill releases its proposed wastage deductions',async()=>{
+ const ct=await newContract(await newHead());db.inventory.push({id:'i',tenantId:'t',projectId:'p',name:'Cement',unit:'bags',quantity:100,costPrice:560,isActive:true});
+ const w=(await request('/materials',{item_id:'i',kind:'waste',quantity:6,entry_date:'2026-01-01',reason:'Breakage',charge_contract_id:ct.id,request_key:randomUUID()})).body.data;
+ const body=billBody(ct,800000,{waste_entry_ids:[w.id]}),b=(await request('/running-bills',body)).body.data;
+ assert.equal((await request(`/running-bills/${b.id}/decision`,{decision:'reject'},'approver')).status,200);
+ assert.equal((await request('/running-bills',{...body,request_key:randomUUID()})).status,201);
 });

@@ -210,6 +210,7 @@ enum DepositApprovalRoute {
 }
 
 model Project {
+  recurringExpenseBills RecurringExpenseBill[]
   stockManagementEnabled Boolean @default(true) @map("stock_management_enabled")
   inventoryLocations InventoryLocation[]
   businessConfiguration BusinessConfiguration?
@@ -244,10 +245,13 @@ model Project {
   constructionSupplierBills ConstructionSupplierBill[]
   constructionLabor ConstructionLaborEntry[]
   constructionMaterials ConstructionMaterialEntry[]
+  constructionSiteLogs ConstructionSiteLog[]
+  constructionWasteLimits ConstructionWasteLimit[]
   constructionPayments ConstructionPayment[]
   constructionChanges ConstructionChangeOrder[]
   billingSettings Json? @map("billing_settings")
   billingPlans BillingPlan[]
+  billingComplaints BillingComplaint[]
   billingUnits BillingUnit[]
   billingAssignments BillingAssignment[]
   billingInvoices BillingInvoice[]
@@ -696,6 +700,10 @@ model Receipt {
 }
 
 model Expense {
+  recurringBillId String? @map("recurring_bill_id")
+  recurringDueDate DateTime? @db.Date @map("recurring_due_date")
+  recurringBill RecurringExpenseBill? @relation(fields: [recurringBillId], references: [id], onDelete: SetNull)
+  recurringPeriod RecurringExpensePeriod?
   constructionAllocations ConstructionCostAllocation[]
   id            String          @id @default(cuid())
   tenantId      String          @map("tenant_id")
@@ -1326,6 +1334,7 @@ model Customer {
   incomeTransactions AccountTransaction[]
   documents BusinessDocument[]
   billingAssignments BillingAssignment[]
+  billingComplaints BillingComplaint[]
   billingInvoices BillingInvoice[]
   billingPayments BillingPayment[]
   billingAdjustments BillingAdjustment[]
@@ -1772,6 +1781,8 @@ model ConstructionRunningBill {
   retention Int
   advanceRecovery Int @map("advance_recovery")
   netPayable Int @map("net_payable")
+  wastageDeduction Int @default(0) @map("wastage_deduction")
+  wasteEntryIds String[] @default([]) @map("waste_entry_ids")
   paidAmount Int @default(0) @map("paid_amount")
   billDate DateTime @db.Date @map("bill_date")
   note String?
@@ -1859,6 +1870,9 @@ model ConstructionMaterialEntry {
   kind String
   quantity Int
   entryDate DateTime @db.Date @map("entry_date")
+  unitRate Int? @map("unit_rate")
+  chargeContractId String? @map("charge_contract_id")
+  chargeBillId String? @map("charge_bill_id")
   reason String
   sourceId String? @map("source_id")
   returnedQuantity Int @default(0) @map("returned_quantity")
@@ -2496,4 +2510,111 @@ model InventoryLocation {
   @@unique([projectId, name])
   @@index([tenantId, projectId, isActive])
   @@map("inventory_locations")
+}
+
+model ConstructionSiteLog {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  workDate DateTime @db.Date @map("work_date")
+  content Json
+  version Int @default(1)
+  status String @default("draft")
+  laborIds String[] @default([]) @map("labor_ids")
+  materialIds String[] @default([]) @map("material_ids")
+  createdById String @map("created_by_id")
+  decidedById String? @map("decided_by_id")
+  submittedAt DateTime? @map("submitted_at")
+  decidedAt DateTime? @map("decided_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  @@unique([projectId, workDate])
+  @@index([tenantId, projectId, status])
+  @@map("construction_site_logs")
+}
+model ConstructionWasteLimit {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  itemId String @map("item_id")
+  allowanceBps Int @map("allowance_bps")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  @@unique([projectId, itemId])
+  @@index([tenantId, projectId])
+  @@map("construction_waste_limits")
+}
+
+model BillingComplaint {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  customerId String @map("customer_id")
+  category String
+  description String
+  urgent Boolean @default(false)
+  status String @default("open")
+  assignedTo String? @map("assigned_to")
+  resolvedAt DateTime? @map("resolved_at")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, status, urgent, createdAt])
+  @@map("billing_complaints")
+}
+
+model RecurringExpenseBill {
+  requestKey String? @map("request_key")
+  requestPayload String? @map("request_payload")
+  @@unique([projectId, requestKey])
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  createdById String @map("created_by_id")
+  preset String
+  name String
+  vendor String
+  vendorId String? @map("vendor_id")
+  categoryDefId String @map("category_def_id")
+  accountId String @map("account_id")
+  kind String
+  amount Int
+  frequency String
+  day Int
+  nextDue DateTime @db.Date @map("next_due")
+  mode String
+  remindDays Int @map("remind_days")
+  reference String @default("")
+  endDate DateTime? @db.Date @map("end_date")
+  staff Json @default("[]")
+  paused Boolean @default(false)
+  revision Int @default(1)
+  remindedFor DateTime? @db.Date @map("reminded_for")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  expenses Expense[]
+  periods RecurringExpensePeriod[]
+  @@index([tenantId, projectId, deletedAt])
+  @@index([paused, deletedAt, nextDue])
+  @@map("recurring_expense_bills")
+}
+model RecurringExpensePeriod {
+  id String @id @default(cuid())
+  billId String @map("bill_id")
+  dueDate DateTime @db.Date @map("due_date")
+  status String
+  expenseId String? @unique @map("expense_id")
+  actorUserId String @map("actor_user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  bill RecurringExpenseBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+  expense Expense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  @@unique([billId, dueDate])
+  @@map("recurring_expense_periods")
 }

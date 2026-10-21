@@ -18,7 +18,7 @@ export async function constructionReport(a: ConstructionScope) {
         const perHead = approvedHeads.map(h => {
             const associated = contracts.filter(c => c.costHeadId === h.id);
             const actual = recognizedAllocations.filter(row => row.costHeadId === h.id).reduce((n, r) => n + r.amount, 0)
-                + associated.reduce((n, c) => n + c.certifiedAmount, 0)
+                + associated.reduce((n, c) => n + c.certifiedAmount - bills.filter(b => b.contractId === c.id).reduce((d,b) => d + b.wastageDeduction, 0), 0)
                 + suppliers.filter(b => b.costHeadId === h.id).reduce((n, b) => n + b.amount, 0)
                 + labor.filter(l => l.costHeadId === h.id).reduce((n, l) => n + l.amount, 0);
             const commitment = associated.filter(c => c.status !== 'closed').reduce((n, c) => n + c.revisedAmount - c.certifiedAmount, 0);
@@ -64,6 +64,6 @@ export async function constructionReport(a: ConstructionScope) {
             cost_heads: perHead, by_phase: [...costByPhase.values()],
             boq: boq.map(b => { const actual = recognizedAllocations.filter(r => r.boqId === b.id).reduce((n, r) => n + r.amount, 0) + suppliers.filter(r => r.boqId === b.id).reduce((n, r) => n + r.amount, 0); return { ...b, quantity: Number(b.quantity), actual, remaining: b.estimated - actual }; }),
             contracts: contracts.map(c => ({ ...c, unexecuted_commitment: c.revisedAmount - c.certifiedAmount, advance_outstanding: c.advancePaid - c.advanceRecovered, retention_payable: c.retentionHeld - c.retentionReleased, bill_payable: bills.filter(b => b.contractId === c.id).reduce((n, b) => n + b.netPayable - b.paidAmount, 0) })),
-            recognition: 'Approved/paid expenses, approved supplier and labor bills, certified running work, and received purchases without a linked supplier bill. Material movements track quantities and do not add costs a second time.' };
+            recognition: 'Approved/paid expenses, approved supplier and labor bills, certified running work less approved wastage recoveries, and received purchases without a linked supplier bill. Material movements track quantities and do not add costs a second time.' };
     });
 }

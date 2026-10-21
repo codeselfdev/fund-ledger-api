@@ -15,7 +15,7 @@ const { cycleAmount, aging, today } = await import('../dist/modules/billing/bill
 const { normalizePortalSettings, portalSettingsSchema } = await import('../dist/core/projects/project-settings.js');
 let db, counter, server, base, failAudit, retry, queue = Promise.resolve();
 const copy = value => structuredClone(value);
-const models = { project: 'projects', customer: 'customers', account: 'accounts', billingPlan: 'plans', billingUnit: 'units', billingAssignment: 'assignments', billingMeterReading: 'readings', billingInvoice: 'invoices', billingPayment: 'payments', billingAllocation: 'allocations', billingAdjustment: 'adjustments', billingRun: 'runs', billingMessage: 'messages', activity: 'activity', accountTransaction: 'transactions', session: 'sessions', projectMembership: 'memberships' };
+const models = { billingComplaint:'complaints', project: 'projects', customer: 'customers', account: 'accounts', billingPlan: 'plans', billingUnit: 'units', billingAssignment: 'assignments', billingMeterReading: 'readings', billingInvoice: 'invoices', billingPayment: 'payments', billingAllocation: 'allocations', billingAdjustment: 'adjustments', billingRun: 'runs', billingMessage: 'messages', activity: 'activity', accountTransaction: 'transactions', session: 'sessions', projectMembership: 'memberships' };
 function reset() {
   counter = 0; failAudit = false; retry = false;
   db = Object.fromEntries(Object.values(models).map(t => [t, []]));
@@ -33,6 +33,7 @@ function match(row, where = {}) {
     if (v && typeof v === 'object') {
       if (k === 'project') return match(db.projects.find(p => p.id === row.projectId), v);
       if (k === 'user') return match(row.user ?? { isActive: true }, v);
+      if ('startsWith' in v) return String(row[k]).startsWith(v.startsWith);
       if ('in' in v) return v.in.includes(row[k]);
       return Object.entries(v).every(([op, n]) => op === 'gt' ? row[k] > n : op === 'gte' ? row[k] >= n : op === 'lt' ? row[k] < n : op === 'lte' ? row[k] <= n : op === 'not' ? row[k] !== n : false);
     }
@@ -55,7 +56,7 @@ function mutate(row, data) {
   return row;
 }
 function defaults(table) {
-  return table === 'invoices' ? { status: 'issued', paidAmount: 0, creditAmount: 0, debitAmount: 0, lateFeeAmount: 0, lateFeeAppliedAt: null, assignmentId: null, periodStart: null } : table === 'payments' ? { refundedAmount: 0, reference: null } : table === 'allocations' ? { releasedAt: null } : table === 'assignments' ? { status: 'active', endDate: null, unitId: null } : table === 'adjustments' ? { status: 'pending', decidedAt: null, decidedById: null, invoiceId: null, paymentId: null } : table === 'runs' ? { cursor: 0, status: 'queued' } : table === 'messages' ? { status: 'queued', attempts: 0, leaseUntil: null } : table === 'customers' ? { isActive: true, email: null } : {};
+  return table === 'complaints' ? {status:'open',assignedTo:null,resolvedAt:null} : table === 'invoices' ? { status: 'issued', paidAmount: 0, creditAmount: 0, debitAmount: 0, lateFeeAmount: 0, lateFeeAppliedAt: null, assignmentId: null, periodStart: null } : table === 'payments' ? { refundedAmount: 0, reference: null } : table === 'allocations' ? { releasedAt: null } : table === 'assignments' ? { status: 'active', endDate: null, unitId: null } : table === 'adjustments' ? { status: 'pending', decidedAt: null, decidedById: null, invoiceId: null, paymentId: null } : table === 'runs' ? { cursor: 0, status: 'queued' } : table === 'messages' ? { status: 'queued', attempts: 0, leaseUntil: null } : table === 'customers' ? { isActive: true, email: null } : {};
 }
 function mock(table) {
   const findMany = async ({ where = {}, orderBy = [], take = 100000, skip = 0, include } = {}) => {
@@ -255,4 +256,45 @@ test('bulk contract accepts 5000 assignments and refuses selecting 5001', async 
   db.assignments = Array.from({ length: 5000 }, (_, n) => ({ id: `batch-${n}`, tenantId: 't', projectId: 'p', customerId: 'c', planId: p.id, unitId: null, label: `Unit ${n}`, status: 'active', startDate: new Date('2026-01-01'), endDate: null }));
   const r = await request('/invoice-runs', { period_start: '2026-01-01', request_key: randomUUID() }); assert.equal(r.status, 202); assert.equal(r.body.data.assignmentIds.length, 5000);
   db.assignments.push({ ...db.assignments[0], id: 'extra' }); assert.equal((await request('/invoice-runs', { period_start: '2026-01-01', request_key: randomUUID() })).status, 400);
+});
+
+const complaintBody=(extra={})=>({customer_id:'c',category:'Water',description:'Kitchen water supply stopped',urgent:true,request_key:randomUUID(),...extra});
+test('home counters use every outstanding invoice, today receipts and scoped pending reviews',async()=>{
+ const asOf=today(),month=asOf.slice(0,7);
+ for(let i=0;i<61;i++)await newInvoice({invoice_date:`${month}-01`,due_date:`${month}-10`});
+ await newInvoice({customer_id:'c2',invoice_date:`${month}-01`,due_date:`${month}-10`});
+ await request('/payments',paymentBody(1000,{customer_id:'c2',payment_date:asOf}));
+ const inv=db.invoices[0];await adjustment('waiver',{invoice_id:inv.id},100);
+ await request('/complaints',complaintBody());
+ db.invoices.push({...copy(inv),id:'foreign-invoice',tenantId:'other',projectId:'foreign',total:999999});
+ db.messages.push({tenantId:'t',projectId:'p',dedupeKey:`reminder:${inv.id}:${asOf}`,status:'queued'});
+ const r=await request(`/home?month=${month}`,undefined,'admin');assert.equal(r.status,200,JSON.stringify(r.body));const h=r.body.data;
+ assert.equal(h.month_billed,62000);assert.equal(h.month_collected,1000);assert.equal(h.month_settled,1000);assert.equal(h.outstanding,61000);
+ assert.equal(h.billed_customers,2);assert.equal(h.paid_customers,1);assert.equal(h.unpaid_customers,1);assert.equal(h.unpaid[0].outstanding,61000);
+ assert.equal(h.today_collected,1000);assert.equal(h.today_cash,0);assert.equal(h.today_receipt_count,1);assert.equal(h.receipts[0].name,'Second');assert.equal(h.pending_approvals,1);assert.equal(h.open_complaints,1);assert.equal(h.reminders.queued,1);
+ assert.equal((await request('/home?month=2026-13')).status,400);
+ assert.equal((await request('/home',undefined,'member')).status,403);
+ assert.equal((await request('/home',undefined,'accountant','GET','fund')).status,403);
+});
+test('complaint creation is scoped, idempotent and restricts write roles',async()=>{
+ const body=complaintBody();const first=await request('/complaints',body,'cashier');assert.equal(first.status,201,JSON.stringify(first.body));
+ const again=await request('/complaints',body,'cashier');assert.equal(again.body.data.id,first.body.data.id);assert.equal(db.complaints.length,1);
+ assert.equal((await request('/complaints',{...body,description:'Different request'},'cashier')).status,409);
+ assert.equal((await request('/complaints',complaintBody({customer_id:'foreign-c'}))).status,404);
+ assert.equal((await request('/complaints',complaintBody(),'auditor')).status,403);
+ assert.equal((await request('/complaints',complaintBody({description:'  '}))).status,400);
+ assert.equal((await request('/complaints?status=open')).body.data.total,1);
+});
+test('complaints persist assignment, resolution and reopening without exposing other projects',async()=>{
+ const c=(await request('/complaints',complaintBody())).body.data;
+ assert.equal((await request(`/complaints/${c.id}`,{status:'progress',assigned_to:'Babul'},'cashier','PATCH')).status,403);
+ let r=await request(`/complaints/${c.id}`,{status:'progress',assigned_to:'Babul'},'accountant','PATCH');assert.equal(r.status,200);assert.equal(r.body.data.assignedTo,'Babul');
+ r=await request(`/complaints/${c.id}`,{status:'resolved'},'admin','PATCH');assert.ok(r.body.data.resolvedAt);
+ r=await request(`/complaints/${c.id}`,{status:'open'},'admin','PATCH');assert.equal(r.body.data.resolvedAt,null);
+ db.complaints.push({...copy(db.complaints[0]),id:'foreign-complaint',tenantId:'other',projectId:'foreign'});
+ assert.equal((await request('/complaints/foreign-complaint',{status:'resolved'},'admin','PATCH')).status,404);
+ assert.equal((await request('/complaints')).body.data.entries.length,1);
+});
+test('a complaint and its audit record roll back together on failure',async()=>{
+ failAudit=true;assert.equal((await request('/complaints',complaintBody())).status,500);assert.equal(db.complaints.length,0);
 });

@@ -1,3 +1,4 @@
+import { startRecurringExpensesWorker, stopRecurringExpensesWorker } from './modules/expenses/recurring-expenses.worker.js';
 import { startBusinessImportRetention, stopBusinessImportRetention } from './modules/business-setup/retention.js';
 import { startSupportReplyNotifications, stopSupportReplyNotifications } from "./modules/support/support-reply-notifications.service.js";
 import { startDocumentRetentionCron, stopDocumentRetentionCron } from "./core/cron/document-retention.cron.js";
@@ -28,6 +29,7 @@ startRecurringSchedulesCron();
 startDocumentRetentionCron();
 startBusinessImportRetention();
 startBillingWorker();
+startRecurringExpensesWorker();
 startCampaignWorker();
 startReportsWorker();
 startFixedAssetsWorker();
@@ -56,6 +58,7 @@ async function shutdown() {
   stopDocumentRetentionCron();
   stopBusinessImportRetention();
   stopBillingWorker();
+  stopRecurringExpensesWorker();
   stopCampaignWorker();
   stopReportsWorker();
   stopFixedAssetsWorker();

@@ -27,6 +27,7 @@ export async function boq(tx: Tx, a: ConstructionScope, id: string, costHeadId?:
 }
 export async function decide(a: ConstructionScope, kind: 'budget' | 'running_bill' | 'supplier_bill' | 'labor' | 'change_order', id: string, decision: z.infer<typeof decisionSchema>['decision']) {
     return financialTransaction(async (tx) => {
+        if (kind === 'labor' && await tx.constructionSiteLog.findFirst({ where: { ...scope(a), status: 'pending', laborIds: { has: id } } })) throw conflict('Review these wages through their daily site log');
         const where = { id, ...scope(a) };
         const row = kind === 'budget' ? await tx.constructionCostHead.findFirst({ where }) : kind === 'running_bill' ? await tx.constructionRunningBill.findFirst({ where }) : kind === 'supplier_bill' ? await tx.constructionSupplierBill.findFirst({ where }) : kind === 'labor' ? await tx.constructionLaborEntry.findFirst({ where }) : await tx.constructionChangeOrder.findFirst({ where });
         if (!row)
@@ -48,7 +49,7 @@ export async function decide(a: ConstructionScope, kind: 'budget' | 'running_bil
                 if (contract.certifiedAmount !== bill.previousCertified)
                     throw conflict('Another bill was certified; submit a fresh cumulative running bill');
                 const totals = runningBill(contract, bill.cumulativeCertified, bill.advanceRecovery);
-                if (totals.retention !== bill.retention || totals.netPayable !== bill.netPayable)
+                if (totals.retention !== bill.retention || totals.netPayable - bill.wastageDeduction !== bill.netPayable)
                     throw conflict('Contract changed since this bill was requested');
                 await tx.constructionContract.update({ where: { id: contract.id }, data: { certifiedAmount: bill.cumulativeCertified, retentionHeld: { increment: bill.retention }, advanceRecovered: { increment: bill.advanceRecovery } } });
             }
@@ -73,6 +74,7 @@ export async function decide(a: ConstructionScope, kind: 'budget' | 'running_bil
                     costHeadId: string;
                 }).costHeadId);
         }
+        if (kind === 'running_bill' && decision === 'reject') await tx.constructionMaterialEntry.updateMany({ where: { ...scope(a), chargeBillId: id }, data: { chargeBillId: null } });
         const data = { status, decidedById: a.userId, ...(kind === 'budget' ? {} : { decidedAt: new Date() }) };
         const updated = kind === 'budget' ? await tx.constructionCostHead.update({ where: { id }, data }) : kind === 'running_bill' ? await tx.constructionRunningBill.update({ where: { id }, data }) : kind === 'supplier_bill' ? await tx.constructionSupplierBill.update({ where: { id }, data }) : kind === 'labor' ? await tx.constructionLaborEntry.update({ where: { id }, data }) : await tx.constructionChangeOrder.update({ where: { id }, data });
         await audit(tx, a, `${kind}.${status}`, `construction_${kind}`, id, updated);
@@ -138,7 +140,9 @@ export async function pay(a: ConstructionScope, b: z.infer<typeof paymentSchema>
     });
 }
 export async function moveMaterial(a: ConstructionScope, b: z.infer<typeof materialSchema>) {
-    return financialTransaction(async (tx) => {
+    return financialTransaction(tx => moveMaterialInTransaction(tx, a, b));
+}
+export async function moveMaterialInTransaction(tx: Tx, a: ConstructionScope, b: z.infer<typeof materialSchema>) {
         const existing = await tx.constructionMaterialEntry.findFirst({ where: { ...scope(a), requestKey: b.request_key } });
         if (existing) {
             sameRequest(existing, b);
@@ -162,11 +166,11 @@ export async function moveMaterial(a: ConstructionScope, b: z.infer<typeof mater
             throw conflict('Insufficient stock for consumption or wastage');
         if (!await stockEnabled(tx, a)) throw badRequest('Enable stock management before recording material stock movements');
         const change = b.kind === 'return' ? b.quantity : -b.quantity;
-        const row = await tx.constructionMaterialEntry.create({ data: { ...scope(a), itemId: item.id, boqId: b.boq_id, kind: b.kind, quantity: b.quantity, entryDate: atDate(b.entry_date), reason: b.reason, sourceId: b.source_id, requestKey: b.request_key, requestHash: hash(b), createdById: a.userId } });
+        if (b.charge_contract_id && (b.kind !== 'waste' || !await tx.constructionContract.findFirst({ where: { id: b.charge_contract_id, ...scope(a), status: 'active' } }))) throw badRequest('Chargeable wastage requires an active contract in this project');
+        const row = await tx.constructionMaterialEntry.create({ data: { ...scope(a), itemId: item.id, boqId: b.boq_id, kind: b.kind, quantity: b.quantity, unitRate: item.costPrice, chargeContractId: b.charge_contract_id, entryDate: atDate(b.entry_date), reason: b.reason, sourceId: b.source_id, requestKey: b.request_key, requestHash: hash(b), createdById: a.userId } });
         await changeStock(tx, a, { itemId: item.id, delta: change, type: change > 0 ? 'adjustment_increase' : 'adjustment_decrease', referenceType: `construction_${b.kind}`, referenceId: row.id, reason: b.reason, restoring: b.kind === 'return' });
         await audit(tx, a, 'material.recorded', 'construction_material_entry', row.id, row);
         return row;
-    });
 }
 export async function receiveSupplierPurchase(tx: Tx, a: ConstructionScope, billId: string) {
     const bill = await tx.constructionSupplierBill.findFirst({ where: { id: billId, ...scope(a), status: 'approved' } });

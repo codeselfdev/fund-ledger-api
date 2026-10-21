@@ -1,3 +1,4 @@
+import { recurringExpensesRouter } from './modules/expenses/recurring-expenses.routes.js';
 import { businessSetupRouter } from './modules/business-setup/business-setup.routes.js';
 import { aiServiceRouter } from './modules/ai-service/ai-service.routes.js';
 import { shortcutsRouter } from './modules/shortcuts/shortcuts.routes.js';
@@ -87,6 +88,7 @@ export function registerRoutes(app: Express) {
   app.use("/v1/deposits", depositsRouter);
   app.use("/v1/uploads", uploadsRouter);
   app.use("/v1", receiptsRouter);
+  app.use("/v1/expenses/recurring", recurringExpensesRouter);
   app.use("/v1/expenses", expensesRouter);
   app.use("/v1/expense-categories", expenseCategoriesRouter);
   app.use("/v1/vendors", vendorsRouter);

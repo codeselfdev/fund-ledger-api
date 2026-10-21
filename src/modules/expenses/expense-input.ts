@@ -18,8 +18,10 @@ export function toExpenseDate(value?: string, now = new Date()) {
 }
 
 export const expenseBodySchema = z.object({
+  request_key: z.string().uuid().optional(),
+  repeat: z.enum(["monthly", "quarterly", "yearly"]).optional(),
   title: z.string().min(2),
-  amount: z.number().int().positive(),
+  amount: z.number().int().positive().max(2147483647),
   category: z.nativeEnum(ExpenseCategory).optional(),
   category_def_id: z.string().min(1).optional(),
   vendor: z.string().optional(),
@@ -31,6 +33,6 @@ export const expenseBodySchema = z.object({
     .refine(value => value <= dhakaToday(), "Expense date cannot be in the future").optional(),
   account_id: z.string().min(1),
   doc_file_id: z.string().optional()
-}).refine(value => value.category != null || value.category_def_id != null, {
+}).refine(value => !value.repeat || !!value.request_key, { message: "request_key is required for a repeating expense", path: ["request_key"] }).refine(value => value.category != null || value.category_def_id != null, {
   message: "category or category_def_id is required", path: ["category"]
 });

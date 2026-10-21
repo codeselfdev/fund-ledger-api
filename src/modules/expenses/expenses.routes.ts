@@ -1,3 +1,5 @@
+import { priorBillRequest } from './recurring-expenses.service.js';
+import { stepDue } from './recurring-expenses.policy.js';
 import { Router } from "express";
 import { z } from "zod";
 import { ExpenseCategory, ExpenseStatus } from "@prisma/client";
@@ -126,11 +128,20 @@ router.post("/", requireProject, requireRoles("owner", "staff", "cashier"), vali
   });
   if (!account) throw notFound("Account not found");
 
-  const isOwnerOrAdmin = auth.roles.includes("owner") || auth.roles.includes("admin");
-  const isAccountant = !isOwnerOrAdmin && auth.roles.includes("accountant");
+  const isOwnerOrAdmin = !body.repeat && (auth.roles.includes("owner") || auth.roles.includes("admin"));
+  const isAccountant = !body.repeat && !isOwnerOrAdmin && auth.roles.includes("accountant");
   const status: ExpenseStatus = isOwnerOrAdmin ? "paid" : isAccountant ? "approved" : "pending";
 
   const result = await prisma.$transaction(async (tx) => {
+    let requestPayload: string | undefined;
+    if (body.repeat && body.request_key) {
+      requestPayload = JSON.stringify({ ...body, doc_file_id: undefined });
+      const previous = await priorBillRequest(tx, auth, body.request_key, requestPayload);
+      if (previous) {
+        const expense = await tx.expense.findFirstOrThrow({ where: { recurringBillId: previous.id, tenantId: auth.tenantId, projectId: auth.projectId }, orderBy: { createdAt: "asc" } });
+        return { expense, accountTransaction: null, balanceBefore: null, replay: true };
+      }
+    }
     let updatedAccount = null;
     if (isOwnerOrAdmin) {
       const debit = await tx.account.updateMany({
@@ -140,10 +151,24 @@ router.post("/", requireProject, requireRoles("owner", "staff", "cashier"), vali
       if (debit.count !== 1) throw badRequest("Source account has insufficient balance");
       updatedAccount = await tx.account.findUniqueOrThrow({ where: { id: account.id } });
     }
+    const period = (body.expense_date ?? toExpenseDate().toISOString().slice(0, 10));
+    const day = Number(period.slice(8));
+    if (body.repeat && !body.category_def_id) throw badRequest("Choose a category for the recurring bill");
+    if (body.repeat && !vendorName?.trim()) throw badRequest("Choose a vendor for the recurring bill");
+    const bill = body.repeat ? await tx.recurringExpenseBill.create({ data: {
+      tenantId: auth.tenantId, projectId: auth.projectId, createdById: auth.userId,
+      requestKey: body.request_key, requestPayload,
+      preset: "custom", name: body.title, vendor: vendorName!, vendorId: body.vendor_id,
+      categoryDefId: body.category_def_id!, accountId: account.id, kind: "fixed", amount: body.amount,
+      frequency: body.repeat, day, nextDue: toExpenseDate(stepDue(period, body.repeat, day)),
+      mode: "remind", remindDays: 3, staff: [],
+    } }) : null;
     const expense = await tx.expense.create({
       data: {
         tenantId: auth.tenantId,
         projectId: auth.projectId,
+        recurringBillId: bill?.id,
+        recurringDueDate: bill ? toExpenseDate(period) : null,
         title: body.title,
         amount: body.amount,
         category: categoryEnum,
@@ -160,6 +185,7 @@ router.post("/", requireProject, requireRoles("owner", "staff", "cashier"), vali
         ...(isOwnerOrAdmin ? { disbursedById: auth.userId, paidAccountId: account.id, paidAt: new Date() } : {})
       }
     });
+    if (bill) await tx.recurringExpensePeriod.create({ data: { billId: bill.id, dueDate: toExpenseDate(period), status: "recorded", expenseId: expense.id, actorUserId: auth.userId } });
     const accountTransaction = updatedAccount ? await tx.accountTransaction.create({
       data: {
         tenantId: auth.tenantId,
@@ -177,6 +203,7 @@ router.post("/", requireProject, requireRoles("owner", "staff", "cashier"), vali
     return { expense, accountTransaction, balanceBefore: updatedAccount ? updatedAccount.balance + body.amount : null };
   });
   const { expense } = result;
+  if ("replay" in result && result.replay) return ok(res, expense);
 
   await writeAudit({
     tenantId: auth.tenantId,

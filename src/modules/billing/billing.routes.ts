@@ -1,3 +1,6 @@
+import { billingSubscribersRouter } from './billing.subscribers.js';
+import { billingHome } from './billing.home.js';
+import { billingComplaintsRouter } from './billing.complaints.js';
 import { taxPdfLines } from '../business-setup/pdf.js';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -25,6 +28,10 @@ router.use(requireProject, read, asyncHandler(async (req, _res, next) => {
         throw forbidden('This feature belongs to Billing Management projects');
     next();
 }));
+router.use('/subscribers', billingSubscribersRouter);
+router.use('/complaints', billingComplaintsRouter);
+const homeQuery = z.object({month:z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional()}).strict();
+router.get('/home', validateQuery(homeQuery), asyncHandler(async(req,res)=>{const a=requireProjectContext(req),q=homeQuery.parse(req.query);return ok(res,await billingHome(a,q.month??today().slice(0,7)));}));
 router.get('/configuration', asyncHandler(async (req, res) => {
     const a = requireProjectContext(req);
     const p = await prisma.project.findFirstOrThrow({ where: { id: a.projectId, tenantId: a.tenantId } });

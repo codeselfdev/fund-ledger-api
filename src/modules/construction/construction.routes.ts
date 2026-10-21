@@ -13,6 +13,7 @@ import { audit, head, boq, scope, sameRequest, financialTransaction, decide, pay
 import { constructionReport } from './construction.reports.js';
 import { constructionMenus } from './construction.menu.js';
 import { vendorsRouter } from '../vendors/vendors.routes.js';
+import { siteRouter } from './construction.site.routes.js';
 const router = Router();
 const write = requireRoles('accountant');
 router.use(requireProject, requireRoles('accountant', 'approver', 'auditor', 'cashier'), asyncHandler(async (req, _res, next) => {
@@ -22,6 +23,7 @@ router.use(requireProject, requireRoles('accountant', 'approver', 'auditor', 'ca
         throw forbidden('This feature belongs to Construction Financial Management projects');
     next();
 }));
+router.use(siteRouter);
 router.get('/configuration', asyncHandler(async (req, res) => { const a = requireProjectContext(req); const p = await prisma.project.findFirstOrThrow({ where: { id: a.projectId, tenantId: a.tenantId } }); return ok(res, { settings: { ...(p.constructionSettings as object ?? { building: p.name, site: p.address ?? '', financial_target: 0 }), total_shares: p.totalShares }, menus: constructionMenus(a.roles) }); }));
 router.put('/configuration', requireRoles('admin'), validateBody(settingsSchema), asyncHandler(async (req, res) => { const a = requireProjectContext(req), b = settingsSchema.parse(req.body); await financialTransaction(async (tx) => { if (b.total_shares !== undefined) {
     const shares = await tx.member.aggregate({ where: { ...scope(a), status: 'active' }, _sum: { shares: true } });
@@ -62,7 +64,13 @@ router.post('/running-bills', write, validateBody(runningSchema), asyncHandler(a
     sameRequest(old, b);
     return old;
 } const c = await tx.constructionContract.findFirst({ where: { id: b.contract_id, ...scope(a), status: 'active' } }); if (!c)
-    throw notFound('Active contract not found'); const totals = runningBill(c, b.cumulative_certified, b.advance_recovery); const row = await tx.constructionRunningBill.create({ data: { ...scope(a), contractId: c.id, cumulativeCertified: b.cumulative_certified, ...totals, billDate: atDate(b.bill_date), note: b.note, requestKey: b.request_key, requestHash: hash(b), createdById: a.userId } }); await audit(tx, a, 'running_bill.requested', 'construction_running_bill', row.id, row); return row; }); return created(res, row); }));
+    throw notFound('Active contract not found'); const totals = runningBill(c, b.cumulative_certified, b.advance_recovery);
+ const wasteIds = [...new Set(b.waste_entry_ids ?? [])], waste = await tx.constructionMaterialEntry.findMany({ where: { ...scope(a), id: { in: wasteIds }, kind: 'waste', chargeContractId: c.id, chargeBillId: null } });
+ if (waste.length !== wasteIds.length) throw conflict('Wastage was already assigned to another bill or does not belong to this contract');
+ const deduction = waste.reduce((n,e) => n + e.quantity * (e.unitRate ?? 0), 0);
+ if (deduction > totals.netPayable) throw badRequest('Wastage deductions exceed the current payable');
+ totals.netPayable -= deduction;
+ const row = await tx.constructionRunningBill.create({ data: { ...scope(a), contractId: c.id, cumulativeCertified: b.cumulative_certified, ...totals, wastageDeduction: deduction, wasteEntryIds: wasteIds, billDate: atDate(b.bill_date), note: b.note, requestKey: b.request_key, requestHash: hash(b), createdById: a.userId } }); await tx.constructionMaterialEntry.updateMany({ where: { ...scope(a), id: { in: wasteIds }, chargeBillId: null }, data: { chargeBillId: row.id } }); await audit(tx, a, 'running_bill.requested', 'construction_running_bill', row.id, row); return row; }); return created(res, row); }));
 router.use('/suppliers', vendorsRouter);
 router.get('/supplier-bills', asyncHandler(async (req, res) => ok(res, await prisma.constructionSupplierBill.findMany({ where: scope(requireProjectContext(req)), include: { vendor: true, costHead: true, boq: true }, orderBy: { createdAt: 'desc' } }))));
 router.post('/supplier-bills', write, validateBody(supplierSchema), asyncHandler(async (req, res) => { const a = requireProjectContext(req), b = supplierSchema.parse(req.body); const row = await financialTransaction(async (tx) => { const old = await tx.constructionSupplierBill.findFirst({ where: { ...scope(a), requestKey: b.request_key } }); if (old) {
