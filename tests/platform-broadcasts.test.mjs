@@ -67,10 +67,11 @@ test('queue snapshots one delivery per device and an inbox copy per account with
   await assert.rejects(f.service.send(actor, { ...input, draft: { ...draft, body: 'Different message' } }), /another message/);
 });
 test('changed token, changed message, another actor and expired preview all require fresh review', async () => {
-  for (const change of ['token', 'draft', 'actor', 'expired']) {
+  for (const change of ['token', 'draft', 'url', 'actor', 'expired']) {
     const f = fixture(), input = await f.input(); let who = actor;
     if (change === 'token') f.recipients([{ ...users[0], deviceId: 'changed-token' }]);
     if (change === 'draft') input.draft = { ...draft, title: 'A different title' };
+    if (change === 'url') input.draft = { ...draft, url: 'https://example.test/changed' };
     if (change === 'actor') who = 'other-admin@example.test';
     if (change === 'expired') input.expires_at = new Date(Date.now() - 1000).toISOString();
     await assert.rejects(f.service.send(who, input), /Review|review/); assert.equal(f.rows.length, 0);
@@ -148,4 +149,27 @@ test('HTTP routes require the internal key, operator identity and validated draf
     Object.assign(platformBroadcasts, originals);
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+const testingUrl = 'https://play.google.com/apps/testing/com.fundnesta.appnesta.app';
+test('notification links are optional and require a credential-free HTTPS URL', () => {
+  assert.deepEqual(broadcastDraftSchema.parse(draft), draft);
+  assert.equal(broadcastDraftSchema.parse({ ...draft, url: '  ' + testingUrl + '  ' }).url, testingUrl);
+  for (const url of ['', 'http://example.test', 'javascript:alert(1)', 'https://user:secret@example.test', 'https://example.test/a\nb', 'https://example.test/hello world', 'https://example.test/\\evil', 'https://', 'https://example.test/' + 'a'.repeat(2048)]) {
+    assert.equal(broadcastDraftSchema.safeParse({ ...draft, url }).success, false, url);
+  }
+});
+test('reviewed links persist on the broadcast, private inbox copies, history and push metadata', async () => {
+  const f = fixture(), linked = broadcastDraftSchema.parse({ ...draft, url: testingUrl });
+  const preview = await f.service.preview(actor, linked);
+  assert.equal(preview.draft.url, testingUrl); assert.equal(f.rows.length, 0);
+  const input = { draft: linked, preview_token: preview.preview_token, expires_at: preview.expires_at, request_key: randomUUID() };
+  const sent = await f.service.send(actor, input);
+  assert.equal(sent.url, testingUrl); assert.equal(f.rows[0].actionUrl, testingUrl);
+  assert.ok(f.inbox.every(row => row.actionUrl === testingUrl));
+  assert.deepEqual(f.inbox.map(row => [row.tenantId, row.recipientUserId]), [['org1', 'u1'], ['org2', 'u2'], ['org3', 'u3']]);
+  assert.equal((await f.service.history()).notifications[0].url, testingUrl);
+  await assert.rejects(f.service.send(actor, { ...input, draft: { ...linked, url: 'https://example.test/changed' } }), /another message/);
+  f.deliveries.length = 0; f.workerRow({ broadcast: f.rows[0] }); await f.service.deliver();
+  assert.equal(f.pushes[0].data.url, testingUrl); assert.equal(f.pushes[0].data.project_id, undefined);
 });

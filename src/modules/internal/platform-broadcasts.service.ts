@@ -7,8 +7,13 @@ import { badRequest, conflict, notFound, serviceUnavailable } from '../../core/h
 import { sendPushMessage } from '../../core/notifications/fcm.service.js';
 import { getFirebaseAdminApp } from '../../core/firebase/admin.js';
 
+const notificationUrl = z.string().trim().max(2048).refine(value => {
+  if (!/^https:\/\//i.test(value) || /[\s\\\u0000-\u001f\u007f]/.test(value)) return false;
+  try { const url = new URL(value); return Boolean(url.hostname && !url.username && !url.password); }
+  catch { return false; }
+}, 'Use an HTTPS link without credentials.');
 export const broadcastDraftSchema = z.object({
-  title: z.string().trim().min(3).max(65), body: z.string().trim().min(3).max(500),
+  title: z.string().trim().min(3).max(65), body: z.string().trim().min(3).max(500), url: notificationUrl.optional(),
 }).strict();
 export const broadcastSendSchema = z.object({
   draft: broadcastDraftSchema, request_key: z.string().uuid(),
@@ -50,7 +55,7 @@ export function createPlatformBroadcasts(db = prisma, push = sendPushMessage,
     const row = await client.platformBroadcast.findUnique({ where: { id } });
     if (!row) throw notFound('Notification not found');
     const groups = await client.platformBroadcastDelivery.groupBy({ by: ['status'], where: { broadcastId: id }, _count: true });
-    return { id: row.id, title: row.title, body: row.body, created_at: row.createdAt, created_by: row.actor,
+    return { id: row.id, title: row.title, body: row.body, ...(row.actionUrl ? { url: row.actionUrl } : {}), created_at: row.createdAt, created_by: row.actor,
       devices: row.deviceCount, accounts: row.accountCount, organizations: row.organizationCount,
       delivery: Object.fromEntries(['pending', 'sent', 'failed', 'skipped'].map(status => [status, groups.find(group => group.status === status)?._count ?? 0])) };
   }
@@ -72,12 +77,12 @@ export function createPlatformBroadcasts(db = prisma, push = sendPushMessage,
           throw conflict('The message or recipients changed. Review the message again.');
         if (!current.devices.size) throw badRequest('No registered devices are available.');
         const row = await tx.platformBroadcast.create({ data: { actor, requestKey: input.request_key, payloadHash,
-          ...input.draft, deviceCount: current.reach.devices, accountCount: current.reach.accounts, organizationCount: current.reach.organizations } });
+          title: input.draft.title, body: input.draft.body, actionUrl: input.draft.url, deviceCount: current.reach.devices, accountCount: current.reach.accounts, organizationCount: current.reach.organizations } });
         const deliveries = [...current.devices].map(([tokenHash, recipientIds]) => ({ broadcastId: row.id, tokenHash, recipientIds }));
         for (let i = 0; i < deliveries.length; i += 1000) await tx.platformBroadcastDelivery.createMany({ data: deliveries.slice(i, i + 1000) });
         for (let i = 0; i < current.recipients.length; i += 1000) await tx.notification.createMany({ data: current.recipients.slice(i, i + 1000).map(user => ({
           id: `broadcast:${row.id}:${user.id}`, tenantId: user.tenantId, recipientUserId: user.id,
-          type: 'announcement.platform', ...input.draft, entityType: 'platform_broadcast', entityId: row.id,
+          type: 'announcement.platform', title: input.draft.title, body: input.draft.body, actionUrl: input.draft.url, entityType: 'platform_broadcast', entityId: row.id,
         })), skipDuplicates: true });
         await tx.internalAudit.create({ data: { actor, action: 'notification.broadcast_queued', metadata: { broadcast_id: row.id, ...current.reach } } });
         return row.id;
@@ -122,7 +127,7 @@ export function createPlatformBroadcasts(db = prisma, push = sendPushMessage,
         const token = users.map(user => user.deviceId?.trim()).find(value => value && hash(value) === row.tokenHash);
         if (!token) { await finish({ status: 'skipped', lastError: 'recipient_unavailable' }); continue; }
         const result = await push({ tokens: [token], title: row.broadcast.title, body: row.broadcast.body,
-          data: { type: 'announcement.platform', entity_type: 'platform_broadcast', entity_id: row.broadcastId } });
+          data: { type: 'announcement.platform', entity_type: 'platform_broadcast', entity_id: row.broadcastId, ...(row.broadcast.actionUrl ? { url: row.broadcast.actionUrl } : {}) } });
         if (result.invalid_tokens.includes(token)) {
           await db.user.updateMany({ where: { deviceId: token }, data: { deviceId: null } });
           await finish({ status: 'skipped', lastError: 'invalid_device_token' }); continue;

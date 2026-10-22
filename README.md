@@ -359,3 +359,10 @@ See [Reports and integrations](docs/REPORTS_INTEGRATIONS.md) for the Excel repor
 ## Configurable business data and tax
 
 The Business setup API serves shared customer/dealer/item field definitions, typed search, reviewed spreadsheet imports and tax/VAT defaults with historical document snapshots. Apply migration `20261020000000_business_setup` and regenerate Prisma before deploying the matching mobile update. See [Business setup architecture and rollout](docs/BUSINESS_SETUP.md).
+
+
+### Notification update links
+
+Platform admin → Send notification accepts an optional HTTPS link. Use **Use closed-testing link** to attach `https://play.google.com/apps/testing/com.fundnesta.appnesta.app`, then review the full destination and audience before sending. Leaving the field blank preserves message-only notifications. Editing the message or link requires a new review; the signed preview binds the link and recipients, and retries preserve the same payload.
+
+Rollout: apply API migration `20261022173000_notification_action_links` after the platform broadcast migration, regenerate Prisma, and deploy the API and admin portal. The mobile app must include notification action support for push/inbox taps to open the browser; earlier app versions only display the announcement. The new app does not install updates automatically. Existing project-scoped notification access rules continue to apply.
