@@ -46,7 +46,7 @@ export async function bulkCatalog(db:Db,a:Auth){
   db.customer.findMany({where:{...where,isActive:true},select:{id:true,name:true,mobile:true,email:true},orderBy:{id:'asc'},take:500}),
   db.vendor.findMany({where:{...where,isActive:true},select:{id:true,name:true,phone:true},orderBy:{id:'asc'},take:500}),
   db.inventoryItem.findMany({where:{...where,isActive:true},select:{id:true,name:true,sku:true},orderBy:{id:'asc'},take:500}),
-  db.account.findMany({where,select:{id:true,name:true}}),
+  db.account.findMany({where,select:{id:true,name:true,balance:true}}),
   db.incomeCategory.findMany({where:{...where,isActive:true},select:{id:true,name:true}}),
   db.expenseCategoryDef.findMany({where,select:{id:true,name:true}}),
   entitySchema(db,a,'customer'),entitySchema(db,a,'dealer'),entitySchema(db,a,'item'),

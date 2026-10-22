@@ -168,3 +168,19 @@ test('uploaded action-chat images survive retries and history reloads and remain
   global.fetch=saved.fetch;prisma.assistantReply.findUniqueOrThrow=saved.findReply;prisma.assistantReply.update=saved.updateReply;prisma.assistantReply.findMany=saved.history;prisma.assistantAttachment.findMany=saved.findImages;prisma.assistantAttachment.createMany=saved.createImages;prisma.assistantAttachment.findFirst=saved.findImage;
  }
 });
+
+
+test('draft edits proxy exact rows for revalidation and persist editable errors or a new review within the caller scope',async()=>{
+ const saved={fetch:global.fetch,update:prisma.assistantReply.updateMany};let mode='editing',changes=[];
+ const body={digest:'a'.repeat(64),fields:{rows:[{title:'Rent',amount:100,account_id:'bank',expense_date:'2026-10-01',category:'services'}]},request_key:'123e4567-e89b-42d3-a456-426614174002'};
+ global.fetch=async(input,options)=>{
+  const url=new URL(input);if(url.origin!=='http://127.0.0.1:4010')return saved.fetch(input,options);
+  if(url.pathname==='/session')return Response.json(options?.method==='DELETE'?{}:{token:'test-session'});
+  assert.equal(url.pathname,'/drafts/source/revise');assert.deepEqual(JSON.parse(options.body),body);
+  return Response.json({proposal_id:'revised',status:mode,validation_message:mode==='editing'?'Row 1: insufficient balance':undefined,fields:body.fields});
+ };
+ prisma.assistantReply.updateMany=async change=>{changes.push(change);return{count:1};};
+ try{for(const status of ['editing','pending']){mode=status;const response=await request('/drafts/source/revise',body);assert.equal(response.status,200);const change=changes.at(-1);assert.equal(change.where.tenantId,'tenant');assert.equal(change.where.projectId,'project');assert.equal(change.where.userId,'user');assert.equal(change.where.reply.contains,'source');const result=JSON.parse(change.data.reply);assert.equal(result.status,status==='editing'?'needs_information':'confirmation_required');assert.equal((result.editable_draft??result.proposal).proposal_id,'revised');}
+ assert.equal((await request('/drafts/source/revise',{...body,fields:{rows:[]}})).status,400);
+ }finally{global.fetch=saved.fetch;prisma.assistantReply.updateMany=saved.update;}
+});

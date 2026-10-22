@@ -164,6 +164,13 @@ router.post('/telegram/links/:id/confirm',asyncHandler(async(req,res)=>{
 router.post('/telegram/link',asyncHandler(async(req,res)=>ok(res,await serviceRequest(req,'/telegram/link',{}))));
 router.post('/whatsapp/link',asyncHandler(async(req,res)=>ok(res,await serviceRequest(req,'/whatsapp/link',{}))));
 router.get('/drafts/:id',asyncHandler(async(req,res)=>ok(res,await serviceRequest(req,`/drafts/${encodeURIComponent(req.params.id!)}`))));
+router.post('/drafts/:id/revise',asyncHandler(async(req,res)=>{
+ const b=z.object({digest:z.string().regex(/^[a-f0-9]{64}$/),fields:z.object({rows:z.array(z.record(z.unknown())).min(1).max(50)}).strict(),request_key:z.string().uuid()}).strict().parse(req.body);
+ const draft=await serviceRequest(req,`/drafts/${encodeURIComponent(String(req.params.id))}/revise`,b) as {status:string;validation_message?:string};
+ const a=requireProjectContext(req),result=draft.status==='editing'?{status:'needs_information',reply:draft.validation_message,editable_draft:draft}:{status:'confirmation_required',proposal:draft};
+ await prisma.assistantReply.updateMany({where:{tenantId:a.tenantId,projectId:a.projectId,userId:a.userId,channel:'ai_chat',requestKey:{startsWith:'action:'},reply:{contains:String(req.params.id)}},data:{reply:JSON.stringify(result)}});
+ return ok(res,draft);
+}));
 router.post('/drafts/:id/confirm',asyncHandler(async(req,res)=>{
   const b=z.object({digest:z.string().regex(/^[a-f0-9]{64}$/),verified_source_records:z.literal(true)}).strict().parse(req.body);
   const result=await serviceRequest(req,`/drafts/${encodeURIComponent(req.params.id!)}/confirm`,b);
