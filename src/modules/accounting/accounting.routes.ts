@@ -194,12 +194,13 @@ router.patch('/documents/:id', write, validateBody(editSchema), asyncHandler(asy
     const auth = requireProjectContext(req);
     const b = editSchema.parse(req.body);
     const d = await financialTransaction(async (tx) => {
-        const old = await tx.businessDocument.findFirst({ where: { id: req.params.id, ...scoped(auth) } });
+        const old = await tx.businessDocument.findFirst({ where: { id: req.params.id, ...scoped(auth) }, include: { next: true } });
         if (!old)
             throw notFound('Document not found');
-        if (old.status !== 'draft' && !(old.kind === 'quotation' && old.status === 'sent'))
-            throw conflict('Only drafts and sent quotations can be edited');
-        if (b.expected_revision !== undefined && b.expected_revision !== old.revision || old.status === 'sent' && b.expected_revision === undefined) throw conflict('This document changed. Reload before editing.');
+        const revisingQuotation = old.kind === 'quotation' && ['sent', 'accepted'].includes(old.status);
+        if (old.next || old.status !== 'draft' && !revisingQuotation)
+            throw conflict('Only drafts and unconverted sent or accepted quotations can be edited');
+        if (b.expected_revision !== undefined && b.expected_revision !== old.revision || revisingQuotation && b.expected_revision === undefined) throw conflict('This document changed. Reload before editing.');
         const customer = await tx.customer.findFirst({ where: { id: b.customer_id, ...scoped(auth), isActive: true } });
         if (!customer)
             throw notFound('Active customer not found');
@@ -214,7 +215,7 @@ router.patch('/documents/:id', write, validateBody(editSchema), asyncHandler(asy
         const legacy = calculate(b.lines, b.discount, b.tax);
         const totals = taxSnapshot ? { ...legacy, subtotal: taxSnapshot.subtotal + b.discount, total: taxSnapshot.payable } : legacy;
         const location = b.location_id ? await stockLocation(tx, auth, b.location_id) : null;
-        const row = await tx.businessDocument.update({ where: { id: old.id }, data: { revision: { increment: 1 }, stockLocationId: b.location_id === undefined ? old.stockLocationId : location?.id ?? null, ...person, ...referral, presentationSnapshot: json(presentation), customerId: customer.id, customerSnapshot: json({ name: customer.name, mobile: customer.mobile, email: customer.email, address: customer.address, attributes: customer.attributes }), lines: totals.lines, subtotal: totals.subtotal, total: totals.total, discount: b.discount, tax: taxSnapshot?.tax ?? b.tax, taxSnapshot: taxSnapshot ? json(taxSnapshot) : Prisma.DbNull, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: b.note ?? null, events: json([...(old.events as unknown[]), { ...event(old.status === 'sent' ? 'quotation_revised' : 'draft_updated', auth.userId), revision: old.revision + 1 }]) } });
+        const row = await tx.businessDocument.update({ where: { id: old.id }, data: { revision: { increment: 1 }, status: old.status === 'accepted' ? 'sent' : old.status, stockLocationId: b.location_id === undefined ? old.stockLocationId : location?.id ?? null, ...person, ...referral, presentationSnapshot: json(presentation), customerId: customer.id, customerSnapshot: json({ name: customer.name, mobile: customer.mobile, email: customer.email, address: customer.address, attributes: customer.attributes }), lines: totals.lines, subtotal: totals.subtotal, total: totals.total, discount: b.discount, tax: taxSnapshot?.tax ?? b.tax, taxSnapshot: taxSnapshot ? json(taxSnapshot) : Prisma.DbNull, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: b.note ?? null, events: json([...(old.events as unknown[]), { ...event(revisingQuotation ? 'quotation_revised' : 'draft_updated', auth.userId), revision: old.revision + 1, ...(old.status === 'accepted' ? { previousStatus: 'accepted', requiresAcceptance: true } : {}) }]) } });
         await audit(tx, auth, row.id, 'accounting.document.updated', { ...row, referrer_id: row.referrerId }, old);
         return row;
     });

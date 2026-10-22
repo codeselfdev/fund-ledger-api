@@ -258,7 +258,7 @@ test('sent quotations can be negotiated without changing their number, and stale
  const edited=await request(`/accounting/documents/${q.id}`,body,'admin','PATCH');assert.equal(edited.status,200);assert.equal(edited.body.data.status,'sent');assert.equal(edited.body.data.number,q.number);assert.equal(edited.body.data.total,750);assert.equal(edited.body.data.revision,sent.revision+1);assert.equal(edited.body.data.events.at(-1).status,'quotation_revised');
  assert.equal((await request(`/accounting/documents/${q.id}`,body,'admin','PATCH')).status,409);assert.equal(db.inventory[0].quantity,5);
  const revisionAudit=db.activity.find(a=>a.action==='accounting.document.updated');assert.equal(revisionAudit.before.total,1000);assert.equal(revisionAudit.after.total,750);
- await action(q,'accept');assert.equal((await request(`/accounting/documents/${q.id}`,{...body,expected_revision:edited.body.data.revision},'admin','PATCH')).status,409);
+
 });
 test('admin settings support paragraphs, validate prefixes, preserve snapshots and forbid non-admin writes',async()=>{
  const settings=(await request('/accounting/document-settings')).body.data;
@@ -339,4 +339,40 @@ test('reviewed AI quotation status changes and conversions reject stale revision
  r=await request(`/accounting/documents/${q.id}/status`,{action:'accept',expected_revision:1});assert.equal(r.status,200);
  r=await request(`/accounting/documents/${q.id}/convert`,{kind:'order',document_date:'2026-01-01',request_key:randomUUID(),expected_revision:1});assert.equal(r.status,409);assert.equal(db.documents.length,1);
  r=await request(`/accounting/documents/${q.id}/convert`,{kind:'order',document_date:'2026-01-01',request_key:randomUUID(),expected_revision:2});assert.equal(r.status,201);assert.equal(db.documents.length,2);
+});
+
+
+test('accepted quotation revisions return to sent, retain history and need fresh acceptance before order conversion',async()=>{
+ const q=await newDoc('quotation');await action(q,'send');const accepted=await action(q,'accept');
+ const {kind,request_key,...body}=newBody('quotation',{expected_revision:accepted.revision,lines:[{description:'Final negotiated kit',quantity:2,unit_price:600,item_id:'i'}]});
+ const revised=await request(`/accounting/documents/${q.id}`,body,'accountant','PATCH');assert.equal(revised.status,200);const r=revised.body.data;
+ assert.equal(r.id,q.id);assert.equal(r.number,q.number);assert.equal(r.status,'sent');assert.equal(r.total,1200);assert.equal(r.revision,accepted.revision+1);assert.ok(r.events.some(e=>e.status==='accepted'));assert.equal(r.events.at(-1).status,'quotation_revised');
+ assert.equal((await request(`/accounting/documents/${q.id}/convert`,{kind:'order',document_date:'2026-01-10',expected_revision:r.revision,request_key:randomUUID()})).status,409);
+ const reaccepted=await action(r,'accept');const converted=await request(`/accounting/documents/${q.id}/convert`,{kind:'order',document_date:'2026-01-10',expected_revision:reaccepted.revision,request_key:randomUUID()});assert.equal(converted.status,201);assert.equal(converted.body.data.total,1200);assert.equal(converted.body.data.status,'draft');
+ assert.equal(db.inventory[0].quantity,5);assert.equal(db.accounts[0].balance,0);assert.equal(db.payments.length,0);
+ const audits=db.activity.filter(a=>a.action==='accounting.document.updated');assert.equal(audits.at(-1).before.status,'accepted');assert.equal(audits.at(-1).after.status,'sent');
+});
+test('accepted quotation revisions require the reviewed revision, writer access and matching project',async()=>{
+ const q=await newDoc('quotation');await action(q,'send');const accepted=await action(q,'accept');
+ const {kind,request_key,...body}=newBody('quotation',{expected_revision:accepted.revision});
+ const {expected_revision,...missingRevision}=body;
+ assert.equal((await request(`/accounting/documents/${q.id}`,missingRevision,'admin','PATCH')).status,409);
+ assert.equal((await request(`/accounting/documents/${q.id}`,{...body,expected_revision:accepted.revision-1},'admin','PATCH')).status,409);
+ assert.equal((await request(`/accounting/documents/${q.id}`,body,'member','PATCH')).status,403);
+ assert.equal((await request(`/accounting/documents/${q.id}`,body,'admin','PATCH','fund')).status,404);
+ assert.equal(db.documents.find(d=>d.id===q.id).status,'accepted');
+});
+test('a quotation linked to a sales order cannot be revised even if a stale status says accepted',async()=>{
+ const q=await newDoc('quotation');await action(q,'send');await action(q,'accept');
+ assert.equal((await request(`/accounting/documents/${q.id}/convert`,{kind:'order',document_date:'2026-01-10',request_key:randomUUID()})).status,201);
+ const source=db.documents.find(d=>d.id===q.id);source.status='accepted';
+ const {kind,request_key,...body}=newBody('quotation',{expected_revision:source.revision});
+ assert.equal((await request(`/accounting/documents/${q.id}`,body,'admin','PATCH')).status,409);
+});
+test('simultaneous accepted-quotation revision and order conversion cannot both succeed',async()=>{
+ const q=await newDoc('quotation');await action(q,'send');const accepted=await action(q,'accept');
+ const {kind,request_key,...body}=newBody('quotation',{expected_revision:accepted.revision,lines:[{description:'Revised kit',quantity:1,unit_price:800,item_id:'i'}]});
+ const results=await Promise.all([request(`/accounting/documents/${q.id}`,body,'admin','PATCH'),request(`/accounting/documents/${q.id}/convert`,{kind:'order',document_date:'2026-01-10',expected_revision:accepted.revision,request_key:randomUUID()})]);
+ assert.equal(results.filter(r=>r.status>=200&&r.status<300).length,1);assert.equal(results.filter(r=>r.status===409).length,1);
+ assert.equal(db.inventory[0].quantity,5);assert.equal(db.accounts[0].balance,0);
 });
