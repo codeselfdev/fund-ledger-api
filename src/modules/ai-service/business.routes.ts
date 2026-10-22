@@ -12,6 +12,7 @@ import { ok } from '../../core/http/response.js';
 import { badRequest, conflict, forbidden, notFound } from '../../core/http/api-error.js';
 import { financialTransaction } from '../accounting/transaction.js';
 import { dateSchema, lineSchema, workflow } from '../accounting/workflow.js';
+import { quotationPerson } from '../contact-persons/contact-persons.service.js';
 import { documentTax, taxSetup, lockSetup } from '../business-setup/service.js';
 const router=Router(),id=z.string().trim().min(1).max(200),money=z.number().int().min(0).max(2147483647),text=z.string().trim().min(1).max(1000);
 const scope=(a:{tenantId:string;projectId:string})=>({tenantId:a.tenantId,projectId:a.projectId});
@@ -42,7 +43,7 @@ router.get('/snapshot',asyncHandler(async(req,res)=>{
   return{tenant_id:a.tenantId,project_id:a.projectId,project_type:p.projectType,stock_enabled:p.stockManagementEnabled,workflow:workflow(p.commerceSettings),snapshot_at:new Date().toISOString(),email_enabled:!!(env.smtp.user&&env.smtp.pass),customers,items,suppliers,documents,expenses,accounts,purchases,records};
  });return ok(res,snapshot);
 }));
-const docFields=z.object({customer_id:id,document_date:dateSchema,due_date:dateSchema.optional(),lines:z.array(lineSchema.pick({item_id:true,description:true,quantity:true,unit_price:true})).min(1).max(100),discount_percent:z.number().min(0).max(100),vat_percent:z.number().min(0).max(100),note:text.optional(),source_id:id.optional()}).strict();
+const docFields=z.object({quotation_person_id:id.optional(),customer_id:id,document_date:dateSchema,due_date:dateSchema.optional(),lines:z.array(lineSchema.pick({item_id:true,description:true,quantity:true,unit_price:true})).min(1).max(100),discount_percent:z.number().min(0).max(100),vat_percent:z.number().min(0).max(100),note:text.optional(),source_id:id.optional()}).strict();
 router.post('/document-preview',asyncHandler(async(req,res)=>{
  const a=requireProjectContext(req),b=z.object({kind:z.enum(['quotation','sale']),fields:docFields,calculation:z.object({subtotal:money,discount:money,tax:money,total:money,currency:z.literal('BDT'),rounding:z.string()}).strict()}).strict().parse(req.body);
  const result=await financialTransaction(async tx=>{
@@ -50,14 +51,15 @@ router.post('/document-preview',asyncHandler(async(req,res)=>{
   const amounts=b.fields.lines.map(l=>Math.round(l.quantity*l.unit_price)),subtotal=amounts.reduce((s,v)=>s+v,0),discount=Math.round(subtotal*b.fields.discount_percent/100),tax=Math.round((subtotal-discount)*b.fields.vat_percent/100);
   if(subtotal!==b.calculation.subtotal||discount!==b.calculation.discount||tax!==b.calculation.tax||subtotal-discount+tax!==b.calculation.total)throw badRequest('The requested totals do not reconcile.');
   for(const l of b.fields.lines)if(l.item_id&&!await tx.inventoryItem.findFirst({where:{...scope(a),id:l.item_id,isActive:true}}))throw notFound('Product not found in this project.');
+  const contact=await quotationPerson(tx,a,c.id,b.fields.quotation_person_id);
   const setup=await taxSetup(tx,a);
-  if(!setup.rates.length)return{tax_selection:null,total:b.calculation.total,tax_revision:setup.revision};
+  if(!setup.rates.length)return{tax_selection:null,total:b.calculation.total,tax_revision:setup.revision,...(b.fields.quotation_person_id?{quotation_person:contact.quotationPersonSnapshot}:{})};
   const rates=setup.rates.filter(r=>r.active&&r.kind==='add'&&r.documents.includes(b.kind)&&r.rateBps===Math.round(b.fields.vat_percent*100));
   if(b.fields.vat_percent>0&&rates.length!==1)throw badRequest('Choose a unique configured VAT rate matching the requested percentage.');
   const selection={revision:setup.revision,rateId:b.fields.vat_percent?rates[0]!.id:null,withholdingId:null,inclusive:false};
   const calculated=await documentTax(tx,a,b.kind,amounts,discount,selection);
   if(calculated?.payable!==b.calculation.total||calculated?.tax!==tax)throw conflict('Configured taxes differ from the requested total. Review the tax setup.');
-  return{tax_selection:selection,total:calculated.payable,tax_revision:setup.revision};
+  return{tax_selection:selection,total:calculated.payable,tax_revision:setup.revision,...(b.fields.quotation_person_id?{quotation_person:contact.quotationPersonSnapshot}:{})};
  });return ok(res,result);
 }));
 const bill={supplier_id:id,invoice_number:z.string().trim().min(1).max(120),invoice_date:dateSchema,lines:z.array(lineSchema.pick({item_id:true,description:true,quantity:true,unit_price:true})).min(1).max(100),discount:money,tax:money,total:money.positive(),note:text.optional()};

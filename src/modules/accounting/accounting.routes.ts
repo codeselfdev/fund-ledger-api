@@ -116,9 +116,19 @@ router.get('/referrals', asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   return ok(res, referralSummary(await prisma.businessDocument.findMany({ where: { ...scoped(auth), referrerId: { not: null } }, orderBy: { createdAt: 'desc' } })));
 }));
-router.post('/documents/preview', write, validateBody(documentSchema.omit({ request_key: true }).extend({ document_id: z.string().optional() })), asyncHandler(async (req, res) => {
-  const auth = requireProjectContext(req), b = documentSchema.omit({ request_key: true }).extend({ document_id: z.string().optional() }).parse(req.body);
+router.post('/documents/preview', write, validateBody(documentSchema.omit({ request_key: true }).extend({ document_id: z.string().optional(), source_id: z.string().min(1).optional() })), asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req), b = documentSchema.omit({ request_key: true }).extend({ document_id: z.string().optional(), source_id: z.string().min(1).optional() }).parse(req.body);
   const result = await financialTransaction(async tx => {
+    if (b.source_id) {
+      if (b.document_id) throw badRequest('Choose either a source conversion or an existing document preview.');
+      const source = await tx.businessDocument.findFirst({ where: { id: b.source_id, ...scoped(auth) }, include: { next: true } });
+      if (!source) throw notFound('Source document not found');
+      if (b.expected_revision === undefined || b.expected_revision !== source.revision || source.next) throw conflict('The source document changed. Review a fresh draft before previewing.');
+      conversion(kindSchema.parse(source.kind), source.status, b.kind, workflow(source.workflow));
+      if (b.due_date && b.due_date < b.document_date) throw badRequest('Due date must be on or after document date');
+      const tenant = await tx.tenant.findFirstOrThrow({ where: { id: auth.tenantId } });
+      return buildProfessionalDocument({ ...source, kind: b.kind, number: 'PREVIEW - number assigned on save', status: 'draft', revision: 0, documentDate: b.document_date, dueDate: b.due_date ?? null }, tenant.currency, tenant.name, await documentLogo(tx, auth, source.presentationSnapshot));
+    }
     const old = b.document_id ? await tx.businessDocument.findFirst({ where: { id: b.document_id, ...scoped(auth) } }) : null;
     if (b.document_id && !old) throw notFound('Document not found');
     if (old && old.kind !== b.kind) throw badRequest('Document kind cannot be changed');

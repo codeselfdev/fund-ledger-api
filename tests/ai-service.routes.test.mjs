@@ -182,5 +182,9 @@ test('draft edits proxy exact rows for revalidation and persist editable errors 
  prisma.assistantReply.updateMany=async change=>{changes.push(change);return{count:1};};
  try{for(const status of ['editing','pending']){mode=status;const response=await request('/drafts/source/revise',body);assert.equal(response.status,200);const change=changes.at(-1);assert.equal(change.where.tenantId,'tenant');assert.equal(change.where.projectId,'project');assert.equal(change.where.userId,'user');assert.equal(change.where.reply.contains,'source');const result=JSON.parse(change.data.reply);assert.equal(result.status,status==='editing'?'needs_information':'confirmation_required');assert.equal((result.editable_draft??result.proposal).proposal_id,'revised');}
  assert.equal((await request('/drafts/source/revise',{...body,fields:{rows:[]}})).status,400);
+ body.fields={customer_id:'customer',document_date:'2026-10-22',lines:[{description:'USB cable',quantity:10,unit_price:100}],discount_percent:5,quotation_person_id:'person'};
+ mode='pending';assert.equal((await request('/drafts/source/revise',body)).status,200);
+ assert.deepEqual(JSON.parse(changes.at(-1).data.reply).proposal.fields,body.fields);
+
  }finally{global.fetch=saved.fetch;prisma.assistantReply.updateMany=saved.update;}
 });

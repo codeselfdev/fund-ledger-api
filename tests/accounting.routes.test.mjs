@@ -377,3 +377,15 @@ test('simultaneous accepted-quotation revision and order conversion cannot both 
  assert.equal(results.filter(r=>r.status>=200&&r.status<300).length,1);assert.equal(results.filter(r=>r.status===409).length,1);
  assert.equal(db.inventory[0].quantity,5);assert.equal(db.accounts[0].balance,0);
 });
+
+test('conversion previews preserve accepted quotation snapshots and create no order, serial or stock movement',async()=>{
+ const q=await newDoc('quotation',{quotation_person_id:'person'});await action(q,'send');const accepted=await action(q,'accept');
+ db.contacts[0].name='Changed buyer';db.contactLinks=[];
+ const count=db.documents.length,serials=db.sequences.length;
+ const {request_key,...body}=newBody('order',{source_id:q.id,expected_revision:accepted.revision});
+ const response=await request('/accounting/documents/preview',body);assert.equal(response.status,200,JSON.stringify(response.body));const rendered=response.body.data.html.replace(/<style[\s\S]*?<\/style>/g,'').replace(/<[^>]*>/g,'');assert.match(rendered,/Original buyer/);assert.match(rendered,/PREVIEW/);
+ assert.equal(db.documents.length,count);assert.equal(db.sequences.length,serials);assert.equal(db.inventory[0].quantity,5);assert.equal(db.accounts[0].balance,0);
+ assert.equal((await request('/accounting/documents/preview',{...body,expected_revision:999})).status,409);
+ assert.equal((await request('/accounting/documents/preview',{...body,source_id:'foreign'})).status,404);
+ await convert(q,'order');assert.equal((await request('/accounting/documents/preview',body)).status,409);
+});
