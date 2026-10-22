@@ -2,10 +2,17 @@ import assert from 'node:assert/strict';
 import { test, before, after, beforeEach } from 'node:test';
 import { createCipheriv,createHash,randomBytes } from 'node:crypto';
 import express from 'express';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+const uploadRoot=await mkdtemp(join(tmpdir(),'nesta-chat-images-'));
+process.env.UPLOAD_STORAGE='local';process.env.UPLOAD_LOCAL_DIR=uploadRoot;
 Object.assign(process.env,{DATABASE_URL:'postgresql://test:test@127.0.0.1:1/test',JWT_SECRET:'ai-service-isolated-session-secret',AI_SERVICE_SHARED_SECRET:'test-shared-secret-at-least-32-characters',WHATSAPP_CREDENTIALS_KEY:'test-whatsapp-key',AI_SERVICE_URL:'http://127.0.0.1:4010'});
 const {prisma}=await import('../dist/core/prisma/client.js');
 const {signAccessToken,hashToken}=await import('../dist/core/security/jwt.js');
 const {aiServiceRouter}=await import('../dist/modules/ai-service/ai-service.routes.js');
+const {assistantRouter}=await import('../dist/modules/assistant/assistant.routes.js');
+const {authenticate}=await import('../dist/core/security/auth.middleware.js');
 const {errorHandler}=await import('../dist/core/http/error-handler.js');
 const {renewTenantSubscription,createThreeMonthTrial}=await import('../dist/core/subscription/subscription.service.js');
 let server,base,roles,active,revoked,records,contact,connection,userMatches;
@@ -40,10 +47,10 @@ before(async()=>{
  prisma.assistantReply.findUnique=async({where})=>records.find(r=>r.requestKey===where.tenantId_channel_requestKey.requestKey)??null;
  prisma.assistantReply.count=async()=>records.length;
  prisma.assistantReply.create=async({data})=>{const r={id:'request-'+records.length,...data};records.push(r);return r;};
- const app=express();app.use(express.json());app.use('/v1/ai-service',aiServiceRouter);app.use(errorHandler);server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));base=`http://127.0.0.1:${server.address().port}`;
+ const app=express();app.use(express.json());app.use('/v1/ai-service',aiServiceRouter);app.use('/v1/assistant',authenticate,assistantRouter);app.use(errorHandler);server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));base=`http://127.0.0.1:${server.address().port}`;
 });
 beforeEach(()=>{roles=['accountant'];active=true;revoked=false;records=[];contact=activeContact();connection={id:'connection',tenantId:'tenant',projectId:'project',wabaId:'waba',phoneNumberId:'phone',groupId:'group',graphApiVersion:'v23.0',encryptedAccessToken:encrypt('provider-secret')};userMatches=[{id:'user',memberships:[{role:'accountant'}]}];});
-after(async()=>{await new Promise(r=>server.close(r));await prisma.$disconnect();});
+after(async()=>{await new Promise(r=>server.close(r));await prisma.$disconnect();await rm(uploadRoot,{recursive:true,force:true});});
 const request=(path,body,headers={})=>fetch(base+'/v1/ai-service'+path,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${token}`,'X-Project-Id':'project','Content-Type':'application/json',...headers},body:body?JSON.stringify(body):undefined});
 test('context uses a live scoped session, project roles and current approval rules',async()=>{const r=await request('/context');assert.equal(r.status,200);const c=(await r.json()).data;assert.equal(c.user_id,'user');assert.equal(c.project_id,'project');assert.equal(c.project_type,'fund_shares');assert.deepEqual(c.roles,['accountant']);assert.equal(c.policy.income,'accountant_only');assert.equal(c.policy.admin_deposit_finalize,true);assert.equal(c.whatsapp.group_id,'group');assert.equal(c.whatsapp.access_token,undefined);});
 test('all other roles, revoked sessions and inactive memberships are rejected',async()=>{for(const role of ['member','cashier','approver','auditor']){roles=[role];assert.equal((await request('/context')).status,403);}roles=['accountant'];revoked=true;assert.equal((await request('/context')).status,401);revoked=false;active=false;assert.equal((await request('/context')).status,401);});
@@ -119,5 +126,45 @@ test('Telegram resolver repairs a missed migration only from a Telegram-proven o
   destination=to;response=await request('/telegram/resolve',{chat_id:to,sender:'123'},headers);assert.equal(response.status,200);const data=(await response.json()).data;assert.equal(data.project_id,'project');assert.equal(data.permitted,true);assert.equal(c.chatId,to);assert.equal(probes,2);
  }finally{
   globalThis.fetch=saved.fetch;prisma.telegramConnection.findUnique=saved.findUnique;prisma.telegramConnection.findMany=saved.findMany;prisma.telegramConnection.updateMany=saved.updateMany;prisma.telegramBotIdentity.findMany=saved.identities;prisma.telegramLink.updateMany=saved.links;
+ }
+});
+
+
+test('uploaded action-chat images survive retries and history reloads and remain privately readable', async () => {
+ const saved={fetch:global.fetch,findReply:prisma.assistantReply.findUniqueOrThrow,updateReply:prisma.assistantReply.update,history:prisma.assistantReply.findMany,findImages:prisma.assistantAttachment.findMany,createImages:prisma.assistantAttachment.createMany,findImage:prisma.assistantAttachment.findFirst};
+ const image=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2ioAAAAASUVORK5CYII=','base64');
+ const requestKey='123e4567-e89b-42d3-a456-426614174001';
+ const row={id:'image-chat',prompt:'Read this receipt',requestKey:`action:${requestKey}`,status:'completed',createdAt:new Date()};
+ let images=[],creates=0;
+ prisma.assistantReply.findUniqueOrThrow=async()=>row;
+ prisma.assistantReply.update=async({data})=>Object.assign(row,data);
+ prisma.assistantReply.findMany=async({where,include})=>{assert.equal(where.tenantId,'tenant');assert.equal(where.projectId,'project');assert.equal(where.userId,'user');assert.ok(include.attachments.select.id);return[{...row,attachments:images.map(({id,fileName,mimeType,size})=>({id,fileName,mimeType,size}))}];};
+ prisma.assistantAttachment.findMany=async({where})=>{assert.equal(where.tenantId,'tenant');assert.equal(where.replyId,row.id);return images.map(({id,fileName,mimeType,size})=>({id,fileName,mimeType,size}));};
+ prisma.assistantAttachment.createMany=async({data})=>{creates++;images=data.map((file,i)=>({...file,id:`image-${i}`}));return{count:data.length};};
+ prisma.assistantAttachment.findFirst=async({where})=>{
+  assert.equal(where.tenantId,'tenant');assert.equal(where.reply.userId,'user');assert.equal(where.reply.channel,'ai_chat');
+  assert.ok(where.reply.OR[0].authorizationHash);
+  return where.reply.projectId==='project'?images.find(file=>file.id===where.id)??null:null;
+ };
+ global.fetch=async(input,options)=>{
+  const url=new URL(input);
+  if(url.origin!=='http://127.0.0.1:4010')return saved.fetch(input,options);
+  if(url.pathname==='/session')return Response.json(options?.method==='DELETE'?{}:{token:'test-service-session'});
+  const body=JSON.parse(options.body);assert.equal(body.images[0].base64,image.toString('base64'));assert.equal(body.images[0].mime_type,'image/png');
+  return Response.json({status:'completed',reply:'Receipt read'});
+ };
+ try {
+  const upload=()=>{const body=new FormData();body.append('message',row.prompt);body.append('request_key',requestKey);body.append('files',new Blob([image],{type:'image/png'}),'receipt.png');return saved.fetch(base+'/v1/ai-service/chat',{method:'POST',headers:{Authorization:`Bearer ${token}`,'X-Project-Id':'project'},body});};
+  const response=await upload();assert.equal(response.status,200);const message=(await response.json()).data;
+  assert.deepEqual(message.attachments,[{id:'image-0',fileName:'receipt.png',mimeType:'image/png',size:image.length}]);
+  assert.equal((await upload()).status,200);assert.equal(creates,1);
+  const history=await request('/messages');assert.equal(history.status,200);assert.deepEqual((await history.json()).data[0].attachments,message.attachments);
+  const url=base+'/v1/assistant/attachments/image-0';
+  const display=await saved.fetch(url,{headers:{Authorization:`Bearer ${token}`,'X-Project-Id':'project'}});
+  assert.equal(display.status,200);assert.equal(display.headers.get('Content-Type'),'image/png');assert.deepEqual(Buffer.from(await display.arrayBuffer()),image);
+  assert.equal((await saved.fetch(url,{headers:{Authorization:`Bearer ${token}`,'X-Project-Id':'other-project'}})).status,404);
+  assert.equal((await saved.fetch(url)).status,401);
+ }finally{
+  global.fetch=saved.fetch;prisma.assistantReply.findUniqueOrThrow=saved.findReply;prisma.assistantReply.update=saved.updateReply;prisma.assistantReply.findMany=saved.history;prisma.assistantAttachment.findMany=saved.findImages;prisma.assistantAttachment.createMany=saved.createImages;prisma.assistantAttachment.findFirst=saved.findImage;
  }
 });

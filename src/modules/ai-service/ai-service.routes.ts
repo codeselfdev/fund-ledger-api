@@ -1,3 +1,5 @@
+import { retainChatAttachments, chatAttachmentSelection } from './chat-attachments.js';
+import { bulkAssistantRouter } from './bulk.routes.js';
 import { businessAssistantRouter } from './business.routes.js';
 import { assistantEventScope, assistantEventTicket, publishAssistantPhase } from './assistant-events.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
@@ -58,6 +60,7 @@ router.post('/telegram/resolve',asyncHandler(async(req,res)=>{
 router.use(authenticate,requireProject,requireRoles('owner','admin','accountant'),requireActiveSubscription);
 router.use(asyncHandler(async(req,_res,next)=>{const a=requireProjectContext(req);const t=await prisma.tenant.findUniqueOrThrow({where:{id:a.tenantId}});if(!hasBusinessAssistant(t.contact))throw new ApiError(403,'BUSINESS_REQUIRED','AI Chat and group bots require an active paid Business package.');next();}));
 
+router.use('/bulk',bulkAssistantRouter);
 router.use('/business',businessAssistantRouter);
 router.get('/context',asyncHandler(async(req,res)=>{
   const a=requireProjectContext(req);
@@ -141,15 +144,16 @@ router.post('/chat',upload,asyncHandler(async(req,res)=>{
   try {
   const result=await serviceRequest(req,'/chat',{...b,images},'POST',phase=>publishAssistantPhase(scope,phase));
   const row=await prisma.assistantReply.findUniqueOrThrow({where:{tenantId_channel_requestKey:{tenantId:a.tenantId,channel:'ai_chat',requestKey:`action:${b.request_key}`}}});
+  const attachments=await retainChatAttachments(a.tenantId,row.id,files);
   const saved=await prisma.assistantReply.update({where:{id:row.id},data:{prompt:b.message,reply:JSON.stringify(result)}});
   publishAssistantPhase(scope,'completed');
-  return ok(res,{id:saved.id,message:saved.prompt,reply:null,status:'completed',request_key:b.request_key,created_at:saved.createdAt,action_result:result});
+  return ok(res,{id:saved.id,message:saved.prompt,reply:null,status:'completed',request_key:b.request_key,created_at:saved.createdAt,attachments,action_result:result});
   }catch(error){publishAssistantPhase(scope,'failed');throw error;}
 }));
 router.get('/messages',asyncHandler(async(req,res)=>{
   const a=requireProjectContext(req),context=await assistantContext(a.tenantId,a.projectId,a.userId);
-  const rows=await prisma.assistantReply.findMany({where:{tenantId:a.tenantId,projectId:a.projectId,userId:a.userId,channel:'ai_chat',requestKey:{startsWith:'action:'},authorizationHash:context.authorization_hash,createdAt:{gt:new Date(Date.now()-90*86400000)}},orderBy:{createdAt:'desc'},take:30});
-  return ok(res,rows.reverse().map(row=>{let result:unknown=null;try{result=JSON.parse(row.reply??'null');}catch{}return{id:row.id,message:row.prompt,reply:result?null:row.reply,status:row.status,request_key:row.requestKey.slice(7),created_at:row.createdAt,action_result:result};}));
+  const rows=await prisma.assistantReply.findMany({where:{tenantId:a.tenantId,projectId:a.projectId,userId:a.userId,channel:'ai_chat',requestKey:{startsWith:'action:'},authorizationHash:context.authorization_hash,createdAt:{gt:new Date(Date.now()-90*86400000)}},orderBy:{createdAt:'desc'},take:30,include:{attachments:{select:chatAttachmentSelection}}});
+  return ok(res,rows.reverse().map(row=>{let result:unknown=null;try{result=JSON.parse(row.reply??'null');}catch{}return{id:row.id,message:row.prompt,reply:result?null:row.reply,status:row.status,request_key:row.requestKey.slice(7),created_at:row.createdAt,attachments:row.attachments,action_result:result};}));
 }));
 router.post('/telegram/links',asyncHandler(async(req,res)=>ok(res,await startTelegramIdentityLink(requireProjectContext(req)))));
 router.get('/telegram/links/:id',asyncHandler(async(req,res)=>ok(res,await telegramLinkStatus(requireProjectContext(req),String(req.params.id)))));
