@@ -11,6 +11,7 @@ import { requireProjectContext } from "../../core/security/auth.context.js";
 import { idParamSchema } from "../../core/validation/common.schemas.js";
 import { validateBody, validateParams } from "../../core/validation/validate.js";
 
+import { withBusinessLogos } from '../business-setup/record-logos.js';
 const router = Router();
 
 const createSchema = z.object({
@@ -51,7 +52,7 @@ router.get("/", requireProject, requireRoles("staff", "cashier"), asyncHandler(a
     },
     orderBy: [{ isActive: "desc" }, { name: "asc" }]
   });
-  return ok(res, rows);
+  return ok(res, await withBusinessLogos(rows, auth, 'dealer'));
 }));
 
 router.post("/", requireProject, requireRoles("accountant", "admin"), validateBody(createSchema), asyncHandler(async (req, res) => {

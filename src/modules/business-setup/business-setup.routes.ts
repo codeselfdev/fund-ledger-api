@@ -15,8 +15,10 @@ import { saveRecord, table } from './records.js';
 import { importSchema, planImport, commitImport } from './import.js';
 import { previewFieldConversion, convertFieldValues } from './field-conversion.js';
 import { valueTypeSchema } from './validation.js';
+import { recordLogosRouter, withBusinessLogos } from './record-logos.js';
 const router = Router();
 router.use(requireProject, requireRoles('accountant', 'cashier', 'approver', 'auditor', 'staff'));
+router.use('/entities/:entity/records/:id/logo', recordLogosRouter);
 const admin = requireRoles('admin');
 const writer = requireRoles('accountant', 'cashier');
 const audit = async (db: Prisma.TransactionClient, auth: ReturnType<typeof requireProjectContext>, action: string, entityId: string, detail: unknown) => db.activity.create({ data: { ...scope(auth), actorUserId: auth.userId, action, entityType: 'business_setup', entityId, after: json(detail) } });
@@ -122,7 +124,7 @@ router.post('/entities/:entity/query', asyncHandler(async (req, res) => {
   const ids = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM ${Prisma.raw(table[entity])} WHERE ${Prisma.join(clauses, ' AND ')} ORDER BY name, id LIMIT ${query.limit + 1} OFFSET ${query.offset}`);
   const where = { ...scope(auth), id: { in: ids.slice(0, query.limit).map(r => r.id) } };
   const rows = entity === 'customer' ? await prisma.customer.findMany({ where, orderBy: [{ name: 'asc' }, { id: 'asc' }] }) : entity === 'dealer' ? await prisma.vendor.findMany({ where, orderBy: [{ name: 'asc' }, { id: 'asc' }] }) : await prisma.inventoryItem.findMany({ where, orderBy: [{ name: 'asc' }, { id: 'asc' }] });
-  return ok(res, { entries: rows, nextOffset: ids.length > query.limit ? query.offset + query.limit : null });
+  return ok(res, { entries: entity === 'item' ? rows : await withBusinessLogos<(typeof rows)[number]>(rows, auth, entity), nextOffset: ids.length > query.limit ? query.offset + query.limit : null });
 }));
 const recordBody = z.record(z.unknown()).refine(v => !('attributes' in v) || attributeSchema.safeParse(v.attributes).success, 'Invalid attributes');
 for (const method of ['post', 'patch'] as const) router[method](`/entities/:entity/records${method === 'patch' ? '/:id' : ''}`, writer, asyncHandler(async (req, res) => {

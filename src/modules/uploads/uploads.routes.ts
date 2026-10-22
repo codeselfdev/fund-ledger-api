@@ -42,6 +42,8 @@ router.post("/", requireProject, requireRoles("any"), upload.single("file"), asy
   assertImageUploadSize(req.file);
   const purpose = typeof req.body.purpose === "string" ? req.body.purpose : undefined;
 
+  if (purpose?.startsWith("customer_logo:") || purpose?.startsWith("dealer_logo:")) throw badRequest("Use the customer or dealer logo editor to save logos.");
+
   if (purpose === "notice_image" && !auth.roles.some(role => role === "owner" || role === "admin")) throw forbidden("Only admins can upload notice images");
   if (purpose === "notice_image") {
     const jpeg = req.file.buffer[0] === 0xff && req.file.buffer[1] === 0xd8 && req.file.buffer[2] === 0xff;
@@ -119,6 +121,8 @@ router.get("/:id/view", requireProject, requireRoles("any"), validateParams(idPa
     }
   });
   if (!record) throw notFound("Attachment not found");
+
+  if ((record.purpose?.startsWith("customer_logo:") || record.purpose?.startsWith("dealer_logo:")) && !auth.roles.some(role => ["owner", "admin", "accountant", "cashier", "approver", "auditor", "staff"].includes(role))) throw forbidden("Business logo access requires a staff role");
 
   if (record.purpose === "fixed_asset_invoice" && !auth.roles.some(role => ["owner", "admin", "accountant", "auditor"].includes(role))) throw forbidden("Asset invoice access requires a finance role");
 

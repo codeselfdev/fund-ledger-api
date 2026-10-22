@@ -359,7 +359,7 @@ test('accepted quotation revisions require the reviewed revision, writer access 
  assert.equal((await request(`/accounting/documents/${q.id}`,missingRevision,'admin','PATCH')).status,409);
  assert.equal((await request(`/accounting/documents/${q.id}`,{...body,expected_revision:accepted.revision-1},'admin','PATCH')).status,409);
  assert.equal((await request(`/accounting/documents/${q.id}`,body,'member','PATCH')).status,403);
- assert.equal((await request(`/accounting/documents/${q.id}`,body,'admin','PATCH','fund')).status,404);
+ assert.equal((await request(`/accounting/documents/${q.id}`,body,'admin','PATCH','fund')).status,403);
  assert.equal(db.documents.find(d=>d.id===q.id).status,'accepted');
 });
 test('a quotation linked to a sales order cannot be revised even if a stale status says accepted',async()=>{

@@ -9,7 +9,7 @@ export interface FieldDefinition {
   filterable: boolean; showInList: boolean; position: number; archived: boolean;
 }
 export interface EntitySchema { entity: BusinessEntity; revision: number; fields: FieldDefinition[]; builtinSearch: string[] }
-export interface BusinessRecord { id: string; name: string; attributes?: Attributes; [key: string]: unknown }
+export interface BusinessRecord { id: string; name: string; logoFileId?: string | null; attributes?: Attributes; [key: string]: unknown }
 export const ENTITIES: Record<BusinessEntity, string> = { customer: 'Customers', dealer: 'Dealers', item: 'Items' };
 export const VALUE_TYPES: { key: ValueType; label: string; glyph: string; hint: string }[] = [
   { key: 'text', label: 'Text', glyph: 'Aa', hint: 'Names, codes & IDs' }, { key: 'long_text', label: 'Long text', glyph: '¶', hint: 'Notes & descriptions' },

@@ -10,12 +10,14 @@ import { ok, created } from '../../core/http/response.js';
 import { requireProject, requireRoles } from '../../core/security/auth.middleware.js';
 import { requireProjectContext } from '../../core/security/auth.context.js';
 import { validateBody } from '../../core/validation/validate.js';
+import { withBusinessLogos } from '../business-setup/record-logos.js';
 const router = Router();
 export const customerSchema = z.object({ attributes: attributeSchema, name: z.string().trim().min(2).max(120), mobile: z.string().trim().min(5).max(32).optional(), email: z.string().email().max(200).optional(), address: z.string().max(500).optional(), is_active: z.boolean().optional() }).strict();
 router.use(requireProject, requireRoles('accountant', 'cashier', 'approver', 'auditor'));
 router.get('/', asyncHandler(async (req, res) => {
     const auth = requireProjectContext(req);
-    return ok(res, await prisma.customer.findMany({ where: { tenantId: auth.tenantId, projectId: auth.projectId }, orderBy: { name: 'asc' } }));
+    const rows = await prisma.customer.findMany({ where: { tenantId: auth.tenantId, projectId: auth.projectId }, orderBy: { name: 'asc' } });
+    return ok(res, await withBusinessLogos(rows, auth, 'customer'));
 }));
 router.post('/', requireRoles('accountant', 'cashier', 'approver'), validateBody(customerSchema), asyncHandler(async (req, res) => {
     const auth = requireProjectContext(req), b = customerSchema.parse(req.body);
