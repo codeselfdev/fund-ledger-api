@@ -1,7 +1,7 @@
 export const MAX_DOCUMENT_BYTES = 5_000_000;
 export const PACKAGES = {
-  free: { id: "free", name: "Free Trial", monthly: 0, yearly: 0, users: null, documents: 100, projects: 2, feature_requests: 0, support: "Standard support" },
-  starter: { id: "starter", name: "Starter", monthly: 1000, yearly: 10000, users: 20, documents: 1000, projects: 6, feature_requests: 3, support: "Standard support" },
+  free: { id: "free", name: "Free Trial", monthly: 0, yearly: 0, users: null, documents: 100, projects: 2, ai_replies_monthly: 10, feature_requests: 0, support: "Standard support" },
+  starter: { id: "starter", name: "Starter", monthly: 1000, yearly: 10000, users: 20, documents: 1000, projects: 6, ai_replies_monthly: 100, feature_requests: 3, support: "Standard support" },
   business: { id: "business", name: "Business", monthly: 5000, yearly: 50000, users: 500, documents: 15000, projects: 20, ai_replies_monthly: 1000, whatsapp_bot_replies_monthly: 1000, feature_requests: 12, support: "24-hour support" },
   custom: { id: "custom", name: "Custom", monthly: null, yearly: null, users: null, documents: null, projects: null, feature_requests: null, support: "Contact us for details" }
 } as const;

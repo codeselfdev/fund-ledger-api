@@ -18,7 +18,7 @@ export type Operation=typeof bulkOperations[number];
 const schemas={
  bulk_customers:z.object({...person,mobile:text(32).optional()}).strict(),
  bulk_dealers:z.object({...person,address:text(255).optional(),phone:text(32).optional(),notes:text(2000).optional()}).strict(),
- bulk_items:z.object({name:text(120),sku:text(64).optional(),unit:text(16).optional(),cost_price:money.optional(),sell_price:money.optional(),quantity:money.optional(),reorder_level:money.optional(),attributes}).strict(),
+ bulk_items:z.object({name:text(120),description:text(2000).optional(),sku:text(64).optional(),unit:text(16).optional(),cost_price:money.optional(),sell_price:money.optional(),quantity:money.optional(),reorder_level:money.optional(),attributes}).strict(),
  bulk_expenses:expenses,
  bulk_incomes:z.object({account_id:id,amount:money.positive(),source:text(120),note:text(500).optional(),income_date:date.optional(),category_id:id.optional(),customer_id:id.optional()}).strict(),
 };

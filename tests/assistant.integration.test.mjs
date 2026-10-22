@@ -42,12 +42,12 @@ test('Business AI Chat and WhatsApp Bot integration', { skip: !url }, async t =>
   }
   let server;
   try {
-    await t.test('only active paid Business unlocks allowances; caps are separate and reset monthly', async () => {
-      for (const [plan, paid, enabled] of [['free', false, false], ['starter', true, false], ['business', false, false], ['business', true, true]]) {
+    await t.test('active Free and Starter unlock their limited AI credits; WhatsApp remains Business only', async () => {
+      for (const [plan, paid, enabled] of [['free', false, true], ['starter', true, true], ['business', false, false], ['business', true, true]]) {
         const a = await org(plan, paid), status = await assistantStatus(a.tenant.id);
-        assert.equal(status.features.ai_chat.enabled, enabled); assert.equal(status.features.whatsapp_bot.enabled, enabled);
-        assert.equal(status.features.ai_chat.limit, 1000); assert.equal(status.features.whatsapp_bot.limit, 1000);
-        if (!enabled) await assert.rejects(reserveReply({ tenantId: a.tenant.id, projectId: a.project.id, userId: a.user.id, channel: 'ai_chat', requestKey: randomUUID(), prompt: 'Hello' }), /active paid Business/);
+        assert.equal(status.features.ai_chat.enabled, enabled); assert.equal(status.features.whatsapp_bot.enabled, plan === 'business' && paid);
+        assert.equal(status.features.ai_chat.limit, plan === 'free' ? 10 : plan === 'starter' ? 100 : 1000); assert.equal(status.features.whatsapp_bot.limit, plan === 'business' ? 1000 : 0);
+        if (!enabled) await assert.rejects(reserveReply({ tenantId: a.tenant.id, projectId: a.project.id, userId: a.user.id, channel: 'ai_chat', requestKey: randomUUID(), prompt: 'Hello' }), /active eligible plan/);
       }
       const a = await org(), month = monthlyPeriod();
       await prisma.assistantReply.createMany({ data: Array.from({ length: 999 }, (_, i) => ({ tenantId: a.tenant.id, projectId: a.project.id, userId: a.user.id, channel: 'ai_chat', requestKey: `old-${i}`, promptHash: 'test', prompt: 'Test', reply: 'Test', status: 'completed', periodStart: month.start })) });
@@ -72,7 +72,7 @@ test('Business AI Chat and WhatsApp Bot integration', { skip: !url }, async t =>
     app.use('/assistant', assistantRouter); app.use(errorHandler);
     server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
     const base = `http://127.0.0.1:${server.address().port}`;
-    await t.test('chat answers are idempotent, history is caller scoped, and failed provider calls release allowance', async () => {
+    await t.test('chat answers are idempotent, history is caller scoped, and failed provider attempts consume a credit and cannot be replayed', async () => {
       const key = randomUUID(), send = (message, requestKey = key, extra = {}) => fetch(base + '/assistant/messages', { method: 'POST', headers: { 'content-type': 'application/json', ...extra }, body: JSON.stringify({ message, request_key: requestKey }) });
       const before = providerInputs.length;
       let response = await send('What is our balance?'); assert.equal(response.status, 200); const saved = (await response.json()).data; assert.equal(saved.status, 'completed'); assert.ok(saved.reply);
@@ -87,8 +87,8 @@ test('Business AI Chat and WhatsApp Bot integration', { skip: !url }, async t =>
       response = await fetch(base + '/assistant/messages'); assert.equal(response.status, 403);
       response = await send('What is our balance?'); assert.equal(response.status, 403);
       await prisma.projectMembership.updateMany({ where: { tenantId: a.tenant.id, projectId: a.project.id, userId: a.user.id }, data: { role: 'owner' } });
-      providerFails = true; const failedKey = randomUUID(); response = await send('Retry me', failedKey); assert.equal(response.status, 503); assert.equal((await assistantStatus(a.tenant.id)).features.ai_chat.used, 1);
-      providerFails = false; response = await send('Retry me', failedKey); assert.equal(response.status, 200); assert.equal((await assistantStatus(a.tenant.id)).features.ai_chat.used, 2);
+      providerFails = true; const failedKey = randomUUID(); response = await send('Retry me', failedKey); assert.equal(response.status, 503); assert.equal((await assistantStatus(a.tenant.id)).features.ai_chat.used, 2);
+      providerFails = false; response = await send('Retry me', failedKey); assert.equal(response.status, 503); assert.equal((await assistantStatus(a.tenant.id)).features.ai_chat.used, 2);
     });
     await t.test('signed webhook queues one private reply and duplicate deliveries never resend or consume twice', async () => {
       await connectWhatsApp({ tenantId: a.tenant.id, projectId: a.project.id, actorUserId: a.user.id, wabaId: 'test-waba', phoneNumberId: 'test-phone', accessToken: 'test-permanent-token-only', graphApiVersion: 'v22.0' });

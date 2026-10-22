@@ -67,3 +67,21 @@ test('server previews the exact discount/VAT amount and rejects incorrect totals
  const body={kind:'quotation',fields:{customer_id:'customer',document_date:'2026-10-22',lines:[{item_id:'item',description:'Router',quantity:10,unit_price:2500}],discount_percent:5,vat_percent:15},calculation:{subtotal:25000,discount:1250,tax:3563,total:27313,currency:'BDT',rounding:'Whole taka'}};
  let r=await request('/document-preview',body);assert.equal(r.status,200);assert.equal((await r.json()).data.total,27313);body.calculation.total=27312;assert.equal((await request('/document-preview',body)).status,400);assert.equal(records.length,0);
 });
+
+test('restaurant receipts save the payee and service charge without a supplier record',async()=>{
+ const b=bill();Object.assign(b.fields,{supplier_id:'',payee_name:'THE GREEN LOUNGE DHAKA',invoice_number:'574',invoice_date:'2025-03-25',lines:[{description:'Iftar platter followed by dinner',quantity:4,unit_price:2000}],tax:400,service_charge:400,total:8800,category:'services'});
+ const response=await request('/actions',b);assert.equal(response.status,200,JSON.stringify(await response.clone().json()));
+ assert.equal(expenses.length,1);assert.equal(expenses[0].vendorId,undefined);assert.equal(expenses[0].vendor,'THE GREEN LOUNGE DHAKA');assert.equal(expenses[0].amount,8800);assert.equal(expenses[0].status,'draft');assert.equal(expenses[0].docFileId,'proof');
+ assert.match(expenses[0].title,/GREEN LOUNGE/);assert.equal(records[0].after.fields.service_charge,400);
+ assert.equal((await request('/actions',b)).status,200);assert.equal(expenses.length,1);
+});
+test('expense supplier and payee may both be omitted while a linked supplier name is retained when provided',async()=>{
+ const b=bill();delete b.fields.supplier_id;assert.equal((await request('/actions',b)).status,200);assert.equal(expenses[0].vendorId,undefined);assert.equal(expenses[0].vendor,undefined);
+ const linked=bill();linked.fields.invoice_number='SI-2';assert.equal((await request('/actions',linked)).status,200);assert.equal(expenses[1].vendorId,'supplier');assert.equal(expenses[1].vendor,'Supplier');
+ const purchase={...bill(),operation:'create_purchase_bill_draft'};delete purchase.fields.supplier_id;delete purchase.fields.category;delete purchase.fields.account_id;assert.equal((await request('/actions',purchase)).status,400);
+});
+test('duplicate checks distinguish receipt payees even without supplier IDs',async()=>{
+ const first=bill();delete first.fields.supplier_id;first.fields.payee_name='THE GREEN LOUNGE DHAKA';assert.equal((await request('/actions',first)).status,200);
+ const other={...first,fields:{...first.fields,payee_name:'Other Restaurant'},request_key:randomUUID()};assert.equal((await request('/actions',other)).status,200);
+ const repeat={...first,fields:{...first.fields,payee_name:'the green lounge dhaka'},request_key:randomUUID()};assert.equal((await request('/actions',repeat)).status,409);assert.equal(expenses.length,2);
+});

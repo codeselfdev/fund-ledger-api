@@ -80,3 +80,16 @@ test('insufficient total funds, income overflow, oversized batches and foreign p
  b=batch('bulk_customers',Array.from({length:51},(_,i)=>({name:`Customer ${i}`})));assert.equal((await request('/preview',b)).status,400);
  b=batch('bulk_expenses',[expense(100)]);const plan=await preview(b);const response=await request('/actions',{...b,targets:plan,request_key:randomUUID(),verified_source_records:true,source_file_ids:['foreign']});assert.equal(response.status,404);assert.equal(state.expenses.length,0);assert.equal(state.accounts[0].balance,100000);
 });
+
+
+test('reviewed product descriptions, prices and codes persist for a single screenshot item and multi-row import',async()=>{
+ const rows=[{name:'USB cable',description:'Braided USB-C, 2 m, 100 W',sku:'0007',unit:'pcs',cost_price:150,sell_price:250},{name:'Router',description:'Dual-band AC1200',cost_price:1800,sell_price:2500}];
+ const b=batch('bulk_items',rows),plan=await preview(b);assert.equal(state.items.length,0);assert.equal(plan.entries[0].description,rows[0].description);
+ const key=randomUUID();assert.equal((await commit(b,plan,key)).status,200);assert.equal(state.items.length,2);assert.equal(state.items[0].description,rows[0].description);assert.equal(state.items[0].costPrice,150);assert.equal(state.items[0].sellPrice,250);assert.equal(state.items[0].sku,'0007');assert.equal(state.items[0].quantity,0);
+ assert.equal((await commit(b,plan,key)).status,200);assert.equal(state.items.length,2);
+ const single=batch('bulk_items',[{name:'Adapter',description:'HDMI to USB-C',sell_price:400}]),review=await preview(single);assert.equal((await commit(single,review)).status,200);assert.equal(state.items[2].description,'HDMI to USB-C');
+});
+test('a product batch rolls back every item when a later product cannot be saved',async()=>{
+ const b=batch('bulk_items',[{name:'Cable',description:'USB-C',sell_price:200},{name:'Router',description:'AC1200',sell_price:2000}]),plan=await preview(b);failAt=2;
+ assert.equal((await commit(b,plan)).status,500);assert.equal(state.items.length,0);assert.equal(state.activities.length,0);
+});

@@ -1,3 +1,4 @@
+import { normalizeExpenseFields, receiptInvoiceParty, sameReceiptInvoice } from './expense-payee.js';
 import { Router } from 'express';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -68,20 +69,21 @@ const fieldsSchemas={
  log_collection_followup:z.object({customer_id:id,invoice_id:id.optional(),note:text,outcome:z.enum(['no_answer','promised_payment','reported_paid','disputed','contacted']),followup_date:dateSchema.optional()}).strict(),
  schedule_followup:z.object({quotation_id:id,followup_date:dateSchema,note:text}).strict(),
  create_purchase_order_draft:z.object({supplier_id:id,lines:z.array(lineSchema.pick({item_id:true,description:true,quantity:true,unit_price:true}).extend({item_id:id})).min(1).max(100),note:text.optional()}).strict(),
- create_expense_draft:z.object({...bill,category:z.enum(['materials','construction','professional','services','survey']),account_id:id.optional()}).strict(),
+ create_expense_draft:z.object({...bill,supplier_id:id.optional(),payee_name:z.string().trim().min(1).max(120).optional(),service_charge:money.optional(),category:z.enum(['materials','construction','professional','services','survey']),account_id:id.optional()}).strict(),
  create_purchase_bill_draft:z.object(bill).strict(),
 };
 type Operation=keyof typeof fieldsSchemas;
 const actionSchema=z.object({operation:z.enum(Object.keys(fieldsSchemas) as [Operation,...Operation[]]),fields:z.record(z.unknown()),targets:z.record(z.unknown()),request_key:z.string().uuid(),verified_source_records:z.literal(true),proof_file_id:id.optional()}).strict();
 router.post('/actions',asyncHandler(async(req,res)=>{
- const a=requireProjectContext(req),b=actionSchema.parse(req.body),f=fieldsSchemas[b.operation].parse(b.fields) as Record<string,unknown>,where=scope(a),requestHash=hash({operation:b.operation,fields:f,targets:b.targets}),recordId='nesta-ai-'+hash([a.tenantId,a.projectId,a.userId,b.request_key]);
+ const a=requireProjectContext(req),b=actionSchema.parse(req.body),f=fieldsSchemas[b.operation].parse(normalizeExpenseFields(b.operation,b.fields)) as Record<string,unknown>,where=scope(a),requestHash=hash({operation:b.operation,fields:f,targets:b.targets}),recordId='nesta-ai-'+hash([a.tenantId,a.projectId,a.userId,b.request_key]);
  // Claim before the external send. Never retry an uncertain send automatically.
  const claimed=await financialTransaction(async tx=>{
   await lockSetup(tx,a);
   const old=await tx.activity.findFirst({where:{...where,id:recordId,actorUserId:a.userId,entityType:'nesta_ai_business'}});
   if(old){if((old.before as {request_hash?:string})?.request_hash!==requestHash)throw conflict('Request key belongs to another reviewed action.');return{fresh:false,record:old};}
   if(f.customer_id&&!await tx.customer.findFirst({where:{...where,id:String(f.customer_id),isActive:true}}))throw notFound('Customer not found in this project.');
-  if(f.supplier_id&&!await tx.vendor.findFirst({where:{...where,id:String(f.supplier_id),isActive:true}}))throw notFound('Supplier not found in this project.');
+  const supplier=f.supplier_id?await tx.vendor.findFirst({where:{...where,id:String(f.supplier_id),isActive:true}}):null;
+  if(f.supplier_id&&!supplier)throw notFound('Supplier not found in this project.');
   if(f.account_id&&!await tx.account.findFirst({where:{...where,id:String(f.account_id)}}))throw notFound('Account not found in this project.');
   if(b.proof_file_id&&!await tx.upload.findFirst({where:{...where,id:b.proof_file_id,deletedAt:null}}))throw notFound('Proof file not found in this project.');
   if(Array.isArray(f.lines))for(const l of f.lines as {item_id?:string}[])if(l.item_id&&!await tx.inventoryItem.findFirst({where:{...where,id:l.item_id,isActive:true}}))throw notFound('Product not found in this project.');
@@ -98,13 +100,13 @@ router.post('/actions',asyncHandler(async(req,res)=>{
   }
   if(f.invoice_number){
    const lines=f.lines as {quantity:number;unit_price:number}[],subtotal=lines.reduce((s,l)=>s+Math.round(l.quantity*l.unit_price),0);
-   if(subtotal-Number(f.discount)+Number(f.tax)!==f.total||Number(f.discount)>subtotal)throw badRequest('Invoice totals do not reconcile.');
+   if(subtotal-Number(f.discount)+Number(f.tax)+Number(f.service_charge??0)!==f.total||Number(f.discount)>subtotal)throw badRequest('Invoice totals do not reconcile.');
    const existing=await tx.activity.findMany({where:{...where,entityType:'nesta_ai_business',action:{in:['nesta_ai.create_expense_draft','nesta_ai.create_purchase_bill_draft']}},select:{after:true}});
-   if(existing.some(r=>{const p=(r.after as {fields?:Record<string,unknown>})?.fields;return p?.supplier_id===f.supplier_id&&String(p?.invoice_number??'').trim().toLowerCase()===String(f.invoice_number).trim().toLowerCase();}))throw conflict('This supplier invoice already has a saved draft.');
+   if(existing.some(r=>{const after=r.after as {fields?:Record<string,unknown>;targets?:Record<string,unknown>};return after?.fields&&sameReceiptInvoice(receiptInvoiceParty(after.fields,after.targets),receiptInvoiceParty(f,{supplier:supplier??undefined}));}))throw conflict('This supplier invoice already has a saved draft.');
   }
   let result:Record<string,unknown>={status:b.operation==='send_payment_reminder'?'sending':b.operation==='schedule_followup'?'scheduled':b.operation==='log_collection_followup'?'recorded':'draft',operation:b.operation,posted:false};
   if(b.operation==='create_expense_draft'){
-   const e=await tx.expense.create({data:{...where,title:`Invoice ${String(f.invoice_number)}`.slice(0,120),amount:Number(f.total),category:f.category as 'materials',vendorId:String(f.supplier_id),expenseDate:new Date(`${f.invoice_date}T00:00:00Z`),accountId:f.account_id?String(f.account_id):undefined,docFileId:b.proof_file_id,status:'draft',createdById:a.userId}});
+   const e=await tx.expense.create({data:{...where,title:`${f.payee_name||supplier?.name?`${String(f.payee_name||supplier?.name)} · `:''}Receipt ${String(f.invoice_number)}`.slice(0,120),amount:Number(f.total),category:f.category as 'materials',vendorId:f.supplier_id?String(f.supplier_id):undefined,vendor:f.payee_name?String(f.payee_name):supplier?.name??undefined,expenseDate:new Date(`${f.invoice_date}T00:00:00Z`),accountId:f.account_id?String(f.account_id):undefined,docFileId:b.proof_file_id,status:'draft',createdById:a.userId}});
    result={...result,expense_id:e.id,status:e.status};
   }
   const record=await tx.activity.create({data:{id:recordId,...where,actorUserId:a.userId,action:`nesta_ai.${b.operation}`,entityType:'nesta_ai_business',entityId:customerId??(f.supplier_id?String(f.supplier_id):null),before:json({request_hash:requestHash}),after:json({...result,fields:{...f,...(customerId?{customer_id:customerId}:{})},targets:b.targets,...(b.proof_file_id?{proof_file_id:b.proof_file_id}:{})})}});

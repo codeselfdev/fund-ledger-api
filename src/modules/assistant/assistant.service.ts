@@ -2,14 +2,14 @@ import { readObject } from "../../core/storage/object-storage.service.js";
 import { createHash } from "node:crypto";
 import { prisma } from "../../core/prisma/client.js";
 import { ApiError, conflict, forbidden } from "../../core/http/api-error.js";
-import { aiConfigured, botConfigured, CHANNELS, featureLimit, hasBusinessAssistant, allowancePeriod, type AssistantChannel } from "./assistant.policy.js";
+import { aiConfigured, botConfigured, CHANNELS, featureLimit, hasAssistant, assistantUpgrade, assistantQuotaMessage, allowancePeriod, type AssistantChannel } from "./assistant.policy.js";
 import { assistantContext } from "./assistant.context.js";
 import { generateAssistantReply } from "./assistant.provider.js";
 export async function assistantStatus(tenantId: string, now = new Date()) {
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { contact: true } });
-    const period = allowancePeriod(tenant.contact, now), enabled = hasBusinessAssistant(tenant.contact, now);
-    const usage = await prisma.assistantReply.groupBy({ by: ["channel"], where: { tenantId, periodStart: period.start, status: { not: "failed" } }, _count: true });
-    return { action_service_enabled: !!process.env.AI_SERVICE_URL, resets_at: period.end.toISOString(), features: Object.fromEntries(CHANNELS.map(channel => [channel, { enabled, configured: !!process.env.AI_SERVICE_URL || (channel === "ai_chat" ? aiConfigured() : botConfigured()), used: usage.find(row => row.channel === channel)?._count ?? 0, limit: featureLimit(channel) }])) };
+    const period = allowancePeriod(tenant.contact, now);
+    const usage = await prisma.assistantReply.groupBy({ by: ["channel"], where: { tenantId, periodStart: period.start, status: { not: "cancelled" } }, _count: true });
+    return { action_service_enabled: !!process.env.AI_SERVICE_URL, resets_at: period.end.toISOString(), upgrade_plan: assistantUpgrade(tenant.contact), features: Object.fromEntries(CHANNELS.map(channel => [channel, { enabled: hasAssistant(tenant.contact, channel, now), configured: !!process.env.AI_SERVICE_URL || (channel === "ai_chat" ? aiConfigured() : botConfigured()), used: usage.find(row => row.channel === channel)?._count ?? 0, limit: featureLimit(channel, tenant.contact) }])) };
 }
 export async function reserveReply(input: {
     tenantId: string;
@@ -33,8 +33,8 @@ export async function reserveReply(input: {
         await tx.$queryRaw `SELECT id FROM tenants WHERE id = ${input.tenantId} FOR NO KEY UPDATE`;
         const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: input.tenantId } });
         const period = allowancePeriod(tenant.contact, now);
-        if (!hasBusinessAssistant(tenant.contact))
-            throw new ApiError(403, "BUSINESS_REQUIRED", "AI Chat and WhatsApp Bot require an active paid Business package.");
+        if (!hasAssistant(tenant.contact, input.channel))
+            throw new ApiError(403, "ASSISTANT_PLAN_REQUIRED", "An active eligible plan is required to use this assistant channel.");
         const key = { tenantId: input.tenantId, channel: input.channel, requestKey: input.requestKey };
         const existing = await tx.assistantReply.findUnique({ where: { tenantId_channel_requestKey: key } });
         if (existing) {
@@ -42,14 +42,13 @@ export async function reserveReply(input: {
                 throw forbidden();
             if (existing.promptHash !== hash)
                 throw conflict("This request key was already used for another question.");
-            if (existing.status !== "failed")
-                return existing;
+            return existing;
         }
-        const used = await tx.assistantReply.count({ where: { tenantId: input.tenantId, channel: input.channel, periodStart: period.start, status: { not: "failed" } } });
-        if (used >= featureLimit(input.channel))
-            throw new ApiError(429, "ASSISTANT_QUOTA_EXCEEDED", "Your organization has used this month's reply allowance. It resets next month.");
+        const used = await tx.assistantReply.count({ where: { tenantId: input.tenantId, channel: input.channel, periodStart: period.start, status: { not: "cancelled" } } });
+        if (used >= featureLimit(input.channel, tenant.contact))
+            throw new ApiError(429, "ASSISTANT_QUOTA_EXCEEDED", assistantQuotaMessage(tenant.contact));
         const data = { ...key, userId: input.userId, projectId: input.projectId, promptHash: hash, prompt: input.prompt, periodStart: period.start, status: "queued", leaseUntil: null, errorCode: null, recipient: input.recipient, connectionId: input.connectionId };
-        return existing ? tx.assistantReply.update({ where: { id: existing.id }, data: { ...data, attempts: 0 } }) : tx.assistantReply.create({ data: { ...data, attachments: { create: input.attachments?.map(f => ({ ...f, tenantId: input.tenantId })) ?? [] } } });
+        return tx.assistantReply.create({ data: { ...data, attachments: { create: input.attachments?.map(f => ({ ...f, tenantId: input.tenantId })) ?? [] } } });
     });
 }
 export async function processReply(id: string) {
@@ -62,8 +61,8 @@ export async function processReply(id: string) {
     const row = await prisma.assistantReply.findUniqueOrThrow({ where: { id } });
     try {
         const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: row.tenantId } });
-        if (!hasBusinessAssistant(tenant.contact))
-            throw new ApiError(403, "BUSINESS_REQUIRED", "An active paid Business package is required.");
+        if (!hasAssistant(tenant.contact, row.channel as AssistantChannel))
+            throw new ApiError(403, "ASSISTANT_PLAN_REQUIRED", "An active eligible plan is required.");
         const context = await assistantContext(row.tenantId, row.projectId, row.userId);
         const history = await prisma.assistantReply.findMany({ where: { tenantId: row.tenantId, projectId: row.projectId, userId: row.userId, channel: row.channel, authorizationHash: context.authorization_hash, status: "completed", id: { not: id } }, orderBy: { createdAt: "desc" }, take: 4, select: { prompt: true, reply: true } });
         const attachments = await prisma.assistantAttachment.findMany({ where: { replyId: id, tenantId: row.tenantId } });

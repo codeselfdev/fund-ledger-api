@@ -805,6 +805,7 @@ model InventoryCategory {
 }
 
 model InventoryItem {
+  description String?
   attributes Json @default("{}")
   constructionMaterials ConstructionMaterialEntry[]
   id           String   @id @default(cuid())
