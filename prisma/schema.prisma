@@ -1352,6 +1352,7 @@ model Customer {
 }
 
 model BusinessDocument {
+  additionalCharges Json @default("[]") @map("additional_charges")
   revision Int @default(0)
   presentationSnapshot Json? @map("presentation_snapshot")
   referrerId String? @map("referrer_id")

@@ -32,6 +32,7 @@ findFirst:async({where,include})=>decorated(name,db[name].find(r=>match(r,where)
 function token(role='admin',project='p'){const userId=`user-${role}`,id=randomUUID();if(!db.users.some(u=>u.id===userId))db.users.push({id:userId,tenantId:'t',name:role,mobile:'+8801711000009',email:null,professionalProfile:null,isActive:true});const token=signAccessToken({userId,sessionId:id,tenantId:'t'});db.sessions.push({id,userId,tenantId:'t',activeProjectId:project,tokenHash:hashToken(token),revokedAt:null,expiresAt:new Date(Date.now()+60000),user:{id:userId,isActive:true,lastActiveAt:new Date()}});db.memberships.push({userId,tenantId:'t',projectId:project,role,isActive:true,memberId:role==='member'?'member':null});return token;}
 before(async()=>{
   prisma.member.findMany = async () => [{ id: 'member' }];
+  prisma.upload.findMany = async () => [];
   prisma.businessConfiguration.findFirst = async () => null;
   prisma.businessField.findMany = async () => [];
   prisma.$queryRaw = async () => [];

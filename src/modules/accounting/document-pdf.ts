@@ -7,6 +7,7 @@ type Line = { description: string; quantity: number; unit_price: number; line_to
 export interface PrintableDocument {
   kind: string; number: string; status: string; revision?: number; documentDate: Date | string; dueDate?: Date | string | null;
   customerSnapshot: unknown; quotationPersonSnapshot?: unknown; presentationSnapshot?: unknown;
+  additionalCharges?: unknown;
   lines: unknown; subtotal: number; discount: number; tax: number; total: number; note?: string | null; taxSnapshot?: unknown;
 }
 const hasValue = (value: unknown) => value !== null && value !== undefined && String(value).trim().length > 0;
@@ -165,7 +166,9 @@ export async function buildProfessionalDocument(d: PrintableDocument, currency: 
   }
   y += 13;
   const tax = d.taxSnapshot as { version?: number; breakdown?: { name: string; amount: number; kind: string }[]; inclusive?: boolean; withholding?: number } | null;
-  const totals: [string, number][] = [['Subtotal', d.subtotal], ...(d.discount ? [['Discount', -d.discount] as [string, number]] : []), ...(tax?.version === 1 ? (tax.breakdown ?? []).map(r => [r.name + (r.kind === 'withhold' ? ' (withheld)' : tax.inclusive ? ' (included)' : ''), r.kind === 'withhold' ? -r.amount : r.amount] as [string, number]) : d.tax ? [['Tax', d.tax] as [string, number]] : []), ['Grand total', d.total]];
+  const charges = (Array.isArray(d.additionalCharges) ? d.additionalCharges : []) as { label: string; amount: number; vat_treatment: string }[];
+  const chargesTotal = charges.reduce((sum, charge) => sum + charge.amount, 0);
+  const totals: [string, number][] = [[charges.length ? 'Items subtotal' : 'Subtotal', d.subtotal - chargesTotal], ...charges.map(charge => [`${charge.label} (${charge.vat_treatment === 'included' ? 'in VAT base' : 'outside VAT base'})`, charge.amount] as [string, number]), ...(d.discount ? [['Discount', -d.discount] as [string, number]] : []), ...(tax?.version === 1 ? (tax.breakdown ?? []).map(r => [r.name + (r.kind === 'withhold' ? ' (withheld)' : tax.inclusive && !charges.length ? ' (included)' : ''), r.kind === 'withhold' ? -r.amount : r.amount] as [string, number]) : d.tax ? [['Tax', d.tax] as [string, number]] : []), ['Grand total', d.total]];
   ensure(totals.length * 19 + 12);
   for (const [i, [label, amount]] of totals.entries()) {
     const bold = i === totals.length - 1, value = `${currency} ${money(amount)}`;
@@ -177,6 +180,7 @@ export async function buildProfessionalDocument(d: PrintableDocument, currency: 
     text(value, amountX, y + 2, 10, { text: '', bold }); y += height;
   }
   y += 10;
+  if (charges.length) paragraphSection('Charge treatment', 'Additional charges are before VAT and after the item discount. In VAT base uses the document VAT rate; outside VAT base adds no VAT.');
   if (hasValue(d.note)) paragraphSection('Note', d.note!);
   if (p?.terms.enabled && hasValue(p.terms.text)) paragraphSection('Terms and Conditions', p.terms.text);
   if (p?.disclaimer.enabled && hasValue(p.disclaimer.text)) paragraphSection('DISCLAIMER', p.disclaimer.text, hasValue(author.name) ? 80 : 0);

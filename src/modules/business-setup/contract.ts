@@ -89,15 +89,16 @@ export interface ImportDraft { fileName: string; headers: string[]; rows: string
 export interface ImportPreview { id: string; expiresAt: string; total: number; added: number; updated: number; skipped: number; newFields: { label: string; type: ValueType }[]; issues: { row: number; column: string; message: string }[]; sample: Record<string, unknown>[]; sampleRowNumbers?: number[] }
 export interface ImportResult { added: number; updated: number; skipped: number; fieldsCreated: number }
 export type TaxDocument = 'quotation' | 'sale' | 'purchase';
+export interface AdditionalCharge { label: string; amount: number; vat_treatment: 'included' | 'excluded' }
 export interface TaxRate { id: string; name: string; rateBps: number; kind: 'add' | 'withhold'; documents: TaxDocument[]; active: boolean }
 export interface TaxDefault { rateId: string | null; withholdingId: string | null; inclusive: boolean; level: 'document' | 'line' }
 export interface TaxSetup { revision: number; rates: TaxRate[]; defaults: Record<TaxDocument, TaxDefault>; registrationNumber: string; showBreakdown: boolean; allowOverride: boolean }
 export interface TaxSelection { rateId?: string | null; withholdingId?: string | null; inclusive?: boolean; lineRateIds?: (string | null)[]; revision?: number }
 export interface TaxBreakdown { rateId: string; name: string; rateBps: number; kind: 'add' | 'withhold'; base: number; amount: number }
-export interface TaxSnapshot { version: 1; rates?: TaxRate[]; revision: number; inclusive: boolean; level: 'document' | 'line'; registrationNumber: string; showBreakdown: boolean; selection: TaxSelection; subtotal: number; discount: number; tax: number; withholding: number; grossTotal: number; payable: number; breakdown: TaxBreakdown[] }
+export interface TaxSnapshot { version: 1; rates?: TaxRate[]; revision: number; inclusive: boolean; level: 'document' | 'line'; registrationNumber: string; showBreakdown: boolean; selection: TaxSelection; subtotal: number; discount: number; tax: number; withholding: number; grossTotal: number; payable: number; breakdown: TaxBreakdown[]; chargesSubtotal?: number; vatBase?: number }
 export const emptyTaxSetup = (): TaxSetup => ({ revision: 0, rates: [], defaults: Object.fromEntries(['quotation', 'sale', 'purchase'].map(k => [k, { rateId: null, withholdingId: null, inclusive: false, level: 'document' }])) as TaxSetup['defaults'], registrationNumber: '', showBreakdown: true, allowOverride: false });
 /** All posted amounts use the ledger's existing integer taka unit. Round at each line. */
-export function calculateTax(setup: TaxSetup, document: TaxDocument, amounts: number[], discount = 0, selection: TaxSelection = {}): TaxSnapshot {
+export function calculateTax(setup: TaxSetup, document: TaxDocument, amounts: number[], discount = 0, selection: TaxSelection = {}, charges: AdditionalCharge[] = []): TaxSnapshot {
   const defaults = setup.defaults[document];
   const inclusive = selection.inclusive ?? defaults.inclusive;
   const rateId = selection.rateId === undefined ? defaults.rateId : selection.rateId;
@@ -111,8 +112,9 @@ export function calculateTax(setup: TaxSetup, document: TaxDocument, amounts: nu
   if (!Number.isSafeInteger(discount) || discount < 0 || amounts.some(n => !Number.isSafeInteger(n) || n < 0)) throw new Error('Use non-negative whole taka amounts');
   const amountSum = amounts.reduce((a, b) => a + b, 0);
   if (discount > amountSum) throw new Error('Discount cannot exceed the subtotal');
+  if (charges.length > 20 || charges.some(charge => !charge.label.trim() || charge.label.trim().length > 120 || !Number.isSafeInteger(charge.amount) || charge.amount < 0 || charge.amount > 2147483647 || !['included', 'excluded'].includes(charge.vat_treatment))) throw new Error('Use up to 20 named charges with non-negative whole taka amounts and a VAT treatment');
   const groups = new Map<string, TaxBreakdown>();
-  let subtotal = 0, tax = 0, distributed = 0;
+  let subtotal = 0, tax = 0, distributed = 0, vatBase = 0;
   amounts.forEach((gross, i) => {
     // Allocate discount using cumulative rounding so the allocations sum exactly.
     const allocation = amountSum ? Math.round(discount * amounts.slice(0, i + 1).reduce((a, b) => a + b, 0) / amountSum) : 0;
@@ -121,15 +123,22 @@ export function calculateTax(setup: TaxSetup, document: TaxDocument, amounts: nu
     const base = inclusive && rate ? Math.round(taxable * 10000 / (10000 + rate.rateBps)) : taxable;
     const added = inclusive ? taxable - base : Math.round(base * (rate?.rateBps ?? 0) / 10000);
     subtotal += base; tax += added;
-    if (rate) { const group = groups.get(rate.id) ?? { rateId: rate.id, name: rate.name, rateBps: rate.rateBps, kind: 'add' as const, base: 0, amount: 0 }; group.base += base; group.amount += added; groups.set(rate.id, group); }
+    if (rate) { vatBase += base; const group = groups.get(rate.id) ?? { rateId: rate.id, name: rate.name, rateBps: rate.rateBps, kind: 'add' as const, base: 0, amount: 0 }; group.base += base; group.amount += added; groups.set(rate.id, group); }
   });
+  // Fees are stated before VAT, outside the item discount and inclusive-price extraction.
+  for (const charge of charges) {
+    const rate = charge.vat_treatment === 'included' ? findRate(rateId, 'add') : undefined;
+    const added = Math.round(charge.amount * (rate?.rateBps ?? 0) / 10000);
+    subtotal += charge.amount; tax += added;
+    if (rate) { vatBase += charge.amount; const group = groups.get(rate.id) ?? { rateId: rate.id, name: rate.name, rateBps: rate.rateBps, kind: 'add' as const, base: 0, amount: 0 }; group.base += charge.amount; group.amount += added; groups.set(rate.id, group); }
+  }
   const wh = findRate(withholdingId, 'withhold');
   const withholding = wh ? Math.round(subtotal * wh.rateBps / 10000) : 0;
   if (wh) groups.set(wh.id, { rateId: wh.id, name: wh.name, rateBps: wh.rateBps, kind: 'withhold', base: subtotal, amount: withholding });
   const grossTotal = subtotal + tax, payable = grossTotal - withholding;
   if (![subtotal, tax, grossTotal, payable].every(n => Number.isSafeInteger(n) && n >= 0 && n <= 2147483647)) throw new Error('Total exceeds the supported amount');
   const selectedIds = new Set([rateId, withholdingId, ...(selection.lineRateIds ?? [])].filter(Boolean));
-  return { version: 1, rates: setup.rates.filter(r => selectedIds.has(r.id) && r.active && r.documents.includes(document)), revision: setup.revision, inclusive, level: defaults.level, registrationNumber: setup.registrationNumber, showBreakdown: setup.showBreakdown, selection: { rateId, withholdingId, inclusive, ...(defaults.level === 'line' ? { lineRateIds: amounts.map((_, i) => selection.lineRateIds?.[i] === undefined ? rateId : selection.lineRateIds[i]) } : {}) }, subtotal, discount, tax, withholding, grossTotal, payable, breakdown: [...groups.values()] };
+  return { version: 1, rates: setup.rates.filter(r => selectedIds.has(r.id) && r.active && r.documents.includes(document)), revision: setup.revision, inclusive, level: defaults.level, registrationNumber: setup.registrationNumber, showBreakdown: setup.showBreakdown, selection: { rateId, withholdingId, inclusive, ...(defaults.level === 'line' ? { lineRateIds: amounts.map((_, i) => selection.lineRateIds?.[i] === undefined ? rateId : selection.lineRateIds[i]) } : {}) }, subtotal, discount, tax, withholding, grossTotal, payable, breakdown: [...groups.values()], ...(charges.length ? { chargesSubtotal: charges.reduce((sum, charge) => sum + charge.amount, 0), vatBase } : {}) };
 }
 /** Same Bangladesh mobile prefixes accepted by the app's contact entry; other codes stay explicit. */
 export function businessPhoneIdentity(raw: string) {
