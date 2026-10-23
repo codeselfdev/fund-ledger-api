@@ -21,6 +21,9 @@ before(async()=>{
   prisma[name].findFirst=async({where})=>{scoped(where);return state[key].find(r=>where.id?r.id===where.id:r.name===where.name)??null;};
   prisma[name].create=async({data})=>{scoped(data);if(failAt===state[key].length+1)throw Error('Simulated storage failure');const row={id:`${key}-${state[key].length}`,quantity:0,...data};state[key].push(row);return row;};
  }
+ prisma.inventoryItem.update=async({where,data})=>{const row=state.items.find(item=>item.id===where.id);assert.ok(row);Object.assign(row,data);return row;};
+ prisma.inventoryCategory.findMany=async({where})=>{scoped(where);return state.categories.filter(category=>category.isActive);};
+ prisma.inventoryCategory.findFirst=async({where})=>{scoped(where);return state.categories.find(category=>category.id===where.id&&category.isActive)??null;};
  prisma.account.findFirst=prisma.account.findFirstOrThrow=async({where})=>{scoped(where);return state.accounts.find(a=>a.id===where.id)??null;};
  prisma.account.findMany=async({where})=>{scoped(where);return state.accounts;};
  prisma.account.updateMany=async({where,data})=>{scoped(where);const a=state.accounts.find(a=>a.id===where.id);if(!a||where.balance.gte!=null&&a.balance<where.balance.gte||where.balance.lte!=null&&a.balance>where.balance.lte)return{count:0};a.balance+=(data.balance.increment??0)-(data.balance.decrement??0);return{count:1};};
@@ -32,7 +35,7 @@ before(async()=>{
  prisma.upload.findFirst=async({where})=>{scoped(where);return where.id==='proof'?{id:'proof'}:null;};
  const app=express();app.use(express.json());app.use((req,res,next)=>{req.auth={...auth,roles};next();});app.use('/bulk',bulkAssistantRouter);app.use(errorHandler);server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));base=`http://127.0.0.1:${server.address().port}/bulk`;
 });
-beforeEach(()=>{type='billing';roles=['accountant'];flow='accountant_only';failAt=0;state={customers:[],dealers:[],items:[],expenses:[],transactions:[],activities:[],accounts:[{id:'bank',name:'Bank',balance:100000}]};});
+beforeEach(()=>{type='billing';roles=['accountant'];flow='accountant_only';failAt=0;state={categories:[],customers:[],dealers:[],items:[],expenses:[],transactions:[],activities:[],accounts:[{id:'bank',name:'Bank',balance:100000}]};});
 after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));await prisma.$disconnect();});
 const request=(path,body)=>fetch(base+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
 const batch=(operation,rows)=>({operation,fields:{rows}});
@@ -92,4 +95,21 @@ test('reviewed product descriptions, prices and codes persist for a single scree
 test('a product batch rolls back every item when a later product cannot be saved',async()=>{
  const b=batch('bulk_items',[{name:'Cable',description:'USB-C',sell_price:200},{name:'Router',description:'AC1200',sell_price:2000}]),plan=await preview(b);failAt=2;
  assert.equal((await commit(b,plan)).status,500);assert.equal(state.items.length,0);assert.equal(state.activities.length,0);
+});
+
+test('product categories are scoped, revalidated and persisted; suggestions never create categories or suppliers',async()=>{
+ state.categories=[{id:'cables',name:'Cables',isActive:true}];
+ const cat=await (await request('/catalog')).json();assert.deepEqual(cat.data.item_categories,state.categories);
+ const row={name:'USB-C cable',category_id:'cables',suggested_category:'Accessories',suggested_supplier:'ABC Supplier',inference_notes:'Category inferred from box',attributes:{}};
+ const b=batch('bulk_items',[row]),plan=await preview(b);assert.equal(plan.entries[0].category_name,'Cables');assert.equal(state.items.length,0);assert.equal(state.dealers.length,0);
+ assert.equal((await commit(b,plan)).status,200);assert.equal(state.items[0].categoryId,'cables');assert.equal(state.items[0].suggested_category,undefined);assert.equal(state.categories.length,1);assert.equal(state.dealers.length,0);
+ const suggestion=batch('bulk_items',[{name:'Mouse',suggested_category:'Computer accessories',suggested_supplier:'Optional supplier'}]);const p=await preview(suggestion);assert.equal((await commit(suggestion,p)).status,200);assert.equal(state.items[1].categoryId,undefined);assert.equal(state.categories.length,1);assert.equal(state.dealers.length,0);
+ assert.equal((await request('/preview',batch('bulk_items',[{name:'Adapter',category_id:'foreign'}]))).status,400);
+ assert.equal((await request('/preview',batch('bulk_items',[{name:'Adapter',create_category:'Silent creation'}]))).status,400);
+});
+test('a changed or deactivated item category invalidates confirmation without creating items',async()=>{
+ state.categories=[{id:'cables',name:'Cables',isActive:true}];
+ const b=batch('bulk_items',[{name:'Cable',category_id:'cables'}]),plan=await preview(b);
+ state.categories[0].name='Other';assert.equal((await commit(b,plan)).status,409);assert.equal(state.items.length,0);
+ state.categories[0].name='Cables';state.categories[0].isActive=false;assert.equal((await commit(b,plan)).status,400);assert.equal(state.items.length,0);
 });

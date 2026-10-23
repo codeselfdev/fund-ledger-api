@@ -18,13 +18,16 @@ export type Operation=typeof bulkOperations[number];
 const schemas={
  bulk_customers:z.object({...person,mobile:text(32).optional()}).strict(),
  bulk_dealers:z.object({...person,address:text(255).optional(),phone:text(32).optional(),notes:text(2000).optional()}).strict(),
- bulk_items:z.object({name:text(120),description:text(2000).optional(),sku:text(64).optional(),unit:text(16).optional(),cost_price:money.optional(),sell_price:money.optional(),quantity:money.optional(),reorder_level:money.optional(),attributes}).strict(),
+ bulk_items:z.object({name:text(120),description:text(2000).optional(),sku:text(64).optional(),unit:text(16).optional(),category_id:id.optional(),suggested_category:text(64).optional(),suggested_supplier:text(120).optional(),inference_notes:text(1000).optional(),cost_price:money.optional(),sell_price:money.optional(),quantity:money.optional(),reorder_level:money.optional(),attributes}).strict(),
  bulk_expenses:expenses,
  bulk_incomes:z.object({account_id:id,amount:money.positive(),source:text(120),note:text(500).optional(),income_date:date.optional(),category_id:id.optional(),customer_id:id.optional()}).strict(),
 };
 export const bulkRequest=z.object({operation:z.enum(bulkOperations),fields:z.object({rows:z.array(z.record(z.unknown())).min(1).max(50)}).strict()}).strict();
 export type BulkRequest=z.infer<typeof bulkRequest>;
 type Row=Record<string,unknown>;
+// Review hints are never passed to record creation and cannot create related records.
+function itemRecord(row:Row){const {category_id,suggested_category,suggested_supplier,inference_notes,...record}=row;return record;}
+function itemHints(row:Row){return Object.fromEntries(['suggested_category','suggested_supplier','inference_notes'].filter(key=>row[key]!=null).map(key=>[key,row[key]]));}
 export const bulkJson=(v:unknown)=>JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue;
 function canonical(v:unknown):unknown{return Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,x])=>[k,canonical(x)])):v;}
 export const bulkHash=(v:unknown)=>createHash('sha256').update(JSON.stringify(canonical(v))).digest('hex');
@@ -42,7 +45,7 @@ async function projectContext(db:Db,a:Auth,operation?:Operation){
 }
 export async function bulkCatalog(db:Db,a:Auth){
  const c=await projectContext(db,a),where=scope(a);
- const [customers,vendors,items,accounts,income_categories,expense_categories,customer_schema,dealer_schema,item_schema]=await Promise.all([
+ const [customers,vendors,items,accounts,income_categories,expense_categories,customer_schema,dealer_schema,item_schema,item_categories]=await Promise.all([
   db.customer.findMany({where:{...where,isActive:true},select:{id:true,name:true,mobile:true,email:true},orderBy:{id:'asc'},take:500}),
   db.vendor.findMany({where:{...where,isActive:true},select:{id:true,name:true,phone:true},orderBy:{id:'asc'},take:500}),
   db.inventoryItem.findMany({where:{...where,isActive:true},select:{id:true,name:true,sku:true},orderBy:{id:'asc'},take:500}),
@@ -50,8 +53,9 @@ export async function bulkCatalog(db:Db,a:Auth){
   db.incomeCategory.findMany({where:{...where,isActive:true},select:{id:true,name:true}}),
   db.expenseCategoryDef.findMany({where,select:{id:true,name:true}}),
   entitySchema(db,a,'customer'),entitySchema(db,a,'dealer'),entitySchema(db,a,'item'),
+  db.inventoryCategory.findMany({where:{...where,isActive:true},select:{id:true,name:true},orderBy:{name:'asc'},take:500}),
  ]);
- return{tenant_id:a.tenantId,project_id:a.projectId,project_type:c.project.projectType,currency:c.currency,today:dhakaToday(),stock_enabled:c.project.stockManagementEnabled,customers,suppliers:vendors,vendors,products:items,accounts,income_categories,expense_categories,entity_schemas:{customer:customer_schema,dealer:dealer_schema,item:item_schema},catalog_limit:500,tool_fields:Object.fromEntries(bulkOperations.map(k=>[k,['rows']]))};
+ return{tenant_id:a.tenantId,project_id:a.projectId,project_type:c.project.projectType,currency:c.currency,today:dhakaToday(),stock_enabled:c.project.stockManagementEnabled,customers,suppliers:vendors,vendors,products:items,item_categories,accounts,income_categories,expense_categories,entity_schemas:{customer:customer_schema,dealer:dealer_schema,item:item_schema},catalog_limit:500,tool_fields:Object.fromEntries(bulkOperations.map(k=>[k,['rows']]))};
 }
 export async function previewBulk(db:Db,a:Auth,input:BulkRequest){
  const {operation}=input,c=await projectContext(db,a,operation),entity=entities[operation];
@@ -63,7 +67,9 @@ export async function previewBulk(db:Db,a:Auth,input:BulkRequest){
  for(const [index,r]of rows.entries()){
   try{
    if(entity){
-    const b=builtinValues(entity,r);
+    const b=builtinValues(entity,entity==='item'?itemRecord(r):r);
+    let category:Row={};
+    if(entity==='item'&&r.category_id){const selected=await db.inventoryCategory.findFirst({where:{...scope(a),id:String(r.category_id),isActive:true}});if(!selected)throw notFound('Active item category not found in this project.');category={category_id:selected.id,category_name:selected.name};}
     const attrs=validateAttributes(definition!.fields,(r.attributes??{}) as Attributes);
     const keys=[`name:${String(b.name).normalize('NFKC').toLowerCase()}`,...(entity==='item'?(b.sku?[`sku:${b.sku}`]:[]):[b[entity==='customer'?'mobile':'phone']?`phone:${businessPhoneIdentity(String(b[entity==='customer'?'mobile':'phone']))}`:'',b.email?`email:${String(b.email).toLowerCase()}`:''].filter(Boolean))];
     if(keys.some(k=>seen.has(k)))throw conflict('Duplicate name or identity within this batch.');keys.forEach(k=>seen.add(k));
@@ -71,7 +77,7 @@ export async function previewBulk(db:Db,a:Auth,input:BulkRequest){
     const existing=entity==='item'?await db.inventoryItem.findMany({where,select:{name:true,sku:true}}):existingPeople;
     if(existing.some(v=>{const row=v as Row;return keys.some(k=>k===`name:${String(row.name).normalize('NFKC').toLowerCase()}`||entity==='item'&&row.sku&&k===`sku:${row.sku}`||entity!=='item'&&row[entity==='customer'?'mobile':'phone']&&k===`phone:${businessPhoneIdentity(String(row[entity==='customer'?'mobile':'phone']))}`||row.email&&k===`email:${String(row.email).toLowerCase()}`);} ))throw conflict('A record with this name or identity already exists. Bulk entry creates new records only.');
     if(entity==='item'&&Number(b.quantity)>0&&!c.project.stockManagementEnabled)throw badRequest('Enable stock management before setting opening quantities.');
-    entries.push({row:index+1,...Object.fromEntries(BUILTINS[entity].filter(f=>b[f.property]!=null).map(f=>[f.key,b[f.property]])),attributes:attrs,status:'create'});
+    entries.push({row:index+1,...(entity==='item'?{...category,...itemHints(r)}:{}),...Object.fromEntries(BUILTINS[entity].filter(f=>b[f.property]!=null).map(f=>[f.key,b[f.property]])),attributes:attrs,status:'create'});
     continue;
    }
    const account=await db.account.findFirst({where:{...scope(a),id:String(r.account_id)}});if(!account)throw notFound('Account not found in this project.');
@@ -106,7 +112,7 @@ export async function executeBulk(db:Db,a:Auth,input:BulkRequest,targets:unknown
  const records:Row[]=[],entity=entities[input.operation];
  for(const entry of plan.entries){
   const r=input.fields.rows[Number(entry.row)-1]!;
-  if(entity){const saved=await saveRecord(db,a,entity,r);records.push({row:entry.row,id:saved.id,name:saved.name,status:'created'});continue;}
+  if(entity){const saved=await saveRecord(db,a,entity,entity==='item'?itemRecord(r):r);if(entity==='item'&&r.category_id)await db.inventoryItem.update({where:{id:saved.id},data:{categoryId:String(r.category_id)}});records.push({row:entry.row,id:saved.id,name:saved.name,status:'created'});continue;}
   const amount=Number(r.amount),accountId=String(r.account_id);
   if(input.operation==='bulk_incomes'){
    const changed=await db.account.updateMany({where:{...scope(a),id:accountId,balance:{lte:2147483647-amount}},data:{balance:{increment:amount}}});if(changed.count!==1)throw conflict('Account balance changed. Review the batch again.');
