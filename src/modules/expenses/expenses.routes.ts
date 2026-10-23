@@ -1,3 +1,4 @@
+import { canReviewExpense } from './expense-review-policy.js';
 import { priorBillRequest } from './recurring-expenses.service.js';
 import { stepDue } from './recurring-expenses.policy.js';
 import { Router } from "express";
@@ -324,10 +325,10 @@ router.post("/:id/approve", requireProject, requireRoles("accountant", "approver
   });
   if (!before) throw notFound("Expense not found");
   if (approvalFlow === "accountant_only") {
-    if (!auth.roles.includes("accountant") && !auth.roles.includes("admin")) {
+    if (!canReviewExpense(auth.roles, approvalFlow)) {
       throw forbidden("Only an accountant can verify this expense in the current approval flow");
     }
-  } else if (!auth.roles.includes("approver") && !auth.roles.includes("admin")) {
+  } else if (!canReviewExpense(auth.roles, approvalFlow)) {
     throw forbidden("Only an approver can verify this expense in the current approval flow");
   }
   if (before.status !== "pending") throw badRequest("Expense is not pending");
@@ -438,10 +439,10 @@ router.post("/:id/reject", requireProject, requireRoles("accountant", "approver"
   });
   if (!before) throw notFound("Expense not found");
   if (approvalFlow === "accountant_only") {
-    if (!auth.roles.includes("accountant") && !auth.roles.includes("admin")) {
+    if (!canReviewExpense(auth.roles, approvalFlow)) {
       throw forbidden("Only an accountant can reject this expense in the current approval flow");
     }
-  } else if (!auth.roles.includes("approver") && !auth.roles.includes("admin")) {
+  } else if (!canReviewExpense(auth.roles, approvalFlow)) {
     throw forbidden("Only an approver can reject this expense in the current approval flow");
   }
   if (before.status !== "pending") throw badRequest("Only pending expenses can be rejected");

@@ -1,3 +1,4 @@
+import { saveReviewedExpense } from './business-expense.js';
 import { normalizeExpenseFields, receiptInvoiceParty, sameReceiptInvoice } from './expense-payee.js';
 import { Router } from 'express';
 import { createHash } from 'node:crypto';
@@ -30,18 +31,19 @@ router.use(requireRoles('owner','admin','accountant'),asyncHandler(async(req,_re
 router.get('/snapshot',asyncHandler(async(req,res)=>{
  const a=requireProjectContext(req),where=scope(a);
  const snapshot=await financialTransaction(async tx=>{
-  const [p,customers,items,suppliers,documents,expenses,accounts,purchases,records]=await Promise.all([
+  const [p,customers,items,suppliers,documents,expenses,accounts,purchases,records,expense_categories]=await Promise.all([
    tx.project.findFirstOrThrow({where:{id:a.projectId,tenantId:a.tenantId}}),
    tx.customer.findMany({where:{...where,isActive:true},select:{id:true,name:true,email:true,mobile:true}}),
-   tx.inventoryItem.findMany({where:{...where,isActive:true},select:{id:true,name:true,sku:true,unit:true,sellPrice:true,quantity:true,reorderLevel:true}}),
+   tx.inventoryItem.findMany({where:{...where,isActive:true},select:{id:true,name:true,sku:true,unit:true,sellPrice:true,costPrice:true,quantity:true,reorderLevel:true}}),
    tx.vendor.findMany({where:{...where,isActive:true},select:{id:true,name:true}}),
    tx.businessDocument.findMany({where,select:{id:true,number:true,kind:true,status:true,revision:true,customerId:true,customerSnapshot:true,documentDate:true,dueDate:true,lines:true,subtotal:true,discount:true,tax:true,taxSnapshot:true,total:true,paidAmount:true,sourceId:true,events:true}}),
    tx.expense.findMany({where,select:{id:true,amount:true,status:true,category:true,expenseDate:true,createdAt:true}}),
-   tx.account.findMany({where,select:{id:true,name:true}}),
+   tx.account.findMany({where,select:{id:true,name:true,balance:true}}),
    tx.purchase.findMany({where,select:{id:true,vendorId:true,totalAmount:true,createdAt:true}}),
    tx.activity.findMany({where:{...where,entityType:'nesta_ai_business'},select:{id:true,after:true,createdAt:true},orderBy:{createdAt:'desc'}}),
+   tx.expenseCategoryDef.findMany({where,select:{id:true,name:true}}),
   ]);
-  return{tenant_id:a.tenantId,project_id:a.projectId,project_type:p.projectType,stock_enabled:p.stockManagementEnabled,workflow:workflow(p.commerceSettings),snapshot_at:new Date().toISOString(),email_enabled:!!(env.smtp.user&&env.smtp.pass),customers,items,suppliers,documents,expenses,accounts,purchases,records};
+  return{tenant_id:a.tenantId,project_id:a.projectId,project_type:p.projectType,stock_enabled:p.stockManagementEnabled,workflow:workflow(p.commerceSettings),snapshot_at:new Date().toISOString(),email_enabled:!!(env.smtp.user&&env.smtp.pass),customers,items,suppliers,documents,expenses,accounts,purchases,records,expense_categories};
  });return ok(res,snapshot);
 }));
 const docFields=z.object({quotation_person_id:id.optional(),customer_id:id,document_date:dateSchema,due_date:dateSchema.optional(),lines:z.array(lineSchema.pick({item_id:true,description:true,quantity:true,unit_price:true})).min(1).max(100),discount_percent:z.number().min(0).max(100),vat_percent:z.number().min(0).max(100),note:text.optional(),source_id:id.optional()}).strict();
@@ -69,7 +71,7 @@ const fieldsSchemas={
  log_collection_followup:z.object({customer_id:id,invoice_id:id.optional(),note:text,outcome:z.enum(['no_answer','promised_payment','reported_paid','disputed','contacted']),followup_date:dateSchema.optional()}).strict(),
  schedule_followup:z.object({quotation_id:id,followup_date:dateSchema,note:text}).strict(),
  create_purchase_order_draft:z.object({supplier_id:id,lines:z.array(lineSchema.pick({item_id:true,description:true,quantity:true,unit_price:true}).extend({item_id:id})).min(1).max(100),note:text.optional()}).strict(),
- create_expense_draft:z.object({...bill,supplier_id:id.optional(),payee_name:z.string().trim().min(1).max(120).optional(),service_charge:money.optional(),category:z.enum(['materials','construction','professional','services','survey']),account_id:id.optional()}).strict(),
+ create_expense_draft:z.object({...bill,title:z.string().trim().min(1).max(120).optional(),category_def_id:id.optional(),submission:z.enum(['draft','post']).optional(),invoice_number:bill.invoice_number.optional(),supplier_id:id.optional(),payee_name:z.string().trim().min(1).max(120).optional(),service_charge:money.optional(),category:z.enum(['materials','construction','professional','services','survey']),account_id:id.optional()}).strict(),
  create_purchase_bill_draft:z.object(bill).strict(),
 };
 type Operation=keyof typeof fieldsSchemas;
@@ -98,7 +100,7 @@ router.post('/actions',asyncHandler(async(req,res)=>{
     if(!c?.email||reviewed?.address!==c.email||!env.smtp.user||!env.smtp.pass)throw conflict('The recipient or email configuration changed. Review the reminder again.');
    }
   }
-  if(f.invoice_number){
+  if(['create_expense_draft','create_purchase_bill_draft'].includes(b.operation)){
    const lines=f.lines as {quantity:number;unit_price:number}[],subtotal=lines.reduce((s,l)=>s+Math.round(l.quantity*l.unit_price),0);
    if(subtotal-Number(f.discount)+Number(f.tax)+Number(f.service_charge??0)!==f.total||Number(f.discount)>subtotal)throw badRequest('Invoice totals do not reconcile.');
    const existing=await tx.activity.findMany({where:{...where,entityType:'nesta_ai_business',action:{in:['nesta_ai.create_expense_draft','nesta_ai.create_purchase_bill_draft']}},select:{after:true}});
@@ -106,8 +108,9 @@ router.post('/actions',asyncHandler(async(req,res)=>{
   }
   let result:Record<string,unknown>={status:b.operation==='send_payment_reminder'?'sending':b.operation==='schedule_followup'?'scheduled':b.operation==='log_collection_followup'?'recorded':'draft',operation:b.operation,posted:false};
   if(b.operation==='create_expense_draft'){
-   const e=await tx.expense.create({data:{...where,title:`${f.payee_name||supplier?.name?`${String(f.payee_name||supplier?.name)} · `:''}Receipt ${String(f.invoice_number)}`.slice(0,120),amount:Number(f.total),category:f.category as 'materials',vendorId:f.supplier_id?String(f.supplier_id):undefined,vendor:f.payee_name?String(f.payee_name):supplier?.name??undefined,expenseDate:new Date(`${f.invoice_date}T00:00:00Z`),accountId:f.account_id?String(f.account_id):undefined,docFileId:b.proof_file_id,status:'draft',createdById:a.userId}});
-   result={...result,expense_id:e.id,status:e.status};
+   if(f.submission==='post'){const reviewed=b.targets.expense_submission as {status?:string}|undefined,expected=a.roles.some(role=>role==='owner'||role==='admin')?'paid':'pending';if(reviewed?.status!==expected)throw conflict('Expense posting permissions changed. Review a fresh proposal.');}
+   const e=await saveReviewedExpense(tx,a,f,supplier,b.proof_file_id);
+   result={...result,expense_id:e.id,status:e.status,posted:e.status==='paid',approval_required:e.status==='pending'};
   }
   const record=await tx.activity.create({data:{id:recordId,...where,actorUserId:a.userId,action:`nesta_ai.${b.operation}`,entityType:'nesta_ai_business',entityId:customerId??(f.supplier_id?String(f.supplier_id):null),before:json({request_hash:requestHash}),after:json({...result,fields:{...f,...(customerId?{customer_id:customerId}:{})},targets:b.targets,...(b.proof_file_id?{proof_file_id:b.proof_file_id}:{})})}});
   return{fresh:true,record};

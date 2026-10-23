@@ -6,7 +6,7 @@ Object.assign(process.env,{DATABASE_URL:'postgresql://test:test@127.0.0.1:1/test
 const {prisma}=await import('../dist/core/prisma/client.js');
 const {businessAssistantRouter}=await import('../dist/modules/ai-service/business.routes.js');
 const {errorHandler}=await import('../dist/core/http/error-handler.js');
-let projectType,roles,records,expenses,invoice,customer,base,server,reads;
+let projectType,roles,records,expenses,invoice,customer,base,server,reads,balance,ledger;
 const scope={tenantId:'tenant',projectId:'project'};
 const scoped=where=>{assert.equal(where.tenantId,'tenant');assert.equal(where.projectId,'project');};
 before(async()=>{
@@ -17,20 +17,24 @@ before(async()=>{
  prisma.$transaction=async fn=>fn(prisma);
  prisma.customer.findFirst=async({where})=>{scoped(where);return where.id==='customer'?customer:null;};
  prisma.vendor.findFirst=async({where})=>{scoped(where);return where.id==='supplier'?{id:'supplier',name:'Supplier'}:null;};
- prisma.account.findFirst=async({where})=>{scoped(where);return where.id==='account'?{id:'account'}:null;};
+ prisma.account.findFirst=async({where})=>{scoped(where);return where.id==='account'?{id:'account',balance}:null;};
  prisma.inventoryItem.findFirst=async({where})=>{scoped(where);return where.id==='item'?{id:'item'}:null;};
  prisma.upload.findFirst=async({where})=>{scoped(where);return where.id==='proof'?{id:'proof'}:null;};
  prisma.businessDocument.findFirst=async({where})=>{scoped(where);return where.id==='invoice'?invoice:null;};
- for(const name of ['customer','inventoryItem','vendor','businessDocument','expense','account','purchase'])prisma[name].findMany=async({where})=>{scoped(where);reads++;return[];};
+ for(const name of ['customer','inventoryItem','vendor','businessDocument','expense','account','purchase','expenseCategoryDef'])prisma[name].findMany=async({where,select})=>{scoped(where);if(name==='inventoryItem')assert.equal(select.costPrice,true);reads++;return[];};
+ prisma.account.updateMany=async({where,data})=>{scoped(where);if(where.id!=='account'||balance<where.balance.gte)return{count:0};balance-=data.balance.decrement;return{count:1};};
+ prisma.account.findFirstOrThrow=async({where})=>{scoped(where);assert.equal(where.id,'account');return{id:'account',balance};};
+ prisma.accountTransaction.create=async({data})=>{const row={id:'ledger-'+ledger.length,...data};ledger.push(row);return row;};
+ prisma.expenseCategoryDef.findFirst=async({where})=>{scoped(where);return where.id==='meals'?{id:'meals',name:'Meals'}:null;};
  prisma.activity.findFirst=async({where})=>{scoped(where);return records.find(r=>r.id===where.id)??null;};
  prisma.activity.findMany=async({where})=>{scoped(where);return records;};
  prisma.activity.create=async({data})=>{records.push(data);return data;};
  prisma.activity.updateMany=async({where,data})=>{scoped(where);Object.assign(records.find(r=>r.id===where.id),data);return{count:1};};
- prisma.expense.create=async({data})=>{expenses.push(data);return{id:'expense',...data};};
+ prisma.expense.create=async({data})=>{const saved={id:'expense-'+expenses.length,...data};expenses.push(saved);return saved;};
  prisma.businessConfiguration.findFirst=async()=>null;
  const app=express();app.use(express.json());app.use((req,res,next)=>{req.auth={...scope,userId:'user',roles};next();});app.use('/business',businessAssistantRouter);app.use(errorHandler);server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));base=`http://127.0.0.1:${server.address().port}/business`;
 });
-beforeEach(()=>{projectType='accounting';roles=['accountant'];records=[];expenses=[];reads=0;invoice={id:'invoice',customerId:'customer',kind:'sale',status:'issued',total:1000,paidAmount:200};customer={id:'customer',email:'customer@example.test',name:'Customer'};});
+beforeEach(()=>{projectType='accounting';roles=['accountant'];records=[];expenses=[];reads=0;balance=10000;ledger=[];invoice={id:'invoice',customerId:'customer',kind:'sale',status:'issued',total:1000,paidAmount:200};customer={id:'customer',email:'customer@example.test',name:'Customer'};});
 after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));await prisma.$disconnect();});
 const request=(path,body)=>fetch(base+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
 const bill=()=>({operation:'create_expense_draft',fields:{supplier_id:'supplier',invoice_number:'SI-1',invoice_date:'2026-10-01',lines:[{item_id:'item',description:'Item',quantity:2,unit_price:500}],discount:0,tax:0,total:1000,category:'materials',account_id:'account'},targets:{},request_key:randomUUID(),verified_source_records:true,proof_file_id:'proof'});
@@ -39,7 +43,7 @@ test('snapshot rejects other project types and unauthorized roles before any rec
  projectType='accounting';for(const role of ['member','cashier','auditor']){roles=[role];assert.equal((await request('/snapshot')).status,403);assert.equal(reads,0);}
 });
 test('snapshot scopes every model read to authenticated tenant/project and exposes no credentials',async()=>{
- const r=await request('/snapshot');assert.equal(r.status,200);const result=(await r.json()).data;assert.equal(result.project_id,'project');assert.equal(result.project_type,'accounting');assert.equal(reads,7);assert.ok(!JSON.stringify(result).includes('SMTP_PASS'));
+ const r=await request('/snapshot');assert.equal(r.status,200);const result=(await r.json()).data;assert.equal(result.project_id,'project');assert.equal(result.project_type,'accounting');assert.equal(reads,8);assert.ok(!JSON.stringify(result).includes('SMTP_PASS'));
 });
 test('saving an expense requires attestation and creates only an unposted draft, including for admins',async()=>{
  const b=bill();assert.equal((await request('/actions',{...b,verified_source_records:false})).status,400);assert.equal(records.length,0);assert.equal(expenses.length,0);
@@ -84,4 +88,74 @@ test('duplicate checks distinguish receipt payees even without supplier IDs',asy
  const first=bill();delete first.fields.supplier_id;first.fields.payee_name='THE GREEN LOUNGE DHAKA';assert.equal((await request('/actions',first)).status,200);
  const other={...first,fields:{...first.fields,payee_name:'Other Restaurant'},request_key:randomUUID()};assert.equal((await request('/actions',other)).status,200);
  const repeat={...first,fields:{...first.fields,payee_name:'the green lounge dhaka'},request_key:randomUUID()};assert.equal((await request('/actions',repeat)).status,409);assert.equal(expenses.length,2);
+});
+
+
+test('expenses accept missing or blank receipt numbers and use the expense description as their title',async()=>{
+ for(const number of [undefined,'','   ',null]){
+  const b=bill();b.fields.invoice_number=number;b.fields.payee_name='Cafe';
+  const response=await request('/actions',b);assert.equal(response.status,200,JSON.stringify(await response.clone().json()));
+  const saved=expenses.at(-1);assert.equal(saved.title,'Cafe · Item');assert.equal(saved.amount,1000);assert.equal(saved.status,'draft');assert.equal(saved.docFileId,'proof');
+  assert.equal(Object.hasOwn(records.at(-1).after.fields,'invoice_number'),false);
+  const count=expenses.length;assert.equal((await request('/actions',b)).status,200);assert.equal(expenses.length,count);
+ }
+ const b=bill();delete b.fields.invoice_number;delete b.fields.supplier_id;
+ assert.equal((await request('/actions',b)).status,200);assert.equal(expenses.at(-1).title,'Item');
+});
+test('receipt numbers remain optional without bypassing expense arithmetic or source verification',async()=>{
+ for(const number of [undefined,'',null]){
+  const b=bill();b.fields.invoice_number=number;b.fields.total++;
+  assert.equal((await request('/actions',b)).status,400);assert.equal(records.length,0);assert.equal(expenses.length,0);
+ }
+ const b=bill();delete b.fields.invoice_number;b.verified_source_records=false;
+ assert.equal((await request('/actions',b)).status,400);assert.equal(expenses.length,0);
+});
+test('purchase bill invoice numbers remain required and supplied expense numbers keep leading zeros',async()=>{
+ const b=bill();b.fields.invoice_number='  000574  ';
+ assert.equal((await request('/actions',b)).status,200);assert.equal(records[0].after.fields.invoice_number,'000574');assert.equal(expenses[0].title,'Supplier · Receipt 000574');
+ for(const number of [undefined,'',null]){
+  const purchase={...bill(),operation:'create_purchase_bill_draft'};purchase.fields.invoice_number=number;delete purchase.fields.category;delete purchase.fields.account_id;
+  assert.equal((await request('/actions',purchase)).status,400);
+ }
+ assert.equal(expenses.length,1);assert.equal(records.length,1);
+});
+
+
+test('a reviewed receipt summary saves the final 437 taka expense with VAT counted once and proof retained',async()=>{
+ const b=bill();b.fields={payee_name:'AL FRESCO',invoice_date:'2017-06-08',lines:[{description:'Receipt expense · AL FRESCO',quantity:1,unit_price:380}],discount:0,tax:57,total:437,category:'services',note:'Summary expense line from the final total; source item quantities/prices were not used.'};
+ const r=await request('/actions',b);assert.equal(r.status,200,JSON.stringify(await r.clone().json()));
+ assert.equal(expenses.length,1);assert.equal(expenses[0].amount,437);assert.equal(expenses[0].status,'draft');assert.equal(expenses[0].docFileId,'proof');assert.equal(expenses[0].vendor,'AL FRESCO');assert.equal(records[0].after.fields.tax,57);
+ assert.equal((await request('/actions',b)).status,200);assert.equal(expenses.length,1);
+});
+
+
+test('expense review confirms owner/admin posting with one atomic debit and idempotent replay',async()=>{
+ for(const role of ['owner','admin']){
+  roles=[role];const beforeBalance=balance,count=expenses.length,entries=ledger.length;
+  const b=bill();Object.assign(b.fields,{submission:'post',title:'Edited meal expense',payee_name:'AL FRESCO',category:'services',category_def_id:'meals'});delete b.fields.invoice_number;b.targets.expense_submission={status:'paid'};
+  const r=await request('/actions',b);assert.equal(r.status,200,JSON.stringify(await r.clone().json()));const result=(await r.json()).data;
+  assert.equal(result.status,'paid');assert.equal(result.posted,true);assert.equal(expenses.length,count+1);const saved=expenses.at(-1);assert.equal(saved.title,'Edited meal expense');assert.equal(saved.categoryDefId,'meals');assert.equal(saved.status,'paid');assert.equal(saved.paidAccountId,'account');assert.equal(saved.approvedById,'user');assert.equal(saved.disbursedById,'user');assert.equal(saved.docFileId,'proof');assert.equal(balance,beforeBalance-1000);assert.equal(ledger.length,entries+1);assert.equal(ledger.at(-1).referenceId,saved.id);assert.equal(ledger.at(-1).balanceAfter,balance);
+  assert.equal((await request('/actions',b)).status,200);assert.equal(expenses.length,count+1);assert.equal(balance,beforeBalance-1000);assert.equal(ledger.length,entries+1);
+ }
+ assert.ok(records.some(r=>r.action==='account_transaction.created'));assert.ok(records.some(r=>r.action==='expense.posted'));
+});
+test('accountant expense submissions enter the pending approval queue without debiting any account',async()=>{
+ roles=['accountant'];balance=0;
+ const b=bill();b.fields.submission='post';b.targets.expense_submission={status:'pending'};b.fields.title='Needs approval';const r=await request('/actions',b);assert.equal(r.status,200);const result=(await r.json()).data;
+ assert.equal(result.status,'pending');assert.equal(result.approval_required,true);assert.equal(result.posted,false);assert.equal(expenses[0].status,'pending');assert.equal(expenses[0].approvedById,undefined);assert.equal(balance,0);assert.equal(ledger.length,0);assert.ok(records.some(r=>r.action==='expense.submitted'));
+ assert.equal((await request('/actions',b)).status,200);assert.equal(expenses.length,1);
+});
+test('expense posting cannot bypass account, category, date, balance or source checks',async()=>{
+ roles=['owner'];
+ for(const changes of [{account_id:undefined},{account_id:'foreign'},{category_def_id:'foreign'},{invoice_date:'2099-01-01'}]){
+  const b=bill();Object.assign(b.fields,{submission:'post',...changes});b.targets.expense_submission={status:'paid'};assert.ok([400,404].includes((await request('/actions',b)).status));assert.equal(expenses.length,0);assert.equal(ledger.length,0);assert.equal(balance,10000);
+ }
+ balance=999;const b=bill();b.fields.submission='post';b.targets.expense_submission={status:'paid'};assert.equal((await request('/actions',b)).status,400);assert.equal(expenses.length,0);assert.equal(balance,999);assert.equal(ledger.length,0);
+});
+
+
+test('posting refuses a review prepared for a different role outcome',async()=>{
+ const b=bill();b.fields.submission='post';b.targets.expense_submission={status:'paid'};roles=['accountant'];
+ assert.equal((await request('/actions',b)).status,409);assert.equal(expenses.length,0);assert.equal(ledger.length,0);
+ roles=['owner'];b.targets.expense_submission={status:'pending'};assert.equal((await request('/actions',b)).status,409);assert.equal(expenses.length,0);assert.equal(balance,10000);
 });

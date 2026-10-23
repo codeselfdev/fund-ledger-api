@@ -6,7 +6,7 @@ export function normalizeExpenseFields(kind: string, input: unknown): unknown {
   const fields = { ...input } as Fields;
   if (!fields.payee_name) fields.payee_name = fields.supplier_name || fields.payee || fields.vendor;
   for (const key of ['supplier_name', 'payee', 'vendor']) delete fields[key];
-  for (const key of ['supplier_id', 'payee_name', 'account_id', 'note']) {
+  for (const key of ['supplier_id', 'payee_name', 'account_id', 'note', 'invoice_number']) {
     if (fields[key] == null || typeof fields[key] === 'string' && !String(fields[key]).trim()) delete fields[key];
     else if (typeof fields[key] === 'string') fields[key] = String(fields[key]).trim();
   }
