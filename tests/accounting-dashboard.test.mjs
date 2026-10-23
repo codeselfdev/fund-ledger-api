@@ -38,3 +38,10 @@ test('stock suggestions obey stock configuration and active item reorder levels'
   assert.match(build(input({ items })).suggestions.find(s => s.action === 'stock').title, /^1 item/);
   assert.ok(!build(input({ items, stockEnabled: false })).suggestions.some(s => s.action === 'stock'));
 });
+
+
+test('expense activity uses payment/post timestamps, keeps correct status filters and leaves sales metrics unchanged',()=>{
+ const expense=(id,status)=>({id,title:'Lunch',vendor:'Cafe',amount:8800,status,expenseDate:new Date('2025-03-25'),paidAt:status==='paid'?new Date('2026-10-20'):null,createdAt:new Date('2026-10-19'),updatedAt:new Date('2026-10-20')});
+ const data=build(input({expenses:['paid','pending','approved','draft'].map(status=>expense(status,status))}));
+ assert.equal(data.activity.all.length,4);assert.equal(data.activity.paid.length,1);assert.equal(data.activity.paid[0].expenseId,'paid');assert.equal(data.activity.paid[0].documentDate,'2026-10-20');assert.equal(data.activity.unpaid.length,2);assert.equal(data.metrics.invoiced,0);assert.equal(data.metrics.received,0);
+});

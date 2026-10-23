@@ -1,4 +1,4 @@
-import type { BusinessDocument, BusinessPayment, InventoryItem } from '@prisma/client';
+import type { BusinessDocument, BusinessPayment, InventoryItem, Expense } from '@prisma/client';
 import { paymentStatus } from './workflow.js';
 
 export type DashboardPeriod = 'this_month' | 'last_month' | 'this_year';
@@ -22,7 +22,7 @@ const inRange = (date: Date, from: string, to: string, businessDate = false) => 
 const sum = <T>(rows: T[], value: (row: T) => number) => rows.reduce((total, row) => total + value(row), 0);
 const remaining = (doc: BusinessDocument) => Math.max(0, doc.total - doc.paidAmount);
 const eligible = (doc: BusinessDocument) => !['cancelled', 'rejected', 'expired'].includes(doc.status);
-export function buildAccountingDashboard(input: { documents: BusinessDocument[]; payments: BusinessPayment[]; items: InventoryItem[]; customers: number; stockEnabled: boolean; period: DashboardPeriod; now?: Date }) {
+export function buildAccountingDashboard(input: { documents: BusinessDocument[]; payments: BusinessPayment[]; expenses?: Expense[]; items: InventoryItem[]; customers: number; stockEnabled: boolean; period: DashboardPeriod; now?: Date }) {
   const { documents, payments, items, customers, stockEnabled, period } = input, now = input.now ?? new Date();
   const range = dashboardRange(period, now), today = dayKey(now);
   const selected = documents.filter(doc => inRange(doc.documentDate, range.from, range.to, true));
@@ -53,7 +53,8 @@ export function buildAccountingDashboard(input: { documents: BusinessDocument[];
   const activity = [
     ...documents.map(doc => ({ id: `document:${doc.id}`, documentId: doc.id, kind: 'document' as const, documentKind: doc.kind, name: (doc.customerSnapshot as { name?: string })?.name ?? 'Customer', number: doc.number, date: (doc.updatedAt ?? doc.createdAt).toISOString(), documentDate: doc.documentDate.toISOString().slice(0, 10), dueDate: doc.dueDate?.toISOString().slice(0, 10) ?? null, amount: doc.total, remaining: remaining(doc), status: paymentStatus(doc, now) ?? doc.status, overdueDays: paymentStatus(doc, now) === 'overdue' ? Math.max(0, Math.floor((atDay(today).getTime() - atDay(doc.dueDate!.toISOString().slice(0, 10)).getTime()) / 86400000)) : 0 })),
     ...validPayments.map(payment => { const doc = byId.get(payment.documentId)!; return { id: `payment:${payment.id}`, documentId: doc.id, kind: 'payment' as const, documentKind: doc.kind, name: (doc.customerSnapshot as { name?: string })?.name ?? 'Customer', number: doc.number, date: payment.createdAt.toISOString(), documentDate: payment.paymentDate.toISOString().slice(0, 10), dueDate: null, amount: payment.amount, remaining: 0, status: 'received', overdueDays: 0 }; }),
-  ].sort((a, b) => b.date.localeCompare(a.date));
+    ...(input.expenses??[]).map(expense=>({id:`expense:${expense.id}`,documentId:'',expenseId:expense.id,kind:'expense' as const,documentKind:'expense',name:expense.vendor||expense.title,number:expense.title,date:(expense.updatedAt??expense.paidAt??expense.createdAt).toISOString(),documentDate:dayKey(expense.status==='paid'?(expense.paidAt??expense.createdAt):expense.createdAt),dueDate:null,amount:expense.amount,remaining:expense.status==='paid'?0:expense.amount,status:expense.status,overdueDays:0})),
+  ].sort((a, b) => b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
   const lowStock = stockEnabled ? items.filter(item => item.isActive && item.quantity <= item.reorderLevel) : [];
   const suggestions: Array<{ id: string; title: string; body: string; action: 'overdue' | 'collections' | 'stock'; cta: string; tone: 'amber' | 'teal' | 'blue' }> = [];
   if (overdueSales.length) suggestions.push({ id: 'overdue', title: `${overdueSales.length} invoice${overdueSales.length === 1 ? '' : 's'} overdue`, body: `${overdue.toLocaleString('en-US')} BDT outstanding. Review the invoices and follow up with your customers.`, action: 'overdue', cta: 'Review overdue', tone: 'amber' });
@@ -61,5 +62,5 @@ export function buildAccountingDashboard(input: { documents: BusinessDocument[];
   if (lowStock.length) suggestions.push({ id: 'stock', title: `${lowStock.length} item${lowStock.length === 1 ? '' : 's'} running low`, body: `${lowStock.slice(0, 2).map(item => item.name).join(' and ')}${lowStock.length > 2 ? ` and ${lowStock.length - 2} more` : ''} at or below reorder level.`, action: 'stock', cta: 'Review stock', tone: 'blue' });
   const hasSent = documents.some(doc => eligible(doc) && !['draft'].includes(doc.status));
   const steps = [{ id: 'profile', label: 'Business profile', done: true }, { id: 'customer', label: 'Add your first customer', done: customers > 0 }, { id: 'document', label: 'Send a quote or invoice', done: hasSent }, { id: 'payment', label: 'Record a payment', done: validPayments.length > 0 }];
-  return { period, range, metrics: { invoiced, collected, outstanding, due: Math.max(0, outstanding - overdue), overdue, received, priorReceived, collectionChange: delta, overdueCount: overdueSales.length }, trend, pipeline: { stages, count: sum(stages, stage => stage.count) }, suggestions, setup: { isNew: allSales.length === 0, completed: steps.filter(step => step.done).length, steps }, activity: { all: activity.slice(0, 20), unpaid: activity.filter(row => row.kind === 'document' && ['unpaid', 'partial', 'overdue'].includes(row.status)).slice(0, 20), paid: activity.filter(row => ['paid', 'received'].includes(row.status)).slice(0, 20) } };
+  return { period, range, metrics: { invoiced, collected, outstanding, due: Math.max(0, outstanding - overdue), overdue, received, priorReceived, collectionChange: delta, overdueCount: overdueSales.length }, trend, pipeline: { stages, count: sum(stages, stage => stage.count) }, suggestions, setup: { isNew: allSales.length === 0, completed: steps.filter(step => step.done).length, steps }, activity: { all: activity.slice(0, 20), unpaid: activity.filter(row => row.kind === 'expense'?['pending','approved'].includes(row.status):row.kind === 'document' && ['unpaid', 'partial', 'overdue'].includes(row.status)).slice(0, 20), paid: activity.filter(row => ['paid', 'received'].includes(row.status)).slice(0, 20) } };
 }

@@ -1,3 +1,5 @@
+import { submitDraftExpense } from './expense-submit.service.js';
+import { financialTransaction } from '../accounting/transaction.js';
 import { canReviewExpense } from './expense-review-policy.js';
 import { priorBillRequest } from './recurring-expenses.service.js';
 import { stepDue } from './recurring-expenses.policy.js';
@@ -489,6 +491,13 @@ router.post("/:id/reject", requireProject, requireRoles("accountant", "approver"
   });
 
   return ok(res, expense);
+}));
+
+const submitDraftSchema=z.object({account_id:z.string().trim().min(1),expected_updated_at:z.string().datetime(),request_key:z.string().uuid()}).strict();
+router.post('/:id/submit',requireProject,requireRoles('owner','admin','accountant','cashier'),validateParams(idParamSchema),validateBody(submitDraftSchema),asyncHandler(async(req,res)=>{
+ const a=requireProjectContext(req),body=submitDraftSchema.parse(req.body);
+ const expense=await financialTransaction(tx=>submitDraftExpense(tx,a,String(req.params.id),body));
+ return ok(res,expense);
 }));
 
 router.post("/:id/disburse", requireProject, requireRoles("accountant", "admin", "owner"), validateParams(idParamSchema), validateBody(disburseSchema), asyncHandler(async (req, res) => {

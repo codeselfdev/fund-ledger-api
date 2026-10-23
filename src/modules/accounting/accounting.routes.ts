@@ -49,14 +49,15 @@ const dashboardQuery = z.object({ period: z.enum(['this_month', 'last_month', 't
 router.get('/dashboard', validateQuery(dashboardQuery), asyncHandler(async (req, res) => {
     const auth = requireProjectContext(req), { period } = dashboardQuery.parse(req.query);
     const result = await financialTransaction(async tx => {
-    const [project, documents, payments, customers] = await Promise.all([
+    const [project, documents, payments, customers, expenses] = await Promise.all([
         tx.project.findFirstOrThrow({ where: { id: auth.projectId, tenantId: auth.tenantId } }),
         tx.businessDocument.findMany({ where: scoped(auth), orderBy: { updatedAt: 'desc' } }),
         tx.businessPayment.findMany({ where: scoped(auth), orderBy: { createdAt: 'desc' } }),
         tx.customer.count({ where: { ...scoped(auth), isActive: true } }),
+        tx.expense.findMany({where:scoped(auth),orderBy:{updatedAt:'desc'}}),
     ]);
     const items = project.stockManagementEnabled === false ? [] : await tx.inventoryItem.findMany({ where: { ...scoped(auth), isActive: true } });
-    return buildAccountingDashboard({ documents, payments, customers, items, stockEnabled: project.stockManagementEnabled !== false, period });
+    return buildAccountingDashboard({ documents, payments, expenses, customers, items, stockEnabled: project.stockManagementEnabled !== false, period });
     });
     return ok(res, result);
 }));
