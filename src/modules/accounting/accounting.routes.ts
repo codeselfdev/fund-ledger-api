@@ -1,3 +1,4 @@
+import { documentItemFields, snapshotItemDetails, validateItemDetails } from './item-details.js';
 import { professionalProfile } from '../profile/user-profile.routes.js';
 import { documentLogo } from './document-logo.js';
 import { buildProfessionalDocument } from './document-pdf.js';
@@ -87,6 +88,7 @@ function event(status: string, userId: string) { return { status, user_id: userI
 async function audit(tx: Prisma.TransactionClient, auth: ReturnType<typeof requireProjectContext>, id: string, action: string, detail: unknown, before?: unknown) {
     await tx.activity.create({ data: { ...scoped(auth), actorUserId: auth.userId, action, entityType: 'business_document', entityId: id, after: json(detail), ...(before === undefined ? {} : { before: json(before) }) } });
 }
+router.get('/document-item-fields', asyncHandler(async (req, res) => ok(res, await documentItemFields(prisma, requireProjectContext(req)))));
 router.get('/document-settings', asyncHandler(async (req, res) => ok(res, await getDocumentSettings(prisma, requireProjectContext(req)))));
 router.put('/document-settings', requireRoles('admin'), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req), body = settingsSchema.parse(req.body);
@@ -94,6 +96,8 @@ router.put('/document-settings', requireRoles('admin'), asyncHandler(async (req,
     await lockSetup(tx, auth);
     const old = await getDocumentSettings(tx, auth);
     if (old.revision !== body.revision || old.prefixRevision !== body.prefixRevision) throw conflict('Document settings changed. Reload before saving.');
+    if (body.itemDetails === undefined) body.itemDetails = old.itemDetails ?? null;
+    await validateItemDetails(tx, auth, body.itemDetails);
     const { prefix, prefixRevision, ...settings } = body;
     await tx.tenant.update({ where: { id: auth.tenantId }, data: { documentPrefix: prefix, documentPrefixRevision: { increment: 1 } } });
     await tx.project.update({ where: { id: auth.projectId }, data: { documentSettings: json({ ...settings, revision: old.revision + 1 }) } });
@@ -102,14 +106,18 @@ router.put('/document-settings', requireRoles('admin'), asyncHandler(async (req,
   }); return ok(res, saved);
 }));
 router.post('/document-settings/preview', requireRoles('admin'), asyncHandler(async (req, res) => {
-  const auth = requireProjectContext(req), settings = settingsSchema.parse(req.body);
+  const auth = requireProjectContext(req), settings = settingsSchema.parse(req.body), kind = kindSchema.parse(req.query.kind ?? 'quotation');
   const result = await financialTransaction(async tx => {
+    if (settings.itemDetails === undefined) settings.itemDetails = (await getDocumentSettings(tx, auth)).itemDetails ?? null;
     const [project, tenant, user] = await Promise.all([tx.project.findFirst({ where: { id: auth.projectId, tenantId: auth.tenantId } }), tx.tenant.findFirstOrThrow({ where: { id: auth.tenantId } }), tx.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId } })]);
+    await validateItemDetails(tx, auth, settings.itemDetails);
+    const fields = settings.itemDetails ? await documentItemFields(tx, auth) : [];
+    const sampleDetails = fields.map(f => ({ key: f.key, label: f.label, value: f.type === 'boolean' ? 'Yes' : f.type === 'money' ? '12,500' : f.type === 'number' ? '10' : f.type === 'date' ? '2026-10-23' : ({ sku: 'DEMO-01', unit: 'pcs', category: 'Equipment', description: 'Sample product specifications' }[f.key] ?? `Sample ${f.label.toLowerCase()}`) }));
     const author = user ? { id: user.id, ...professionalProfile(user) } : { id: '', name: '', designation: '', mobile: '', email: '' };
-    const presentation = { version: 1 as const, profile: settings.profile, terms: settings.terms, disclaimer: settings.disclaimer, settingsRevision: settings.revision, templateId: settings.templateId, accentColor: settings.accentColor, logoFileId: project?.logoFileId ?? null, preparedBy: author, preparedByName: author.name };
+    const presentation = { version: 1 as const, itemDetails: settings.itemDetails ?? null, profile: settings.profile, terms: settings.terms, disclaimer: settings.disclaimer, settingsRevision: settings.revision, templateId: settings.templateId, accentColor: settings.accentColor, logoFileId: project?.logoFileId ?? null, preparedBy: author, preparedByName: author.name };
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).map(p => [p.type, p.value]));
     const date = `${parts.year}-${parts.month}-${parts.day}`;
-    return buildProfessionalDocument({ kind: 'quotation', number: 'SAMPLE - not saved', status: 'sample', documentDate: date, customerSnapshot: { name: 'Sample customer', address: 'Customer address', email: 'customer@example.com' }, presentationSnapshot: presentation, lines: [{ description: 'Sample product with specifications', quantity: 2, unit_price: 12500, line_total: 25000, item_code: 'DEMO-01', model: 'Model A', unit: 'pcs' }], subtotal: 25000, discount: 0, tax: 0, total: 25000, note: 'Template preview using sample items. No document or stock movement is created.' }, tenant.currency, tenant.name, await documentLogo(tx, auth, presentation));
+    return buildProfessionalDocument({ kind, number: 'SAMPLE - not saved', status: 'sample', documentDate: date, customerSnapshot: { name: 'Sample customer', address: 'Customer address', email: 'customer@example.com' }, presentationSnapshot: presentation, lines: [{ item_details: sampleDetails, description: 'Sample product with specifications', quantity: 2, unit_price: 12500, line_total: 25000, item_code: 'DEMO-01', model: 'Model A', unit: 'pcs' }], subtotal: 25000, discount: 0, tax: 0, total: 25000, note: 'Template preview using sample items. No document or stock movement is created.' }, tenant.currency, tenant.name, await documentLogo(tx, auth, presentation));
   }, 15000);
   res.setHeader('Cache-Control', 'no-store'); return ok(res, { html: result.html, base64: result.pdf.toString('base64'), pages: result.pages });
 }));
@@ -143,7 +151,8 @@ router.post('/documents/preview', write, validateBody(documentSchema.omit({ requ
     const tax = await documentTax(tx, auth, b.kind === 'quotation' ? 'quotation' : 'sale', b.lines.map(l => Math.round(l.quantity * l.unit_price)), b.discount, b.tax_selection, b.tax, old?.taxSnapshot ?? (old ? { legacy: true, tax: old.tax } : undefined), charges);
     const totals = calculate(b.lines, b.discount, b.tax, charges), tenant = await tx.tenant.findFirstOrThrow({ where: { id: auth.tenantId } });
     if (b.expected_total !== undefined && b.expected_total !== (tax?.payable ?? totals.total)) throw conflict('The calculated total changed. Review the document again.');
-    return buildProfessionalDocument({ ...totals, additionalCharges: charges, kind: b.kind, number: old?.number ?? 'PREVIEW - number assigned on save', status: old?.status ?? 'draft', revision: old?.revision ?? 0, customerSnapshot: customer, quotationPersonSnapshot: person.quotationPersonSnapshot, presentationSnapshot: presentation, documentDate: b.document_date, dueDate: b.due_date, discount: b.discount, tax: tax?.tax ?? b.tax, taxSnapshot: tax, subtotal: tax ? tax.subtotal + b.discount : totals.subtotal, total: tax?.payable ?? totals.total, note: b.note }, tenant.currency, tenant.name, await documentLogo(tx, auth, presentation));
+    const detailedLines = await snapshotItemDetails(tx, auth, totals.lines, presentation.itemDetails, old ?? undefined);
+    return buildProfessionalDocument({ ...totals, lines: detailedLines, additionalCharges: charges, kind: b.kind, number: old?.number ?? 'PREVIEW - number assigned on save', status: old?.status ?? 'draft', revision: old?.revision ?? 0, customerSnapshot: customer, quotationPersonSnapshot: person.quotationPersonSnapshot, presentationSnapshot: presentation, documentDate: b.document_date, dueDate: b.due_date, discount: b.discount, tax: tax?.tax ?? b.tax, taxSnapshot: tax, subtotal: tax ? tax.subtotal + b.discount : totals.subtotal, total: tax?.payable ?? totals.total, note: b.note }, tenant.currency, tenant.name, await documentLogo(tx, auth, presentation));
   }, 15000);
   res.setHeader('Cache-Control', 'no-store');
   return ok(res, { html: result.html, base64: result.pdf.toString('base64'), pages: result.pages });
@@ -196,8 +205,9 @@ router.post('/documents', write, validateBody(documentSchema), asyncHandler(asyn
         if (b.due_date && b.due_date < b.document_date)
             throw badRequest('Due date must be on or after document date');
         await validateItems(tx, auth, b.lines);
+        const detailedLines = await snapshotItemDetails(tx, auth, totals.lines, presentation.itemDetails);
         const location = b.location_id ? await stockLocation(tx, auth, b.location_id) : null;
-        const d = await tx.businessDocument.create({ data: { ...scoped(auth), stockLocationId: location?.id, ...person, ...referral, presentationSnapshot: json(presentation), customerId: customer.id, customerSnapshot: json({ name: customer.name, mobile: customer.mobile, email: customer.email, address: customer.address, attributes: customer.attributes }), kind: b.kind, number: await nextDocumentNumber(tx, auth, b.kind, b.document_date), status: 'draft', lines: totals.lines, additionalCharges: json(charges), subtotal: totals.subtotal, discount: b.discount, tax: taxSnapshot?.tax ?? b.tax, taxSnapshot: taxSnapshot ? json(taxSnapshot) : Prisma.DbNull, total: totals.total, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: b.note, workflow: settings, events: [event('draft', auth.userId)], requestKey: b.request_key, createdById: auth.userId } });
+        const d = await tx.businessDocument.create({ data: { ...scoped(auth), stockLocationId: location?.id, ...person, ...referral, presentationSnapshot: json(presentation), customerId: customer.id, customerSnapshot: json({ name: customer.name, mobile: customer.mobile, email: customer.email, address: customer.address, attributes: customer.attributes }), kind: b.kind, number: await nextDocumentNumber(tx, auth, b.kind, b.document_date), status: 'draft', lines: json(detailedLines), additionalCharges: json(charges), subtotal: totals.subtotal, discount: b.discount, tax: taxSnapshot?.tax ?? b.tax, taxSnapshot: taxSnapshot ? json(taxSnapshot) : Prisma.DbNull, total: totals.total, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: b.note, workflow: settings, events: [event('draft', auth.userId)], requestKey: b.request_key, createdById: auth.userId } });
         await audit(tx, auth, d.id, 'accounting.document.created', { number: d.number, total: d.total, kind: d.kind, referrer_id: d.referrerId });
         return d;
     });
@@ -230,8 +240,9 @@ router.patch('/documents/:id', write, validateBody(editSchema), asyncHandler(asy
         const legacy = calculate(b.lines, b.discount, b.tax, charges);
         const totals = taxSnapshot ? { ...legacy, subtotal: taxSnapshot.subtotal + b.discount, total: taxSnapshot.payable } : legacy;
         if (b.expected_total !== undefined && b.expected_total !== totals.total) throw conflict('The calculated total changed. Review the document again.');
+        const detailedLines = await snapshotItemDetails(tx, auth, totals.lines, presentation.itemDetails, old);
         const location = b.location_id ? await stockLocation(tx, auth, b.location_id) : null;
-        const row = await tx.businessDocument.update({ where: { id: old.id }, data: { revision: { increment: 1 }, status: old.status === 'accepted' ? 'sent' : old.status, stockLocationId: b.location_id === undefined ? old.stockLocationId : location?.id ?? null, ...person, ...referral, presentationSnapshot: json(presentation), customerId: customer.id, customerSnapshot: json({ name: customer.name, mobile: customer.mobile, email: customer.email, address: customer.address, attributes: customer.attributes }), lines: totals.lines, additionalCharges: json(charges), subtotal: totals.subtotal, total: totals.total, discount: b.discount, tax: taxSnapshot?.tax ?? b.tax, taxSnapshot: taxSnapshot ? json(taxSnapshot) : Prisma.DbNull, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: b.note ?? null, events: json([...(old.events as unknown[]), { ...event(revisingQuotation ? 'quotation_revised' : 'draft_updated', auth.userId), revision: old.revision + 1, ...(old.status === 'accepted' ? { previousStatus: 'accepted', requiresAcceptance: true } : {}) }]) } });
+        const row = await tx.businessDocument.update({ where: { id: old.id }, data: { revision: { increment: 1 }, status: old.status === 'accepted' ? 'sent' : old.status, stockLocationId: b.location_id === undefined ? old.stockLocationId : location?.id ?? null, ...person, ...referral, presentationSnapshot: json(presentation), customerId: customer.id, customerSnapshot: json({ name: customer.name, mobile: customer.mobile, email: customer.email, address: customer.address, attributes: customer.attributes }), lines: json(detailedLines), additionalCharges: json(charges), subtotal: totals.subtotal, total: totals.total, discount: b.discount, tax: taxSnapshot?.tax ?? b.tax, taxSnapshot: taxSnapshot ? json(taxSnapshot) : Prisma.DbNull, documentDate: atDate(b.document_date), dueDate: b.due_date ? atDate(b.due_date) : null, note: b.note ?? null, events: json([...(old.events as unknown[]), { ...event(revisingQuotation ? 'quotation_revised' : 'draft_updated', auth.userId), revision: old.revision + 1, ...(old.status === 'accepted' ? { previousStatus: 'accepted', requiresAcceptance: true } : {}) }]) } });
         await audit(tx, auth, row.id, 'accounting.document.updated', { ...row, referrer_id: row.referrerId }, old);
         return row;
     });

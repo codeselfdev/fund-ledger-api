@@ -23,10 +23,27 @@ const hash=(v:unknown)=>createHash('sha256').update(JSON.stringify(v)).digest('h
 const today=()=>new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Dhaka'});
 router.use(requireRoles('owner','admin','accountant'),asyncHandler(async(req,_res,next)=>{
  const a=requireProjectContext(req),p=await prisma.project.findFirst({where:{id:a.projectId,tenantId:a.tenantId,isActive:true}});
- if(p?.projectType!=='accounting')throw forbidden('These tools belong to the active Accounting project.');
+ if(!p||!['fund_shares','accounting','billing','construction'].includes(p.projectType))throw forbidden('Choose an active supported project.');
+ const sharedExpense=req.method==='GET'&&req.path==='/expense-snapshot'||req.method==='POST'&&req.path==='/actions'&&req.body?.operation==='create_expense_draft';
+ if(p.projectType!=='accounting'&&!sharedExpense)throw forbidden('These tools belong to the active Accounting project.');
  const t=await prisma.tenant.findUniqueOrThrow({where:{id:a.tenantId},select:{currency:true}});
  if(t.currency!=='BDT')throw badRequest('Nesta Accounting AI currently requires a BDT project.');
  next();
+}));
+// Ordinary expense review is shared; sales and purchase capabilities remain Accounting-only.
+router.get('/expense-snapshot',asyncHandler(async(req,res)=>{
+ const a=requireProjectContext(req),where=scope(a);
+ const snapshot=await financialTransaction(async tx=>{
+  const [p,suppliers,accounts,records,expense_categories,items]=await Promise.all([
+   tx.project.findFirstOrThrow({where:{id:a.projectId,tenantId:a.tenantId}}),
+   tx.vendor.findMany({where:{...where,isActive:true},select:{id:true,name:true}}),
+   tx.account.findMany({where,select:{id:true,name:true,balance:true}}),
+   tx.activity.findMany({where:{...where,entityType:'nesta_ai_business',action:{in:['nesta_ai.create_expense_draft','nesta_ai.create_purchase_bill_draft']}},select:{id:true,after:true,createdAt:true}}),
+   tx.expenseCategoryDef.findMany({where,select:{id:true,name:true}}),
+   tx.inventoryItem.findMany({where:{...where,isActive:true},select:{id:true,name:true}}),
+  ]);
+  return{tenant_id:a.tenantId,project_id:a.projectId,project_type:p.projectType,snapshot_at:new Date().toISOString(),suppliers,accounts,records,expense_categories,items,purchases:[],workflow:null};
+ });return ok(res,snapshot);
 }));
 router.get('/snapshot',asyncHandler(async(req,res)=>{
  const a=requireProjectContext(req),where=scope(a);

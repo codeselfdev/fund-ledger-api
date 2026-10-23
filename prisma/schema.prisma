@@ -1105,6 +1105,7 @@ model Notification {
   entityId        String?   @map("entity_id")
   destination     String?
   actionUrl       String?   @map("action_url")
+  imageUrl        String?   @map("image_url")
   readAt          DateTime? @map("read_at")
   createdAt       DateTime  @default(now()) @map("created_at")
 
@@ -2483,6 +2484,7 @@ model PlatformBroadcast {
   title String
   body String
   actionUrl String? @map("action_url")
+  imageUrl String? @map("image_url")
   deviceCount Int @map("device_count")
   accountCount Int @map("account_count")
   organizationCount Int @map("organization_count")

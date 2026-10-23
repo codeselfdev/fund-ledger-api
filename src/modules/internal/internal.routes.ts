@@ -1,3 +1,5 @@
+import multer from "multer";
+import { uploadPromotionalPoster } from "./promotional-poster.service.js";
 import { Router } from "express";
 import { z } from "zod";
 import rateLimit from "express-rate-limit";
@@ -22,6 +24,14 @@ const router = Router();
 router.use(requireInternalApiKey, rateLimit({ windowMs: 60000, limit: 120, standardHeaders: true, legacyHeaders: false }));
 const page = z.object({ offset: z.coerce.number().int().min(0).max(100000).default(0), search: z.string().trim().max(120).optional() });
 router.use("/support", buildSupportRouter(true));
+const posterUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 999999, files: 1, fields: 0, parts: 2 } }).single('file');
+router.post('/notifications/poster', rateLimit({ windowMs: 60000, limit: 10 }), (req, res, next) => {
+  internalActor(req);
+  posterUpload(req, res, error => error ? next(badRequest('Choose one JPG, PNG or WebP poster below 1 MB.')) : next());
+}, asyncHandler(async (req, res) => {
+  if (!req.file) throw badRequest('Choose a poster image.');
+  return ok(res, await uploadPromotionalPoster(internalActor(req), req.file.buffer));
+}));
 router.get('/notifications/audience', asyncHandler(async (_req, res) => ok(res, await platformBroadcasts.reach())));
 router.post('/notifications/preview', asyncHandler(async (req, res) => ok(res, await platformBroadcasts.preview(internalActor(req), broadcastDraftSchema.parse(req.body)))));
 router.post('/notifications', rateLimit({ windowMs: 60000, limit: 5 }), asyncHandler(async (req, res) => ok(res, await platformBroadcasts.send(internalActor(req), broadcastSendSchema.parse(req.body)))));

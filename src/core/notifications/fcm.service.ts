@@ -5,6 +5,7 @@ type PushMessageInput = {
   tokens: string[];
   title: string;
   body: string;
+  imageUrl?: string;
   data?: Record<string, string>;
 };
 
@@ -54,8 +55,10 @@ export async function sendPushMessage(input: PushMessageInput): Promise<PushMess
       tokens: tokenGroup,
       notification: {
         title: input.title,
-        body: input.body
+        body: input.body,
+        ...(input.imageUrl ? { imageUrl: input.imageUrl } : {})
       },
+      ...(input.imageUrl ? { android: { notification: { imageUrl: input.imageUrl } }, apns: { payload: { aps: { mutableContent: true } }, fcmOptions: { imageUrl: input.imageUrl } } } : {}),
       data: input.data
     });
 

@@ -21,7 +21,7 @@ before(async()=>{
  prisma.inventoryItem.findFirst=async({where})=>{scoped(where);return where.id==='item'?{id:'item'}:null;};
  prisma.upload.findFirst=async({where})=>{scoped(where);return where.id==='proof'?{id:'proof'}:null;};
  prisma.businessDocument.findFirst=async({where})=>{scoped(where);return where.id==='invoice'?invoice:null;};
- for(const name of ['customer','inventoryItem','vendor','businessDocument','expense','account','purchase','expenseCategoryDef'])prisma[name].findMany=async({where,select})=>{scoped(where);if(name==='inventoryItem')assert.equal(select.costPrice,true);reads++;return[];};
+ for(const name of ['customer','inventoryItem','vendor','businessDocument','expense','account','purchase','expenseCategoryDef'])prisma[name].findMany=async({where,select})=>{scoped(where);if(name==='inventoryItem'&&'costPrice' in select)assert.equal(select.costPrice,true);reads++;return[];};
  prisma.account.updateMany=async({where,data})=>{scoped(where);if(where.id!=='account'||balance<where.balance.gte)return{count:0};balance-=data.balance.decrement;return{count:1};};
  prisma.account.findFirstOrThrow=async({where})=>{scoped(where);assert.equal(where.id,'account');return{id:'account',balance};};
  prisma.accountTransaction.create=async({data})=>{const row={id:'ledger-'+ledger.length,...data};ledger.push(row);return row;};
@@ -158,4 +158,19 @@ test('posting refuses a review prepared for a different role outcome',async()=>{
  const b=bill();b.fields.submission='post';b.targets.expense_submission={status:'paid'};roles=['accountant'];
  assert.equal((await request('/actions',b)).status,409);assert.equal(expenses.length,0);assert.equal(ledger.length,0);
  roles=['owner'];b.targets.expense_submission={status:'pending'};assert.equal((await request('/actions',b)).status,409);assert.equal(expenses.length,0);assert.equal(balance,10000);
+});
+
+for(const type of ['fund_shares','accounting','billing','construction']){
+ test(`${type}: shared expense snapshot is scoped and excludes sales/customer data`,async()=>{
+  projectType=type;const response=await request('/expense-snapshot');assert.equal(response.status,200);const data=(await response.json()).data;assert.equal(data.project_type,type);assert.equal(data.project_id,'project');assert.ok(Array.isArray(data.accounts));assert.ok(Array.isArray(data.expense_categories));assert.equal(data.documents,undefined);assert.equal(data.customers,undefined);
+ });
+ for(const role of ['owner','admin','accountant'])test(`${type} ${role}: shared expense posting obeys existing role effects and request-key replay`,async()=>{
+  projectType=type;roles=[role];const b=bill();b.fields.submission='post';b.targets.expense_submission={status:role==='accountant'?'pending':'paid'};const r=await request('/actions',b);assert.equal(r.status,200);const result=(await r.json()).data;assert.equal(result.status,role==='accountant'?'pending':'paid');assert.equal(expenses.length,1);assert.equal(balance,role==='accountant'?10000:9000);assert.equal(ledger.length,role==='accountant'?0:1);assert.equal((await request('/actions',b)).status,200);assert.equal(expenses.length,1);assert.equal(ledger.length,role==='accountant'?0:1);
+ });
+ test(`${type}: shared expense references and roles cannot bypass the current project`,async()=>{
+  projectType=type;for(const role of ['member','cashier','auditor','approver']){roles=[role];assert.equal((await request('/expense-snapshot')).status,403);assert.equal((await request('/actions',bill())).status,403);}roles=['owner'];for(const key of ['account_id','supplier_id']){const b=bill();b.fields[key]='foreign';assert.equal((await request('/actions',b)).status,404);}const b=bill();b.proof_file_id='foreign';assert.equal((await request('/actions',b)).status,404);assert.equal(expenses.length,0);assert.equal(ledger.length,0);
+ });
+}
+for(const type of ['fund_shares','billing','construction'])test(`${type}: allowing shared expenses does not unlock Accounting sales or purchase actions`,async()=>{
+ projectType=type;for(const operation of ['create_purchase_bill_draft','create_purchase_order_draft','send_payment_reminder','schedule_followup','log_collection_followup'])assert.equal((await request('/actions',{...bill(),operation})).status,403);assert.equal((await request('/document-preview',{})).status,403);assert.equal((await request('/snapshot')).status,403);assert.equal(expenses.length,0);assert.equal(records.length,0);
 });

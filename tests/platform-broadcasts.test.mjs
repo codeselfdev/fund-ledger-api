@@ -173,3 +173,27 @@ test('reviewed links persist on the broadcast, private inbox copies, history and
   f.deliveries.length = 0; f.workerRow({ broadcast: f.rows[0] }); await f.service.deliver();
   assert.equal(f.pushes[0].data.url, testingUrl); assert.equal(f.pushes[0].data.project_id, undefined);
 });
+
+test('promotional poster and deep link persist through review, inbox, history and FCM delivery', async () => {
+  const f = fixture(), linked = broadcastDraftSchema.parse({ ...draft, image_url: 'https://cdn.example.test/promotion.png', url: 'fundnesta://open?screen=support' });
+  const preview = await f.service.preview(actor, linked);
+  const input = { draft: linked, preview_token: preview.preview_token, expires_at: preview.expires_at, request_key: randomUUID() };
+  const sent = await f.service.send(actor, input);
+  assert.equal(sent.image_url, linked.image_url); assert.equal(sent.url, linked.url);
+  assert.ok(f.inbox.every(row => row.imageUrl === linked.image_url && row.actionUrl === linked.url));
+  assert.equal((await f.service.history()).notifications[0].image_url, linked.image_url);
+  await assert.rejects(f.service.send(actor, { ...input, draft: { ...linked, image_url: 'https://cdn.example.test/other.png' } }), /another message/);
+  f.deliveries.length = 0; f.workerRow({ broadcast: f.rows[0] }); await f.service.deliver();
+  assert.equal(f.pushes[0].imageUrl, linked.image_url); assert.equal(f.pushes[0].data.image_url, linked.image_url); assert.equal(f.pushes[0].data.url, linked.url);
+});
+test('unsupported deep links and unsafe poster sources are rejected', () => {
+  for (const url of ['fundnesta://open?screen=admin', 'fundnesta://user@open?screen=support', 'fundnesta://open/path?screen=billing', 'fundnesta://open?screen=support&redirect=https://evil.test']) assert.equal(broadcastDraftSchema.safeParse({ ...draft, url }).success, false);
+  for (const image_url of ['http://cdn.test/promo.png', 'file:///private.png', 'data:image/png;base64,abc', 'fundnesta://open?screen=support', 'https://user:pass@cdn.test/promo.png']) assert.equal(broadcastDraftSchema.safeParse({ ...draft, image_url }).success, false);
+  const f = fixture();
+  assert.equal(broadcastDraftSchema.safeParse({ ...draft, body: '😀'.repeat(250), url: 'https://example.test/' + 'x'.repeat(1500), image_url: 'https://cdn.test/' + 'x'.repeat(1500) }).success, false, 'oversize FCM payloads fail before review');
+});
+test('changing only the poster invalidates the signed preview', async () => {
+  const f = fixture(), input = await f.input();
+  await assert.rejects(f.service.send(actor, { ...input, draft: { ...draft, image_url: 'https://cdn.test/promotion.png' } }), /review/i);
+  assert.equal(f.rows.length, 0);
+});

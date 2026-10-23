@@ -123,7 +123,7 @@ router.post('/entities/:entity/query', asyncHandler(async (req, res) => {
   // Identifiers come exclusively from the static allowlist, all user values are bound parameters.
   const ids = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT id FROM ${Prisma.raw(table[entity])} WHERE ${Prisma.join(clauses, ' AND ')} ORDER BY name, id LIMIT ${query.limit + 1} OFFSET ${query.offset}`);
   const where = { ...scope(auth), id: { in: ids.slice(0, query.limit).map(r => r.id) } };
-  const rows = entity === 'customer' ? await prisma.customer.findMany({ where, orderBy: [{ name: 'asc' }, { id: 'asc' }] }) : entity === 'dealer' ? await prisma.vendor.findMany({ where, orderBy: [{ name: 'asc' }, { id: 'asc' }] }) : await prisma.inventoryItem.findMany({ where, orderBy: [{ name: 'asc' }, { id: 'asc' }] });
+  const rows = entity === 'customer' ? await prisma.customer.findMany({ where, orderBy: [{ name: 'asc' }, { id: 'asc' }] }) : entity === 'dealer' ? await prisma.vendor.findMany({ where, orderBy: [{ name: 'asc' }, { id: 'asc' }] }) : await prisma.inventoryItem.findMany({ where, include: { category: { select: { name: true } } }, orderBy: [{ name: 'asc' }, { id: 'asc' }] });
   return ok(res, { entries: entity === 'item' ? rows : await withBusinessLogos<(typeof rows)[number]>(rows, auth, entity), nextOffset: ids.length > query.limit ? query.offset + query.limit : null });
 }));
 const recordBody = z.record(z.unknown()).refine(v => !('attributes' in v) || attributeSchema.safeParse(v.attributes).success, 'Invalid attributes');

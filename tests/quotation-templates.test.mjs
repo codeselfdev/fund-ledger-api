@@ -32,3 +32,13 @@ test('populated addresses and optional item columns remain, and zero prices are 
  const result=await buildProfessionalDocument({...data,customerSnapshot:{name:'Customer',address:'Dhaka, Bangladesh',mobile:'+8801711000009'},lines:[{description:'Free accessory',quantity:1,unit_price:0,item_code:'ACC-1',model:'Model A',unit:'pcs'},{description:'Equipment',quantity:1,unit_price:1000}]},'BDT','Company');
  const html=result.html.slice(result.html.indexOf('<body>'));assert.match(html,/Address:/);assert.match(html,/Phone:/);assert.match(html,/Item code/);assert.match(html,/>Model</);assert.match(html,/>UOM</);assert.match(html,/0.00/);assert.match(html,/ACC-1/);
 });
+
+test('configured properties appear under descriptions in selected order for each document type',async()=>{
+ const itemDetails={quotation:['attributes.warranty','sku'],order:[],sale:['sku']},line={description:'Test equipment',quantity:1,unit_price:1000,item_code:'LEGACY-CODE',model:'LEGACY-MODEL',item_details:[{key:'sku',label:'SKU',value:'SN-001'},{key:'attributes.warranty',label:'Warranty',value:'No'},{key:'cost_price',label:'INTERNAL',value:'12345'}]};
+ for(const kind of ['quotation','order','sale']){
+  const r=await buildProfessionalDocument({...data,kind,lines:[line],presentationSnapshot:{version:1,profile,itemDetails,terms:{enabled:false,text:''},disclaimer:{enabled:false,text:''}}},'BDT','Company');const html=r.html.slice(r.html.indexOf('<body>'));assert.ok(!html.includes('LEGACY-'));assert.ok(!html.includes('INTERNAL'));assert.ok(!html.includes('Item code'));assert.equal(html.includes('SN-001'),kind!=='order');assert.equal(html.includes('Warranty:'),kind==='quotation');if(kind==='quotation')assert.ok(html.indexOf('Warranty:')<html.indexOf('SKU:'));assert.match(html,/1,000.00/);
+ }
+});
+test('long selected property values paginate safely and HTML previews escape markup',async()=>{
+ const r=await buildProfessionalDocument({...data,lines:[{description:'Long specifications',quantity:1,unit_price:1000,item_details:[{key:'attributes.spec',label:'<Spec>',value:'<script>example</script> '+('detailed specification '.repeat(1500))}]}],presentationSnapshot:{version:1,profile,itemDetails:{quotation:['attributes.spec'],order:[],sale:[]},terms:{enabled:false,text:''},disclaimer:{enabled:false,text:''}}},'BDT','Company');assert.ok(r.pages>1);assert.match(r.html,/&lt;Spec&gt;/);assert.ok(!r.html.includes('<script>'));assert.ok(r.html.includes('1 / '+r.pages));
+});

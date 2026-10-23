@@ -1,9 +1,10 @@
+import { selectedItemDetails, type ItemDetailValue } from './item-detail-fields.js';
 import PDFDocument from 'pdfkit';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { DocumentPresentation } from './document-settings.js';
 
-type Line = { description: string; quantity: number; unit_price: number; line_total?: number; unit?: string; item_code?: string; model?: string; brand?: string; country?: string };
+type Line = { item_details?: ItemDetailValue[]; description: string; quantity: number; unit_price: number; line_total?: number; unit?: string; item_code?: string; model?: string; brand?: string; country?: string };
 export interface PrintableDocument {
   kind: string; number: string; status: string; revision?: number; documentDate: Date | string; dueDate?: Date | string | null;
   customerSnapshot: unknown; quotationPersonSnapshot?: unknown; presentationSnapshot?: unknown;
@@ -141,7 +142,8 @@ export async function buildProfessionalDocument(d: PrintableDocument, currency: 
   section('Billing and delivery details');
   info([['Bill to', customer.name], ['Address', customer.address]], [['Ship to', customer.name], ['Address', customer.address]]);
   const documentLines = d.lines as Line[];
-  const activeColumns = [0, ...(documentLines.some(l => hasValue(l.item_code)) ? [1] : []), ...(documentLines.some(l => hasValue(l.model)) ? [2] : []), 3, ...(documentLines.some(l => hasValue(l.unit)) ? [4] : []), 5, 6, 7];
+  const configured = p?.itemDetails != null;
+  const activeColumns = configured ? [0, 3, 5, 6, 7] : [0, ...(documentLines.some(l => hasValue(l.item_code)) ? [1] : []), ...(documentLines.some(l => hasValue(l.model)) ? [2] : []), 3, ...(documentLines.some(l => hasValue(l.unit)) ? [4] : []), 5, 6, 7];
   const widths = [22, 57, 64, 162, 28, 29, 70, R - L - 432], columns = [L];
   const recovered = widths.reduce((sum, width, i) => sum + (activeColumns.includes(i) ? 0 : width), 0);
   for (const i of activeColumns) columns.push(columns.at(-1)! + widths[i] + (i === 3 ? recovered : 0));
@@ -151,7 +153,7 @@ export async function buildProfessionalDocument(d: PrintableDocument, currency: 
   }
   tableHead();
   for (const [index, line] of documentLines.entries()) {
-    const description = [line.description, [shown(line.brand), hasValue(line.country) ? `Origin: ${line.country}` : ''].filter(hasValue).join(' | ')].filter(Boolean).join('\n');
+    const description = configured ? [line.description, ...selectedItemDetails(line, p?.itemDetails, d.kind).map(v => `${v.label}: ${v.value}`)].join('\n') : [line.description, [shown(line.brand), hasValue(line.country) ? `Origin: ${line.country}` : ''].filter(hasValue).join(' | ')].filter(Boolean).join('\n');
     const cells = [String(index + 1), shown(line.item_code), shown(line.model), description, shown(line.unit), String(line.quantity), money(line.unit_price), money(line.line_total ?? Math.round(line.quantity * line.unit_price))];
     const wrapped = activeColumns.map(i => cells[i]).map((value, i) => value.split('\n').flatMap(v => wrap([{ text: v }], columns[i + 1] - columns[i] - 8, 8)));
     let offset = 0, count = Math.max(...wrapped.map(v => v.length));
