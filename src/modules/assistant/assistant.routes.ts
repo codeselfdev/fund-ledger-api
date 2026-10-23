@@ -1,3 +1,4 @@
+import { assistantHistoryQuery, assistantHistoryWindow } from './assistant-history.js';
 import { assistantUpload, assistantUploadError, validateAssistantImage } from "./assistant-upload.js";
 import { createHash, randomUUID } from "node:crypto";
 import { storeObject, deleteObject, readObject, StorageObjectNotFoundError } from "../../core/storage/object-storage.service.js";
@@ -22,8 +23,10 @@ router.get("/status", asyncHandler(async (req, res) => ok(res, await assistantSt
 router.get("/messages", asyncHandler(async (req, res) => {
     const a = requireProjectContext(req);
     const context = await assistantContext(a.tenantId, a.projectId, a.userId);
-    const rows = await prisma.assistantReply.findMany({ where: { tenantId: a.tenantId, projectId: a.projectId, userId: a.userId, channel: "ai_chat", OR: [{ authorizationHash: context.authorization_hash }, { status: { in: ["queued", "processing"] } }] }, orderBy: { createdAt: "desc" }, take: 30 });
-    return ok(res, await Promise.all(rows.reverse().map(present)));
+    const {paged,...query} = await assistantHistoryQuery(prisma, { tenantId: a.tenantId, projectId: a.projectId, userId: a.userId, channel: "ai_chat", requestKey: { not: { startsWith: "action:" } }, OR: [{ authorizationHash: context.authorization_hash }, { status: { in: ["queued", "processing"] } }] }, req.query);
+    const page = assistantHistoryWindow(await prisma.assistantReply.findMany(query), paged);
+    const entries = await Promise.all(page.rows.map(present));
+    return ok(res, paged ? { entries, next_cursor: page.next_cursor } : entries);
 }));
 router.post("/messages", rateLimit({ windowMs: 60000, limit: 12, keyGenerator: req => requireProjectContext(req).tenantId, standardHeaders: true, legacyHeaders: false }), upload, validateBody(chatSchema), asyncHandler(async (req, res) => {
     const a = requireProjectContext(req), b = chatSchema.parse(req.body);

@@ -1,3 +1,4 @@
+import { assistantHistoryQuery, assistantHistoryWindow } from '../assistant/assistant-history.js';
 import { retainChatAttachments, chatAttachmentSelection } from './chat-attachments.js';
 import { bulkAssistantRouter } from './bulk.routes.js';
 import { businessAssistantRouter } from './business.routes.js';
@@ -152,8 +153,10 @@ router.post('/chat',rateLimit({windowMs:60000,limit:12,keyGenerator:req=>require
 }));
 router.get('/messages',asyncHandler(async(req,res)=>{
   const a=requireProjectContext(req),context=await assistantContext(a.tenantId,a.projectId,a.userId);
-  const rows=await prisma.assistantReply.findMany({where:{tenantId:a.tenantId,projectId:a.projectId,userId:a.userId,channel:'ai_chat',requestKey:{startsWith:'action:'},authorizationHash:context.authorization_hash,createdAt:{gt:new Date(Date.now()-90*86400000)}},orderBy:{createdAt:'desc'},take:30,include:{attachments:{select:chatAttachmentSelection}}});
-  return ok(res,rows.reverse().map(row=>{let result:unknown=null;try{result=JSON.parse(row.reply??'null');}catch{}return{id:row.id,message:row.prompt,reply:result?null:row.reply,status:row.status,request_key:row.requestKey.slice(7),created_at:row.createdAt,attachments:row.attachments,action_result:result};}));
+  const {paged,...query}=await assistantHistoryQuery(prisma,{tenantId:a.tenantId,projectId:a.projectId,userId:a.userId,channel:'ai_chat',requestKey:{startsWith:'action:'},authorizationHash:context.authorization_hash,createdAt:{gt:new Date(Date.now()-90*86400000)}},req.query);
+  const page=assistantHistoryWindow(await prisma.assistantReply.findMany({...query,include:{attachments:{select:chatAttachmentSelection}}}),paged);
+  const entries=page.rows.map(row=>{let result:unknown=null;try{result=JSON.parse(row.reply??'null');}catch{}return{id:row.id,message:row.prompt,reply:result?null:row.reply,status:row.status,request_key:row.requestKey.slice(7),created_at:row.createdAt,attachments:row.attachments,action_result:result};});
+  return ok(res,paged?{entries,next_cursor:page.next_cursor}:entries);
 }));
 router.post('/telegram/links',asyncHandler(async(req,res)=>ok(res,await startTelegramIdentityLink(requireProjectContext(req)))));
 router.get('/telegram/links/:id',asyncHandler(async(req,res)=>ok(res,await telegramLinkStatus(requireProjectContext(req),String(req.params.id)))));
