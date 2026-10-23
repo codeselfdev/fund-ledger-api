@@ -1,3 +1,4 @@
+import { financialSummary, financialSummaryQuery } from './financial-summary.js';
 import { saveReviewedExpense } from './business-expense.js';
 import { normalizeExpenseFields, receiptInvoiceParty, sameReceiptInvoice } from './expense-payee.js';
 import { Router } from 'express';
@@ -24,13 +25,14 @@ const today=()=>new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Dhaka'});
 router.use(requireRoles('owner','admin','accountant'),asyncHandler(async(req,_res,next)=>{
  const a=requireProjectContext(req),p=await prisma.project.findFirst({where:{id:a.projectId,tenantId:a.tenantId,isActive:true}});
  if(!p||!['fund_shares','accounting','billing','construction'].includes(p.projectType))throw forbidden('Choose an active supported project.');
- const sharedExpense=req.method==='GET'&&req.path==='/expense-snapshot'||req.method==='POST'&&req.path==='/actions'&&req.body?.operation==='create_expense_draft';
+ const sharedExpense=req.method==='GET'&&['/expense-snapshot','/financial-summary'].includes(req.path)||req.method==='POST'&&req.path==='/actions'&&req.body?.operation==='create_expense_draft';
  if(p.projectType!=='accounting'&&!sharedExpense)throw forbidden('These tools belong to the active Accounting project.');
  const t=await prisma.tenant.findUniqueOrThrow({where:{id:a.tenantId},select:{currency:true}});
  if(t.currency!=='BDT')throw badRequest('Nesta Accounting AI currently requires a BDT project.');
  next();
 }));
 // Ordinary expense review is shared; sales and purchase capabilities remain Accounting-only.
+router.get('/financial-summary',asyncHandler(async(req,res)=>{const query=financialSummaryQuery.parse(req.query),a=requireProjectContext(req);return ok(res,await financialTransaction(tx=>financialSummary(tx,scope(a),query)));}));
 router.get('/expense-snapshot',asyncHandler(async(req,res)=>{
  const a=requireProjectContext(req),where=scope(a);
  const snapshot=await financialTransaction(async tx=>{

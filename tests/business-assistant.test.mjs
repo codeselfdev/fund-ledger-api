@@ -174,3 +174,15 @@ for(const type of ['fund_shares','accounting','billing','construction']){
 for(const type of ['fund_shares','billing','construction'])test(`${type}: allowing shared expenses does not unlock Accounting sales or purchase actions`,async()=>{
  projectType=type;for(const operation of ['create_purchase_bill_draft','create_purchase_order_draft','send_payment_reminder','schedule_followup','log_collection_followup'])assert.equal((await request('/actions',{...bill(),operation})).status,403);assert.equal((await request('/document-preview',{})).status,403);assert.equal((await request('/snapshot')).status,403);assert.equal(expenses.length,0);assert.equal(records.length,0);
 });
+
+test('financial summaries are shared read-only routes with project and role checks',async()=>{
+ const calls=[];prisma.expense.groupBy=async query=>{scoped(query.where);calls.push(query);return[];};
+ prisma.accountTransaction.groupBy=async query=>{scoped(query.where);calls.push(query);return[];};
+ prisma.incomeCategory.findMany=async({where})=>{scoped(where);return[];};
+ for(const type of ['fund_shares','accounting','billing','construction']){
+  projectType=type;
+  for(const kind of ['income','expense']){const response=await request(`/financial-summary?kind=${kind}&from=2026-10-01&to=2026-10-23`);assert.equal(response.status,200);const {data}=await response.json();assert.equal(data.project_id,'project');assert.equal(data.summary_type,kind);assert.equal(data.total,0);}
+ }
+ for(const role of ['member','cashier','auditor','approver']){roles=[role];assert.equal((await request('/financial-summary?kind=expense&from=2026-10-01&to=2026-10-23')).status,403);}
+ roles=['owner'];assert.equal((await request('/financial-summary?kind=income&from=2026-11-01&to=2026-10-23')).status,400);assert.ok(calls.length>0);assert.equal(expenses.length,0);assert.equal(ledger.length,0);
+});
