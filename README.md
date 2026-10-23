@@ -2,6 +2,23 @@
 
 Express + TypeScript API service for the FundLedger multi-tenant SaaS app.
 
+## Node.js runtime
+
+All Fund Nesta projects use **Node.js 24.22.1 LTS**. `.nvmrc` and
+`.node-version` pin the local runtime; `package.json` requires Node 24 from this
+patch onward. From this project's directory:
+
+```sh
+nvm install
+nvm use
+npm install
+```
+
+Restart existing development servers after switching Node versions. For hosted
+builds, select Node **24.x** and redeploy; Docker images and Expo EAS build
+profiles pin **24.22.1** where applicable. Database migrations are separate
+from this runtime upgrade.
+
 ## Stack
 
 - Express 4
