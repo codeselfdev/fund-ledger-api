@@ -14,12 +14,18 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 function fixture() {
   const rows = [], deliveries = [], inbox = [], audit = [], pushes = [];
   let recipients = structuredClone(users), ready = true, result = { sent_count: 1, failed_count: 0, invalid_tokens: [], skipped: false }, claimable = true;
-  const writes = [];
+  const writes = [], lookups = [];
   const db = {
-    user: { async findMany({ where }) { assert.equal(where.isActive, true); assert.deepEqual(where.tenant, { deletionStartedAt: null }); return recipients; }, async updateMany(input) { writes.push(input); return { count: 1 }; } },
+    user: { async findMany(input) {
+      const { where, take } = input; lookups.push(input);
+      assert.equal(where.isActive, true); assert.deepEqual(where.tenant, { deletionStartedAt: null });
+      let found = recipients.filter(user => typeof where.id === 'string' ? user.id === where.id : where.id?.in ? where.id.in.includes(user.id) : true);
+      if (where.OR) found = found.filter(user => where.OR.some(part => Object.entries(part).some(([field, match]) => String(user[field] ?? '').toLowerCase().includes(match.contains.toLowerCase()))));
+      return take ? found.slice(0, take) : found;
+    }, async updateMany(input) { writes.push(input); return { count: 1 }; } },
     platformBroadcast: {
       async findUnique({ where }) { return rows.find(row => where.id ? row.id === where.id : row.actor === where.actor_requestKey.actor && row.requestKey === where.actor_requestKey.requestKey) ?? null; },
-      async create({ data }) { const row = { id: 'broadcast1', createdAt: new Date(), ...data }; rows.push(row); return row; },
+      async create({ data }) { const row = { id: 'broadcast' + (rows.length + 1), createdAt: new Date(), ...data }; rows.push(row); return row; },
       async findMany() { return rows; },
     },
     platformBroadcastDelivery: {
@@ -35,7 +41,7 @@ function fixture() {
   const service = createPlatformBroadcasts(db, async input => { pushes.push(input); if (result instanceof Error) throw result; return result; }, () => ready, 'synthetic-preview-secret');
   const input = async () => { const p = await service.preview(actor, draft); return { draft, request_key: randomUUID(), preview_token: p.preview_token, expires_at: p.expires_at }; };
   const workerRow = (extra = {}) => { deliveries.push({ id: 'delivery1', broadcastId: 'broadcast1', recipientIds: ['u1', 'u2'], tokenHash: digest('same-device'), attempts: 0, broadcast: draft, ...extra }); };
-  return { service, rows, deliveries, inbox, audit, pushes, writes, input, workerRow,
+  return { service, rows, deliveries, inbox, audit, pushes, writes, lookups, input, workerRow,
     recipients(value) { recipients = value; }, ready(value) { ready = value; }, result(value) { result = value; }, claimable(value) { claimable = value; } };
 }
 test('reach counts unique registered devices across organizations and omits empty tokens', () => {
@@ -120,7 +126,7 @@ test('HTTP routes require the internal key, operator identity and validated draf
   const { createApp } = await import('../dist/app.js');
   const { platformBroadcasts } = await import('../dist/modules/internal/platform-broadcasts.service.js');
   const calls = [], originals = {};
-  for (const name of ['reach', 'preview', 'send', 'history', 'retry']) {
+  for (const name of ['reach', 'searchUsers', 'preview', 'send', 'history', 'retry']) {
     originals[name] = platformBroadcasts[name];
     platformBroadcasts[name] = async (...args) => { calls.push({ name, args }); return { synthetic: true }; };
   }
@@ -134,6 +140,10 @@ test('HTTP routes require the internal key, operator identity and validated draf
     assert.equal((await fetch(base + '/audience', { headers: { 'x-api-key': 'synthetic-provisioning-key' } })).status, 401);
     assert.equal((await fetch(base + '/audience', { headers })).status, 200);
     assert.equal(calls.at(-1).name, 'reach');
+    assert.equal((await fetch(base + '/users?search=Ali')).status, 401);
+    assert.equal((await fetch(base + '/users?search=A', { headers })).status, 400);
+    assert.equal((await fetch(base + '/users?search=Ali', { headers })).status, 200);
+    assert.deepEqual(calls.at(-1), { name: 'searchUsers', args: ['Ali'] });
     assert.equal((await fetch(base + '/preview', { method: 'POST', headers: { 'x-internal-api-key': process.env.INTERNAL_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(draft) })).status, 400);
     assert.equal((await fetch(base + '/preview', { method: 'POST', headers, body: JSON.stringify({ ...draft, title: '  ' }) })).status, 400);
     assert.equal((await fetch(base + '/preview', { method: 'POST', headers, body: JSON.stringify(draft) })).status, 200);
@@ -149,6 +159,55 @@ test('HTTP routes require the internal key, operator identity and validated draf
     Object.assign(platformBroadcasts, originals);
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+test('user search is bounded, searches contact fields and exposes no device tokens', async () => {
+  const f = fixture();
+  f.recipients([{ ...users[0], name: 'Ali Hasan', email: 'ali@example.test', mobile: '01711111111', tenant: { name: 'Test fund' } },
+    { ...users[1], name: 'Someone else', email: null, mobile: '01822222222', tenant: { name: 'Other fund' } }]);
+  for (const search of ['ALI', 'example.test', '01711']) {
+    const result = await f.service.searchUsers(search);
+    assert.deepEqual(result.users.map(user => user.id), ['u1']);
+    assert.equal(result.users[0].organization, 'Test fund');
+    assert.doesNotMatch(JSON.stringify(result), /same-device|deviceId|tokenHash/);
+    assert.equal(f.lookups.at(-1).take, 20);
+  }
+  await assert.rejects(f.service.searchUsers('a'));
+  await assert.rejects(f.service.searchUsers('x'.repeat(101)));
+});
+
+test('a signed test queues only the selected account and device, including its poster and action', async () => {
+  const f = fixture(), targeted = { ...draft, test_user_id: 'u1', image_url: 'https://cdn.test/poster.jpg', url: 'fundnesta://open?screen=home' };
+  const p = await f.service.preview(actor, targeted);
+  assert.equal(p.accounts, 1); assert.equal(p.devices, 1); assert.equal(p.organizations, 1);
+  const input = { draft: targeted, request_key: randomUUID(), preview_token: p.preview_token, expires_at: p.expires_at };
+  await f.service.send(actor, input);
+  assert.deepEqual(f.inbox.map(row => row.recipientUserId), ['u1']);
+  assert.deepEqual(f.deliveries.map(row => row.recipientIds), [['u1']]);
+  assert.equal(f.inbox[0].imageUrl, targeted.image_url); assert.equal(f.inbox[0].actionUrl, targeted.url);
+  assert.equal(f.audit[0].action, 'notification.test_queued'); assert.equal(f.audit[0].metadata.test_user_id, 'u1');
+  await f.service.send(actor, input); assert.equal(f.rows.length, 1);
+  await assert.rejects(f.service.send(actor, { ...input, draft }), /another message/);
+  f.deliveries.length = 0; f.workerRow({ recipientIds: ['u1'], broadcast: f.rows[0] }); await f.service.deliver();
+  assert.deepEqual(f.lookups.at(-1).where.id, { in: ['u1'] });
+  assert.deepEqual(f.pushes[0].tokens, ['same-device']);
+});
+
+test('changing or removing a test recipient cannot reuse the signed preview to broadcast', async () => {
+  for (const changed of [draft, { ...draft, test_user_id: 'u2' }]) {
+    const f = fixture(), targeted = { ...draft, test_user_id: 'u1' }, p = await f.service.preview(actor, targeted);
+    await assert.rejects(f.service.send(actor, { draft: changed, request_key: randomUUID(), preview_token: p.preview_token, expires_at: p.expires_at }), /review/i);
+    assert.equal(f.rows.length, 0); assert.equal(f.inbox.length, 0);
+  }
+  for (const test_user_id of ['', ' ', '../u1']) assert.equal(broadcastDraftSchema.safeParse({ ...draft, test_user_id }).success, false);
+});
+
+test('missing and revoked test users fail without falling back to all accounts', async () => {
+  const f = fixture(), targeted = { ...draft, test_user_id: 'u1' }, p = await f.service.preview(actor, targeted);
+  f.recipients(users.slice(1));
+  await assert.rejects(f.service.send(actor, { draft: targeted, request_key: randomUUID(), preview_token: p.preview_token, expires_at: p.expires_at }), /no longer/);
+  await assert.rejects(f.service.preview(actor, { ...draft, test_user_id: 'missing' }), /no longer/);
+  assert.equal(f.rows.length, 0); assert.equal(f.inbox.length, 0);
 });
 
 const testingUrl = 'https://play.google.com/apps/testing/com.fundnesta.appnesta.app';

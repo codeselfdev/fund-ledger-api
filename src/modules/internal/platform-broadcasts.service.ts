@@ -12,6 +12,7 @@ const notificationUrl = z.string().trim().max(2048).refine(validNotificationLink
 const posterUrl = z.string().trim().max(2048).refine(validHttpsUrl, 'Use a public HTTPS image URL without credentials.');
 export const broadcastDraftSchema = z.object({
   title: z.string().trim().min(3).max(65), body: z.string().trim().min(3).max(500), url: notificationUrl.optional(), image_url: posterUrl.optional(),
+  test_user_id: z.string().trim().min(1).max(100).regex(/^[A-Za-z0-9_-]+$/).optional(),
 }).strict().refine(draft => {
   // Reserve space under FCM's 4 KB limit for routing metadata and platform keys.
   const payload = { notification: { title: draft.title, body: draft.body, imageUrl: draft.image_url },
@@ -42,8 +43,19 @@ export function broadcastAudience(users: Recipient[]) {
 
 export function createPlatformBroadcasts(db = prisma, push = sendPushMessage,
   configured = () => Boolean(getFirebaseAdminApp()), secret = env.internalApiKey ?? '') {
-  async function audience(client: Prisma.TransactionClient = db) {
-    return broadcastAudience(await client.user.findMany({ where: eligible, select: userSelect, orderBy: { id: 'asc' } }));
+  async function audience(client: Prisma.TransactionClient = db, testUserId?: string) {
+    const result = broadcastAudience(await client.user.findMany({ where: { ...eligible, ...(testUserId ? { id: testUserId } : {}) }, select: userSelect, orderBy: { id: 'asc' } }));
+    if (testUserId && result.recipients.length !== 1) throw badRequest('This user no longer has a registered push device. Search again.');
+    return result;
+  }
+  async function searchUsers(search: string) {
+    const query = z.string().trim().min(2).max(100).parse(search);
+    const users = await db.user.findMany({ where: { ...eligible, OR: [
+      { name: { contains: query, mode: 'insensitive' } }, { email: { contains: query, mode: 'insensitive' } }, { mobile: { contains: query } },
+    ] }, select: { ...userSelect, name: true, email: true, mobile: true, tenant: { select: { name: true } } }, orderBy: [{ name: 'asc' }, { id: 'asc' }], take: 20 });
+    return { users: users.filter(user => user.deviceId?.trim()).map(user => ({
+      id: user.id, name: user.name, email: user.email, mobile: user.mobile, organization: user.tenant.name,
+    })) };
   }
   function reviewToken(actor: string, draft: Draft, users: Recipient[], expires: string) {
     return createHmac('sha256', secret).update(JSON.stringify({ actor, draft, expires,
@@ -51,7 +63,7 @@ export function createPlatformBroadcasts(db = prisma, push = sendPushMessage,
   }
   async function reach() { return { ...(await audience()).reach, push_configured: configured() }; }
   async function preview(actor: string, draft: Draft) {
-    const current = await audience(), expires_at = new Date(Date.now() + 15 * 60000).toISOString();
+    const current = await audience(db, draft.test_user_id), expires_at = new Date(Date.now() + 15 * 60000).toISOString();
     return { ...current.reach, push_configured: configured(), draft, expires_at,
       preview_token: reviewToken(actor, draft, current.recipients, expires_at) };
   }
@@ -76,7 +88,7 @@ export function createPlatformBroadcasts(db = prisma, push = sendPushMessage,
     let id: string;
     try {
       id = await db.$transaction(async tx => {
-        const current = await audience(tx);
+        const current = await audience(tx, input.draft.test_user_id);
         if (reviewToken(actor, input.draft, current.recipients, input.expires_at) !== input.preview_token)
           throw conflict('The message or recipients changed. Review the message again.');
         if (!current.devices.size) throw badRequest('No registered devices are available.');
@@ -88,7 +100,7 @@ export function createPlatformBroadcasts(db = prisma, push = sendPushMessage,
           id: `broadcast:${row.id}:${user.id}`, tenantId: user.tenantId, recipientUserId: user.id,
           type: 'announcement.platform', title: input.draft.title, body: input.draft.body, actionUrl: input.draft.url, imageUrl: input.draft.image_url, entityType: 'platform_broadcast', entityId: row.id,
         })), skipDuplicates: true });
-        await tx.internalAudit.create({ data: { actor, action: 'notification.broadcast_queued', metadata: { broadcast_id: row.id, ...current.reach } } });
+        await tx.internalAudit.create({ data: { actor, action: input.draft.test_user_id ? 'notification.test_queued' : 'notification.broadcast_queued', metadata: { broadcast_id: row.id, ...current.reach, ...(input.draft.test_user_id ? { test_user_id: input.draft.test_user_id } : {}) } } });
         return row.id;
       }, { isolationLevel: 'RepeatableRead', timeout: 60000 });
     } catch (error) {
@@ -145,7 +157,7 @@ export function createPlatformBroadcasts(db = prisma, push = sendPushMessage,
       }
     }
   }
-  return { reach, preview, send, summary, history, retry, deliver };
+  return { reach, searchUsers, preview, send, summary, history, retry, deliver };
 }
 export const platformBroadcasts = createPlatformBroadcasts();
 let timer: ReturnType<typeof setInterval> | undefined, running = false;

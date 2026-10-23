@@ -33,6 +33,11 @@ router.post('/notifications/poster', rateLimit({ windowMs: 60000, limit: 10 }), 
   return ok(res, await uploadPromotionalPoster(internalActor(req), req.file.buffer));
 }));
 router.get('/notifications/audience', asyncHandler(async (_req, res) => ok(res, await platformBroadcasts.reach())));
+router.get('/notifications/users', asyncHandler(async (req, res) => {
+  internalActor(req);
+  const { search } = z.object({ search: z.string().trim().min(2).max(100) }).parse(req.query);
+  return ok(res, await platformBroadcasts.searchUsers(search));
+}));
 router.post('/notifications/preview', asyncHandler(async (req, res) => ok(res, await platformBroadcasts.preview(internalActor(req), broadcastDraftSchema.parse(req.body)))));
 router.post('/notifications', rateLimit({ windowMs: 60000, limit: 5 }), asyncHandler(async (req, res) => ok(res, await platformBroadcasts.send(internalActor(req), broadcastSendSchema.parse(req.body)))));
 router.get('/notifications', asyncHandler(async (req, res) => {
