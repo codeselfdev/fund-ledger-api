@@ -143,7 +143,10 @@ router.post('/chat',rateLimit({windowMs:60000,limit:12,keyGenerator:req=>require
   const images=files.map(f=>({name:f.originalname.slice(0,120),mime_type:validateAssistantImage(f.buffer),base64:f.buffer.toString('base64')}));
   const scope=assistantEventScope(a,b.request_key);publishAssistantPhase(scope,'connecting');
   try {
-  const result=await serviceRequest(req,'/chat',{...b,images},'POST',phase=>publishAssistantPhase(scope,phase));
+  // Fresh receipts are self-contained, including requests from older app bundles
+  // that still attach an unavailable history key. Keep history for text replies.
+  const serviceBody={message:b.message,request_key:b.request_key,images,...(!images.length&&b.reply_to_request_key?{reply_to_request_key:b.reply_to_request_key}:{})};
+  const result=await serviceRequest(req,'/chat',serviceBody,'POST',phase=>publishAssistantPhase(scope,phase));
   const row=await prisma.assistantReply.findUniqueOrThrow({where:{tenantId_channel_requestKey:{tenantId:a.tenantId,channel:'ai_chat',requestKey:`action:${b.request_key}`}}});
   let attachments=await retainChatAttachments(a.tenantId,row.id,files);
   if(!attachments.length&&result&&typeof result==='object'&&'source_request_key' in result&&typeof result.source_request_key==='string'){

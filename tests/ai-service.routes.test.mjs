@@ -203,3 +203,32 @@ test('Free and Starter quotas reject service admission with the next plan before
   assert.equal((await request('/whatsapp/link',{})).status,403);
  }
 });
+
+test('multipart receipts take precedence over a stale history key sent by an older browser bundle',async()=>{
+ const saved={fetch:global.fetch,findReply:prisma.assistantReply.findUniqueOrThrow,updateReply:prisma.assistantReply.update,findImages:prisma.assistantAttachment.findMany,createImages:prisma.assistantAttachment.createMany};
+ const image=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2ioAAAAASUVORK5CYII=','base64');
+ let row,images=[],calls=0;
+ prisma.assistantReply.findUniqueOrThrow=async()=>row;
+ prisma.assistantReply.update=async({data})=>Object.assign(row,data);
+ prisma.assistantAttachment.findMany=async()=>images;
+ prisma.assistantAttachment.createMany=async({data})=>{images=data.map((file,i)=>({...file,id:`fresh-image-${i}`}));return{count:data.length};};
+ global.fetch=async(input,options)=>{
+  const url=new URL(input);if(url.origin!=='http://127.0.0.1:4010')return saved.fetch(input,options);
+  if(url.pathname==='/session')return Response.json(options?.method==='DELETE'?{}:{token:'test-service-session'});
+  const body=JSON.parse(options.body);calls++;
+  // Simulate the older deployed service's exact failure for unavailable history.
+  if(body.reply_to_request_key)return Response.json({error:{code:'CHAT_SOURCE_UNAVAILABLE',message:'This earlier chat is unavailable or your access changed. Reattach its receipt and ask again.'}},{status:404});
+  assert.equal(body.message,'Add expense');assert.equal(body.request_key,row.requestKey.slice(7));assert.ok(body.images.length>0);assert.ok(body.images.every(file=>file.base64===image.toString('base64')));
+  return Response.json({status:'needs_information',reply:'Which account should pay these expenses?'});
+ };
+ try{
+  for(const count of [1,3]){
+   const key=`123e4567-e89b-42d3-a456-42661417400${count}`;row={id:`chat-${count}`,requestKey:`action:${key}`,status:'completed',createdAt:new Date()};images=[];
+   const body=new FormData();body.append('message','Add expense');body.append('request_key',key);body.append('reply_to_request_key','9cfdf2fe-631f-4310-bdd9-b7186eeb62af');
+   for(let i=0;i<count;i++)body.append('files',new Blob([image],{type:'image/png'}),`receipt-${i}.png`);
+   const response=await saved.fetch(base+'/v1/ai-service/chat',{method:'POST',headers:{Authorization:`Bearer ${token}`,'X-Project-Id':'project'},body});
+   const payload=await response.json();assert.equal(response.status,200,JSON.stringify(payload));assert.equal(payload.data.action_result.status,'needs_information');assert.equal(payload.data.attachments.length,count);
+  }
+  assert.equal(calls,2); // No automatic second attempt or duplicate model request.
+ }finally{global.fetch=saved.fetch;prisma.assistantReply.findUniqueOrThrow=saved.findReply;prisma.assistantReply.update=saved.updateReply;prisma.assistantAttachment.findMany=saved.findImages;prisma.assistantAttachment.createMany=saved.createImages;}
+});
