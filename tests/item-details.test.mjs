@@ -34,3 +34,28 @@ test('enabling Description on a saved document keeps its other historical proper
  assert.equal(excluded.item_details.find(v=>v.key==='sku').value,'OLD-SKU');
  assert.deepEqual(selectedItemDetails(excluded,config,'quotation',false).map(v=>v.key),['sku']);
 });
+
+test('external descriptions are optional, validated separately from names and precede configured fields',async()=>{
+ const {lineSchema,calculate}=await import('../dist/modules/accounting/workflow.js');
+ const {db}=fixture(),config={quotation:['sku'],order:['sku'],sale:['sku']};
+ const raw={description:'External equipment',item_description:'SPECIFICATION_ONE\nSPECIFICATION_TWO',source:'external',item_code:'EXTERNAL_CODE',quantity:1,unit_price:100};
+ assert.equal(lineSchema.parse(raw).item_description,raw.item_description);
+ assert.ok(lineSchema.safeParse({...raw,item_description:'x'.repeat(2000)}).success);
+ assert.equal(lineSchema.safeParse({...raw,item_description:'x'.repeat(2001)}).success,false);
+ assert.equal(lineSchema.safeParse({...raw,description:''}).success,false);
+ const totals=calculate([lineSchema.parse(raw)],0,0);
+ const [line]=await snapshotItemDetails(db,auth,totals.lines,config,undefined,true);
+ for(const kind of ['quotation','order','sale'])assert.deepEqual(selectedItemDetails(line,config,kind,true).map(v=>v.key),['description','sku']);
+ assert.deepEqual(selectedItemDetails(line,config,'quotation',false).map(v=>v.value),['EXTERNAL_CODE']);
+ const [updated]=await snapshotItemDetails(db,auth,[{...line,item_description:'CHANGED_SPEC'}],config,{lines:[line],presentationSnapshot:{itemDetails:config,includeItemDescription:true}},true);
+ assert.equal(selectedItemDetails(updated,config,'quotation',true)[0].value,'CHANGED_SPEC');
+ const [blank]=await snapshotItemDetails(db,auth,[{...raw,item_description:''}],config,undefined,true);
+ assert.deepEqual(selectedItemDetails(blank,config,'quotation',true).map(v=>v.key),['sku']);
+ const [disabled]=await snapshotItemDetails(db,auth,[raw],null,undefined,false);assert.equal(disabled.item_description,raw.item_description);
+ const [enabled]=await snapshotItemDetails(db,auth,[disabled],null,undefined,true);assert.equal(enabled.item_details[0].value,raw.item_description);
+});
+test('inventory descriptions are captured from the catalog rather than client line text',async()=>{
+ const {db,item}=fixture();item.description='CATALOG_DESCRIPTION';
+ const [line]=await snapshotItemDetails(db,auth,[{item_id:'i',item_description:'CLIENT_DESCRIPTION'}],null,undefined,true);
+ assert.equal(line.item_details[0].value,'CATALOG_DESCRIPTION');
+});

@@ -10,6 +10,8 @@ import { workspace, project } from './payroll.service.js';
 import { monthSchema, settingsSchema, importSchema, prepareSchema, runDecisionSchema, disburseSchema, leaveSchema, leaveDecisionSchema, billSchema, decisionSchema, employeeSchema } from './payroll.policy.js';
 import { saveSettings, importEmployees, prepare, transition, disburseRun, employeeStatus } from './payroll.actions.js';
 import { submitLeave, decideLeave, submitBill, decideBill, disburseBill } from './payroll.requests.js';
+import { attendanceSettingsSchema, attendanceMarkSchema, attendancePunchSchema } from './attendance.policy.js';
+import { markAttendance, punchAttendance, saveAttendanceSettings } from './attendance.service.js';
 const router = Router();
 router.use(requireProject, asyncHandler(async (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -27,4 +29,7 @@ router.post('/leave/:id/decision', validateBody(leaveDecisionSchema), asyncHandl
 router.post('/bills', validateBody(billSchema), asyncHandler(async (req, res) => created(res, await submitBill(requireProjectContext(req), billSchema.parse(req.body)))));
 for (const action of ['check', 'approve', 'reject'] as const) router.post(`/bills/:id/${action}`, validateBody(decisionSchema), asyncHandler(async (req, res) => ok(res, await decideBill(requireProjectContext(req), req.params.id, action, decisionSchema.parse(req.body)))));
 router.post('/bills/:id/disburse', validateBody(disburseSchema), asyncHandler(async (req, res) => ok(res, await disburseBill(requireProjectContext(req), req.params.id, disburseSchema.parse(req.body)))));
+router.put('/attendance/settings', validateBody(attendanceSettingsSchema), asyncHandler(async (req, res) => ok(res, await saveAttendanceSettings(requireProjectContext(req), attendanceSettingsSchema.parse(req.body)))));
+router.post('/attendance/mark', validateBody(attendanceMarkSchema), asyncHandler(async (req, res) => ok(res, await markAttendance(requireProjectContext(req), attendanceMarkSchema.parse(req.body)))));
+router.post('/attendance/punch', validateBody(attendancePunchSchema), asyncHandler(async (req, res) => ok(res, await punchAttendance(requireProjectContext(req), attendancePunchSchema.parse(req.body)))));
 export { router as payrollRouter };

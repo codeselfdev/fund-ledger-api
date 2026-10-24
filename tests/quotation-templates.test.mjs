@@ -52,3 +52,15 @@ test('PDF Description choice affects only Description across all layouts and doc
  }
  const legacy=await buildProfessionalDocument({...data,lines:[{description:'Item',quantity:1,unit_price:1000,item_code:'L-1',item_details:[{key:'description',label:'Description',value:'ADDEDDESC'}]}],presentationSnapshot:{version:1,profile,itemDetails:null,includeItemDescription:true,terms:{enabled:false,text:''},disclaimer:{enabled:false,text:''}}},'BDT','Company');assert.match(legacy.html,/ADDEDDESC/);assert.match(legacy.html,/L-1/);
 });
+
+test('optional imported text appears before configured properties in quotation, order and invoice PDFs',async()=>{
+ const line={description:'External equipment',quantity:1,unit_price:1000,item_details:[{key:'description',label:'Description',value:'SPECIFICATION_ONE\nSPECIFICATION_TWO'},{key:'sku',label:'SKU',value:'EXTERNAL_CODE'}]};
+ const itemDetails={quotation:['sku'],order:['sku'],sale:['sku']};
+ for(const kind of ['quotation','order','sale']) for(const includeItemDescription of [true,false]){
+  const result=await buildProfessionalDocument({...data,kind,lines:[line],presentationSnapshot:{version:1,profile,itemDetails,includeItemDescription,terms:{enabled:false,text:''},disclaimer:{enabled:false,text:''}}},'BDT','Company');
+  assert.equal(result.html.includes('SPECIFICATION_ONE'),includeItemDescription);assert.equal(result.html.includes('SPECIFICATION_TWO'),includeItemDescription);
+  assert.match(result.html,/EXTERNAL_CODE/);
+  if(includeItemDescription)assert.ok(result.html.indexOf('SPECIFICATION_ONE')<result.html.indexOf('EXTERNAL_CODE'));
+  assert.ok(result.pdf.subarray(0,5).equals(Buffer.from('%PDF-')));
+ }
+});

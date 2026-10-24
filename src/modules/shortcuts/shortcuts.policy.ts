@@ -18,7 +18,7 @@ export function availableCatalog(projectType: string, roles: readonly string[]) 
 export function defaultPins(projectType: string, roles: readonly string[], portalSettings?: unknown) {
     const available = new Set(availableCatalog(projectType, roles).tools.map(t => t.key));
     const defaults: Record<string, string[]> = {
-        payroll_pf: ['payroll_employees', 'payroll_run', 'payroll_leave', 'payroll_bills', 'payroll_pf', 'accounts', 'expenses', 'income'],
+        payroll_pf: ['payroll_employees', 'payroll_attendance', 'payroll_run', 'payroll_leave', 'payroll_bills', 'payroll_pf', 'accounts', 'expenses'],
         fund_shares: ['members', 'income', 'expenses', 'schedules', 'notices', 'reports', 'accounts', 'assets'],
         accounting: ['customers', 'inventory', 'purchases', 'quotation', 'sale', 'receivables', 'expenses', 'accounts'],
         billing: ['customers', 'inventory', 'purchases', 'billing_invoices', 'billing_collections', 'billing_outstanding', 'billing_subscriptions', 'accounts'],
@@ -33,7 +33,7 @@ export function defaultPins(projectType: string, roles: readonly string[], porta
     // Payroll has dedicated defaults; legacy fund portal settings do not apply.
     if (projectType === 'payroll_pf') keys = defaults.payroll_pf;
     if (roles.every(r => r === 'member'))
-        keys = projectType === 'payroll_pf' ? ['payroll_run', 'payroll_leave', 'payroll_bills', 'payroll_pf'] : Array.isArray(raw?.member_shortcuts) ? raw.member_shortcuts : ['members', 'income', 'expenses', 'ledger'];
+        keys = projectType === 'payroll_pf' ? ['payroll_attendance', 'payroll_run', 'payroll_leave', 'payroll_bills', 'payroll_pf'] : Array.isArray(raw?.member_shortcuts) ? raw.member_shortcuts : ['members', 'income', 'expenses', 'ledger'];
     const aliases: Record<string, string> = { fixed_assets: 'assets', commerce: projectType === 'accounting' ? 'inventory' : 'commerce' };
     return [...new Set((keys as unknown[]).filter((v): v is string => typeof v === 'string').map(k => aliases[k] ?? k))].filter(k => available.has(k)).slice(0, MAX_PINS);
 }

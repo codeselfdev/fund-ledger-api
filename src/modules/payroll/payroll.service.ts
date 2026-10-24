@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { DEFAULT_ATTENDANCE, type AttendanceSettings } from './attendance.policy.js';
 import type { Prisma, PayrollEmployee, PayrollRun } from '@prisma/client';
 import { prisma } from '../../core/prisma/client.js';
 import { badRequest, conflict, forbidden, notFound } from '../../core/http/api-error.js';
@@ -28,6 +29,10 @@ export function revision(actual: number, expected: number) { if (actual !== expe
 export async function config(tx: Tx, a: PayrollAuth) {
   const row = await tx.payrollConfiguration.findFirst({ where: scope(a) });
   return row ? settings(row.settings, row.revision) : { ...DEFAULT_SETTINGS };
+}
+export async function attendanceConfig(tx: Tx, a: PayrollAuth): Promise<AttendanceSettings> {
+  const row = await tx.payrollAttendanceConfiguration.findFirst({ where: scope(a) });
+  return row ? { ...DEFAULT_ATTENDANCE, ...(row.settings as object), gpsRequired: true, revision: row.revision } : { ...DEFAULT_ATTENDANCE };
 }
 /** Permanent actor/payload-bound request receipts are committed with the underlying mutation. */
 export async function mutate<T>(a: PayrollAuth, action: string, body: { request_key: string }, fn: (tx: Tx) => Promise<T>): Promise<T> {
@@ -75,7 +80,9 @@ export async function rebuild(tx: Tx, a: PayrollAuth, reason: string) {
   if (!runs.length) return;
   const settings = await config(tx, a);
   const employees = await tx.payrollEmployee.findMany({ where: { ...scope(a), status: { not: 'inactive' } }, orderBy: { id: 'asc' } });
-  const leaves = await tx.payrollLeave.findMany({ where: { ...scope(a), status: 'approved', type: 'Unpaid' } });
+  const leaves = await tx.payrollLeave.findMany({ where: { ...scope(a), status: 'approved' } });
+  const attendanceSettings = await attendanceConfig(tx, a);
+  const attendance = await tx.payrollAttendance.findMany({ where: scope(a) });
   const bills = await tx.payrollBill.findMany({ where: { ...scope(a), status: 'approved' }, orderBy: [{ date: 'asc' }, { id: 'asc' }] });
   const unpaidIds = new Set(runs.map(r => r.id)), assigned = new Map<string, string>();
   for (const run of runs) {
@@ -83,7 +90,7 @@ export async function rebuild(tx: Tx, a: PayrollAuth, reason: string) {
     const rows = employees.filter(e => day(e.joiningDate) <= end).map(e => {
       const eligible = bills.filter(b => b.employeeId === e.id && day(b.date) <= end && !assigned.has(b.id) && (!b.reservedRunId || unpaidIds.has(b.reservedRunId)));
       eligible.forEach(b => assigned.set(b.id, run.id));
-      return salaryRow(e, run.month, settings, leaves.filter(l => l.employeeId === e.id), eligible);
+      return salaryRow(e, run.month, settings, leaves.filter(l => l.employeeId === e.id), eligible, attendance.filter(r => r.employeeId === e.id), attendanceSettings.holidays);
     });
     if (JSON.stringify(rows) !== JSON.stringify(run.rows) || JSON.stringify(settings) !== JSON.stringify(run.settingsSnapshot)) {
       await tx.payrollRun.update({ where: { id: run.id }, data: { rows: json(rows), settingsSnapshot: json(settings), status: 'prepared', createdById: a.userId, checkedById: null, approvedById: null, revision: { increment: 1 }, history: json(await history(tx, a, reason, run.history)) } });
@@ -103,12 +110,13 @@ export async function workspace(a: PayrollAuth, month: string) {
     await project(tx, a);
     const role = access(a); allowed(role.staff || role.member);
     const me = await ownEmployee(tx, a), where = { ...scope(a), ...(role.staff ? {} : { employeeId: me?.id ?? '__none__' }) };
-    const [settings, employees, leaves, bills, run, contributions] = await Promise.all([
+    const [settings, employees, leaves, bills, run, contributions, attendanceSettings, attendanceRecords] = await Promise.all([
       config(tx, a), tx.payrollEmployee.findMany({ where: { ...scope(a), ...(role.staff ? {} : { id: me?.id ?? '__none__' }) }, orderBy: [{ name: 'asc' }, { id: 'asc' }] }),
       tx.payrollLeave.findMany({ where, include: { employee: { select: { name: true } } }, orderBy: { createdAt: 'desc' } }),
       tx.payrollBill.findMany({ where, include: { employee: { select: { name: true } } }, orderBy: { createdAt: 'desc' } }),
       tx.payrollRun.findFirst({ where: { ...scope(a), month } }),
-      tx.payrollPFEntry.groupBy({ by: ['employeeId'], where, _sum: { own: true, company: true, profit: true } })
+      tx.payrollPFEntry.groupBy({ by: ['employeeId'], where, _sum: { own: true, company: true, profit: true } }),
+      attendanceConfig(tx, a), tx.payrollAttendance.findMany({ where: { ...where, date: { gte: atDate(`${month}-01`), lte: atDate(monthEnd(month)) } }, orderBy: [{ date: 'desc' }, { employeeId: 'asc' }] })
     ]);
     const date = today();
     const mapped = employees.map(e => {
@@ -117,7 +125,7 @@ export async function workspace(a: PayrollAuth, month: string) {
       const vest = vested(completedYears(day(e.joiningDate), date), settings.vesting);
       return { id: e.id, revision: e.revision, name: e.name, mobile: e.mobile, designation: e.designation, department: e.department, joiningDate: day(e.joiningDate), basic: e.basic, medical: e.medical, transport: e.transport, pfMember: e.pfMember, status: e.status, leaveLeft: leaveLeft(leaves.filter(l => l.employeeId === e.id), date.slice(0, 4)), pf: { own, company, profit, loanOutstanding: 0, vestedPercent: vest, payable: checkedMoney(own + profit + Math.round(company * vest / 100)) } };
     });
-    return { month, today: date, settings, employees: mapped, me: mapped.find(e => e.id === me?.id) ?? null,
+    return { month, today: date, settings, attendance: { settings: attendanceSettings, records: attendanceRecords.map(r => ({ id: r.id, employeeId: r.employeeId, date: day(r.date), status: r.status, checkIn: r.checkIn?.toISOString() ?? null, checkOut: r.checkOut?.toISOString() ?? null, source: r.source, officeVerified: r.officeVerified, revision: r.revision, history: r.history })) }, employees: mapped, me: mapped.find(e => e.id === me?.id) ?? null,
       run: run && (role.staff || (run.rows as unknown as PayrollRow[]).some(r => r.employeeId === me?.id)) ? mapRun(run, role.staff ? undefined : me?.id) : null,
       leaves: leaves.map(l => ({ id: l.id, employeeId: l.employeeId, name: l.employee.name, type: l.type, startDate: day(l.startDate), endDate: day(l.endDate), days: l.days, reason: l.reason, status: l.status, noteFileId: l.noteFileId, rejectionReason: l.rejectionReason })),
       bills: bills.map(b => ({ id: b.id, revision: b.revision, employeeId: b.employeeId, name: b.employee.name, category: b.category, amount: b.amount, date: day(b.date), note: b.note, receiptFileId: b.receiptFileId, receiptName: b.receiptName, receiptType: b.receiptType, status: b.status, history: b.history, rejectionReason: b.rejectionReason, reservedRunId: b.reservedRunId, ...(role.staff && b.posting ? { posting: b.posting } : {}) }))

@@ -214,6 +214,8 @@ enum DepositApprovalRoute {
 }
 
 model Project {
+  payrollAttendanceConfiguration PayrollAttendanceConfiguration?
+  payrollAttendances PayrollAttendance[]
   payrollConfiguration PayrollConfiguration?
   payrollEmployees PayrollEmployee[]
   payrollRuns PayrollRun[]
@@ -2764,6 +2766,7 @@ model PayrollEmployee {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  attendance PayrollAttendance[]
   leaves PayrollLeave[]
   bills PayrollBill[]
   pfEntries PayrollPFEntry[]
@@ -2883,4 +2886,38 @@ model PayrollOperation {
   @@unique([projectId, requestKey])
   @@index([tenantId, projectId])
   @@map("payroll_operations")
+}
+
+
+model PayrollAttendanceConfiguration {
+  projectId String @id @map("project_id")
+  tenantId String @map("tenant_id")
+  settings Json
+  revision Int @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@index([tenantId, projectId])
+  @@map("payroll_attendance_configurations")
+}
+
+model PayrollAttendance {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  employeeId String @map("employee_id")
+  date DateTime @db.Date
+  status String
+  checkIn DateTime? @map("check_in")
+  checkOut DateTime? @map("check_out")
+  source String @default("manual")
+  officeVerified Boolean @default(false) @map("office_verified")
+  revision Int @default(0)
+  history Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  employee PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  @@unique([projectId, employeeId, date])
+  @@index([tenantId, projectId, date])
+  @@map("payroll_attendances")
 }

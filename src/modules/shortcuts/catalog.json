@@ -1269,6 +1269,26 @@
       "project_types": [
         "payroll_pf"
       ]
+    },
+    {
+      "key": "payroll_attendance",
+      "group": "people",
+      "label": "Attendance",
+      "description": "Check in, monthly attendance & HR corrections",
+      "icon": "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M12 7v5l4 2",
+      "keywords": "clock check in out shift late absence half day calendar",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "approver",
+        "cashier",
+        "auditor",
+        "member"
+      ],
+      "project_types": [
+        "payroll_pf"
+      ]
     }
   ],
   "quick_add": [
