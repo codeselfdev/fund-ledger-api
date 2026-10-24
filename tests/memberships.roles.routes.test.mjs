@@ -29,6 +29,8 @@ function matchesMembership(where, membership) {
 }
 
 before(() => {
+  // Authentication records activity when a fixture has no lastActiveAt timestamp.
+  prisma.user.updateMany = async () => ({ count: 1 });
   prisma.tenant.findUniqueOrThrow = async () => ({ contact: { subscription: { package: "free" } } });
   prisma.project.findFirstOrThrow = async () => ({ id: 'project', tenantId: 'tenant', name: 'Fund Nesta' });
   prisma.user.findMany = async () => [user];

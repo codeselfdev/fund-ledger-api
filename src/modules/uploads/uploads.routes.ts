@@ -44,6 +44,12 @@ router.post("/", requireProject, requireRoles("any"), upload.single("file"), asy
 
   if (purpose?.startsWith("customer_logo:") || purpose?.startsWith("dealer_logo:")) throw badRequest("Use the customer or dealer logo editor to save logos.");
 
+  if (purpose === "payroll_receipt" || purpose === "payroll_leave_note") {
+    const project = await prisma.project.findFirst({ where: { id: auth.projectId, tenantId: auth.tenantId, projectType: "payroll_pf", isActive: true } });
+    if (!project) throw forbidden("Payroll attachments require a Payroll & PF project");
+    if (!req.file.mimetype.startsWith("image/") && req.file.mimetype !== "application/pdf") throw badRequest("Attach an image or PDF");
+  }
+
   if (purpose === "notice_image" && !auth.roles.some(role => role === "owner" || role === "admin")) throw forbidden("Only admins can upload notice images");
   if (purpose === "notice_image") {
     const jpeg = req.file.buffer[0] === 0xff && req.file.buffer[1] === 0xd8 && req.file.buffer[2] === 0xff;
@@ -134,6 +140,17 @@ router.get("/:id/view", requireProject, requireRoles("any"), validateParams(idPa
     const memberId = record.purpose.split(":")[1];
     const staff = auth.roles.some(role => ["owner", "admin", "accountant", "approver", "auditor", "cashier"].includes(role));
     if (!staff && auth.memberId !== memberId && !auth.memberIds?.includes(memberId)) throw forbidden();
+  }
+
+  if (record.purpose === "payroll_receipt" || record.purpose === "payroll_leave_note") {
+    const staff = auth.roles.some(role => ["owner", "admin", "accountant", "approver", "cashier", "auditor"].includes(role));
+    if (!staff && record.userId !== auth.userId) {
+      const where = { tenantId: auth.tenantId, projectId: auth.projectId, employee: { userId: auth.userId } };
+      const linked = record.purpose === "payroll_receipt"
+        ? await prisma.payrollBill.findFirst({ where: { ...where, receiptFileId: record.id }, select: { id: true } })
+        : await prisma.payrollLeave.findFirst({ where: { ...where, noteFileId: record.id }, select: { id: true } });
+      if (!linked) throw forbidden("This payroll attachment belongs to another employee");
+    }
   }
 
   let fileBuffer: Buffer;

@@ -6,13 +6,18 @@ const { prisma } = await import('../dist/core/prisma/client.js');
 const { grantAiCredits, aiCreditGrantSchema, aiCreditTenants, aiCreditHistory } = await import('../dist/modules/internal/ai-credits.service.js');
 const { featureLimit, allowancePeriod, hasAssistant, extraFeatureCredits } = await import('../dist/modules/assistant/assistant.policy.js');
 const { reserveReply, assistantStatus } = await import('../dist/modules/assistant/assistant.service.js');
-let tenants, audits, replies, queue;
+let tenants, audits, replies, queue, inbox, deliveries;
 const contact = plan => ({ subscription: { package: plan, status: plan === 'free' ? 'trial' : 'active', trial_ends_at: '2099-01-01T00:00:00Z', current_period_end_at: plan === 'free' ? null : '2099-01-01T00:00:00Z' } });
 const input = (extra = {}) => ({ request_key: randomUUID(), channel: 'ai_chat', credits: 25, reason: 'Customer extension approved', period_start: allowancePeriod(tenants.org.contact).start.toISOString(), ...extra });
 beforeEach(() => {
- tenants = Object.fromEntries(['org', 'other'].map(id => [id, { id, contact: contact('free'), deletionStartedAt: null }])); audits = []; replies = []; queue = Promise.resolve();
- prisma.$transaction = callback => { const task = queue.then(async () => { const old = structuredClone({ tenants, audits, replies }); try { return await callback(prisma); } catch (error) { ({ tenants, audits, replies } = old); throw error; } }); queue = task.catch(() => {}); return task; };
+ tenants = Object.fromEntries(['org', 'other'].map(id => [id, { id, name: id, createdAt: new Date('2026-10-01T00:00:00Z'), contact: contact('free'), deletionStartedAt: null }])); audits = []; replies = []; inbox = []; deliveries = []; queue = Promise.resolve();
+ prisma.$transaction = callback => { const task = queue.then(async () => { const old = structuredClone({ tenants, audits, replies, inbox, deliveries }); try { return await callback(prisma); } catch (error) { ({ tenants, audits, replies, inbox, deliveries } = old); throw error; } }); queue = task.catch(() => {}); return task; };
  prisma.$queryRaw = async () => [];
+ prisma.user.findFirst = async () => null; prisma.user.findMany = async () => [];
+ prisma.tenant.findMany = async () => [];
+ prisma.notification.create = async ({ data }) => { inbox.push(data); return data; };
+ prisma.aiCreditDelivery.createMany = async ({ data }) => { deliveries.push(...data.map(row=>({...row,status:'pending',lastError:null}))); return { count:data.length }; };
+ prisma.aiCreditDelivery.findMany = async ({ where }) => deliveries.filter(row=>row.tenantId===where.tenantId&&where.notificationId.in.includes(row.notificationId));
  prisma.tenant.findUnique = async ({ where }) => tenants[where.id] ?? null;
  prisma.tenant.findUniqueOrThrow = async ({ where }) => { if (!tenants[where.id]) throw Error('Missing tenant'); return tenants[where.id]; };
  prisma.tenant.update = async ({ where, data }) => tenants[where.id] = { ...tenants[where.id], ...data };
@@ -80,8 +85,8 @@ test('an audit write failure rolls the quota update back', async () => {
 });
 test('usage listing and extension history scope and paginate results', async () => {
  let query;
- prisma.tenant.findMany = async args => { query = args; return Array.from({ length: 51 }, (_, i) => ({ ...tenants.org, id: String(i), name: 'Tenant', slug: 'tenant', users: [{ name: 'Owner', email: 'owner@example.test' }] })); };
- const page = await aiCreditTenants(50, 'owner@example.test'); assert.equal(query.skip, 50); assert.equal(query.take, 51); assert.ok(query.where.OR[2].users.some.OR[1].email); assert.equal(page.tenants.length, 50); assert.equal(page.next_offset, 100);
+ prisma.tenant.findMany = async args => { query = args; return Array.from({ length: 101 }, (_, i) => ({ ...tenants.org, id: String(i), name: 'Tenant', slug: 'tenant', users: [{ name: 'Owner', email: 'owner@example.test' }] })); };
+ const page = await aiCreditTenants(50, 'owner@example.test'); assert.equal(query.skip, undefined); assert.equal(query.take, undefined); assert.ok(query.where.OR[2].users.some.OR[1].email); assert.equal(page.tenants.length, 50); assert.equal(page.next_offset, 100);
  for (let i = 0; i < 21; i++) await grantAiCredits('org', input(), 'admin');
  const history = await aiCreditHistory('org', 0); assert.equal(history.grants.length, 20); assert.equal(history.next_offset, 20); assert.equal(history.grants[0].actor, 'admin');
  assert.equal((await aiCreditHistory('other', 0)).grants.length, 0); await assert.rejects(aiCreditHistory('missing', 0), /not found/);
@@ -101,10 +106,35 @@ test('internal routes require an internal key and actor, validate grants, and ex
  const grant = input();
  try {
   assert.equal((await fetch(url)).status, 401);
+  const listUrl=url.replace('/tenants/org/ai-credits','/ai-credits');
+  const sorted=await fetch(listUrl+'?sort=ai_chat&direction=asc',{headers});assert.equal(sorted.status,200);assert.equal((await sorted.json()).data.direction,'asc');
+  assert.equal((await fetch(listUrl+'?sort=untrusted',{headers})).status,400);
+  assert.equal((await fetch(listUrl+'?direction=untrusted',{headers})).status,400);
   assert.equal((await fetch(url, { method: 'POST', headers: { ...headers, 'x-internal-actor': '' }, body: JSON.stringify(grant) })).status, 400);
   const saved = await fetch(url, { method: 'POST', headers, body: JSON.stringify(grant) }); assert.equal(saved.status, 200); assert.equal((await saved.json()).data.limit, 35);
   const replay = await fetch(url, { method: 'POST', headers, body: JSON.stringify(grant) }); assert.equal((await replay.json()).data.replayed, true);
   assert.equal((await fetch(url, { method: 'POST', headers, body: JSON.stringify({ ...grant, credits: -10 }) })).status, 400);
   const history = await fetch(url, { headers }); assert.equal(history.status, 200); assert.equal((await history.json()).data.grants[0].actor, 'admin@example.test');
  } finally { await new Promise(resolve => server.close(resolve)); env.internalApiKey = oldKey; }
+});
+
+
+test('one grant atomically queues its owner notification, and replay never grants or notifies twice',async()=>{
+ prisma.user.findFirst=async({where})=>{assert.equal(where.tenantId,'org');assert.equal(where.memberships.some.role,'owner');return{id:'owner'};};
+ const grant=input(),first=await grantAiCredits('org',grant,'admin');await grantAiCredits('org',grant,'admin');
+ assert.equal(inbox.length,1);assert.equal(deliveries.length,2);assert.equal(first.notification_id,inbox[0].id);assert.equal(audits.length,1);assert.equal(featureLimit('ai_chat',tenants.org.contact),35);
+ assert.equal(inbox[0].recipientUserId,'owner');assert.doesNotMatch(inbox[0].body,/Customer extension approved/);
+ const history=await aiCreditHistory('org',0);assert.equal(history.grants[0].delivery.push.status,'pending');assert.equal(history.grants[0].delivery.email.status,'pending');
+ prisma.internalAudit.create=async()=>{throw Error('Audit unavailable');};await assert.rejects(grantAiCredits('org',input(),'admin'),/Audit unavailable/);assert.equal(inbox.length,1);assert.equal(deliveries.length,2);assert.equal(featureLimit('ai_chat',tenants.org.contact),35);
+});
+test('usage sorting is global, includes zero usage, and paginates in a stable order for every count column',async()=>{
+ const rows=Array.from({length:103},(_,i)=>({...tenants.org,id:`t${String(i).padStart(3,'0')}`,slug:`tenant-${i}`}));
+ prisma.tenant.findMany=async()=>rows.map(row=>({...row}));
+ prisma.assistantReply.groupBy=async query=>{assert.equal(query.where.status.not,'cancelled');return query.by.includes('channel')?rows.filter((_,i)=>i>0).flatMap((row,i)=>[{tenantId:row.id,channel:'ai_chat',_count:i+1},{tenantId:row.id,channel:'whatsapp_bot',_count:103-i}]):rows.filter((_,i)=>i>0).map((row,i)=>({tenantId:row.id,_count:(i+1)*2}));};
+ let page=await aiCreditTenants(0,undefined,'ai_chat','desc');assert.equal(page.tenants[0].id,'t102');assert.equal(page.tenants.length,50);assert.equal(page.next_offset,50);
+ const second=await aiCreditTenants(50,undefined,'ai_chat','desc');assert.equal(second.tenants[0].id,'t052');assert.ok(!second.tenants.some(t=>page.tenants.some(first=>first.id===t.id)));
+ page=await aiCreditTenants(0,undefined,'ai_chat','asc');assert.equal(page.tenants[0].id,'t000');assert.equal(page.tenants[1].id,'t001');
+ page=await aiCreditTenants(0,undefined,'whatsapp_bot','desc');assert.equal(page.tenants[0].id,'t001');
+ page=await aiCreditTenants(0,undefined,'lifetime_used','desc');assert.equal(page.tenants[0].id,'t102');
+ page=await aiCreditTenants(0,undefined,'used','asc');assert.equal(page.tenants[0].id,'t000');assert.equal(page.tenants[1].id,'t102');
 });

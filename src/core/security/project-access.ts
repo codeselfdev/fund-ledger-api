@@ -13,7 +13,7 @@ interface ProjectMembershipRow {
   projectId: string;
   role: Role;
   memberId: string | null;
-  project: { name: string; projectType: "fund_shares" | "accounting" | "billing" | "construction"; isActive: boolean };
+  project: { name: string; projectType: "fund_shares" | "accounting" | "billing" | "construction" | "payroll_pf"; isActive: boolean };
 }
 
 /** One access entry per project, retaining all assigned roles and only explicit member links. */

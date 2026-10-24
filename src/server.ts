@@ -19,11 +19,13 @@ import { startAssistantWorker, stopAssistantWorker } from "./modules/assistant/a
 import { startPlatformAlerts, stopPlatformAlerts } from "./modules/internal/alerts.service.js";
 import { logWhatsAppConfiguration } from "./core/whatsapp/whatsapp.configuration.js";
 import { startPlatformBroadcasts, stopPlatformBroadcasts } from './modules/internal/platform-broadcasts.service.js';
+import { startAiCreditNotifications, stopAiCreditNotifications } from './modules/internal/ai-credit-notifications.service.js';
 const app = createApp();
 logWhatsAppConfiguration();
 startPlatformAlerts();
 startPlatformBroadcasts();
 startSupportReplyNotifications();
+startAiCreditNotifications();
 startAssistantWorker();
 startRecurringSchedulesCron();
 startDocumentRetentionCron();
@@ -53,6 +55,7 @@ async function shutdown() {
   stopPlatformAlerts();
   stopPlatformBroadcasts();
   stopSupportReplyNotifications();
+  stopAiCreditNotifications();
   stopAssistantWorker();
   stopRecurringSchedulesCron();
   stopDocumentRetentionCron();

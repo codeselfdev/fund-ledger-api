@@ -205,6 +205,7 @@ enum ProjectType {
   accounting
   billing
   construction
+  payroll_pf
 }
 
 enum DepositApprovalRoute {
@@ -213,6 +214,13 @@ enum DepositApprovalRoute {
 }
 
 model Project {
+  payrollConfiguration PayrollConfiguration?
+  payrollEmployees PayrollEmployee[]
+  payrollRuns PayrollRun[]
+  payrollLeaves PayrollLeave[]
+  payrollBills PayrollBill[]
+  payrollPFEntries PayrollPFEntry[]
+  payrollOperations PayrollOperation[]
   documentSettings Json? @map("document_settings")
   contactPersons ContactPerson[]
   recurringExpenseBills RecurringExpenseBill[]
@@ -1117,6 +1125,7 @@ model Notification {
 
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  aiCreditDeliveries AiCreditDelivery[]
   recipient User     @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
   actor     User?    @relation("NotificationActor", fields: [actorUserId], references: [id], onDelete: SetNull)
 
@@ -2699,4 +2708,179 @@ model DocumentNumberSequence {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   @@id([tenantId, kind, period])
   @@map("document_number_sequences")
+}
+
+// Independent durable push/email delivery for a committed credit extension.
+model AiCreditDelivery {
+  id String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  notificationId String @map("notification_id")
+  channel String
+  status String @default("pending")
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at")
+  leaseUntil DateTime? @map("lease_until")
+  leaseToken String? @map("lease_token")
+  sentAt DateTime? @map("sent_at")
+  lastError String? @map("last_error")
+  createdAt DateTime @default(now()) @map("created_at")
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  @@unique([notificationId, channel])
+  @@index([status, nextAttemptAt, leaseUntil])
+  @@index([tenantId])
+  @@map("ai_credit_deliveries")
+}
+
+
+model PayrollConfiguration {
+  projectId String @id @map("project_id")
+  tenantId String @map("tenant_id")
+  settings Json
+  revision Int @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@index([tenantId, projectId])
+  @@map("payroll_configurations")
+}
+
+model PayrollEmployee {
+  userId String? @map("user_id")
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  name String
+  mobile String
+  designation String
+  department String
+  joiningDate DateTime @db.Date @map("joining_date")
+  basic Int
+  medical Int @default(0)
+  transport Int @default(0)
+  pfMember Boolean @default(false) @map("pf_member")
+  status String @default("probation")
+  probationCompletedOn DateTime? @db.Date @map("probation_completed_on")
+  advance Int @default(0)
+  revision Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  leaves PayrollLeave[]
+  bills PayrollBill[]
+  pfEntries PayrollPFEntry[]
+  @@unique([projectId, mobile])
+  @@unique([projectId, userId])
+  @@index([tenantId, projectId])
+  @@map("payroll_employees")
+}
+
+model PayrollRun {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  month String
+  status String @default("prepared")
+  revision Int @default(0)
+  rows Json
+  settingsSnapshot Json @map("settings_snapshot")
+  history Json
+  createdById String @map("created_by_id")
+  checkedById String? @map("checked_by_id")
+  approvedById String? @map("approved_by_id")
+  posting Json?
+  paidAt DateTime? @map("paid_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  pfEntries PayrollPFEntry[]
+  @@unique([projectId, month])
+  @@index([tenantId, projectId, status])
+  @@map("payroll_runs")
+}
+
+model PayrollLeave {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  employeeId String @map("employee_id")
+  type String
+  startDate DateTime @db.Date @map("start_date")
+  endDate DateTime @db.Date @map("end_date")
+  workingDates String[] @map("working_dates")
+  days Int
+  reason String
+  status String @default("pending")
+  noteFileId String? @map("note_file_id")
+  rejectionReason String? @map("rejection_reason")
+  createdById String @map("created_by_id")
+  decidedById String? @map("decided_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  decidedAt DateTime? @map("decided_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  employee PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  @@index([tenantId, projectId, employeeId, status])
+  @@map("payroll_leaves")
+}
+
+model PayrollBill {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  employeeId String @map("employee_id")
+  category String
+  amount Int
+  date DateTime @db.Date
+  note String
+  receiptFileId String @map("receipt_file_id")
+  receiptName String @map("receipt_name")
+  receiptType String @map("receipt_type")
+  status String @default("submitted")
+  revision Int @default(0)
+  history Json
+  createdById String @map("created_by_id")
+  checkedById String? @map("checked_by_id")
+  approvedById String? @map("approved_by_id")
+  rejectionReason String? @map("rejection_reason")
+  reservedRunId String? @map("reserved_run_id")
+  posting Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  employee PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  @@unique([projectId, receiptFileId])
+  @@index([tenantId, projectId, employeeId, status])
+  @@index([tenantId, projectId, reservedRunId])
+  @@map("payroll_bills")
+}
+
+model PayrollPFEntry {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  employeeId String @map("employee_id")
+  runId String @map("run_id")
+  own Int
+  company Int
+  profit Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  employee PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  run PayrollRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+  @@unique([runId, employeeId])
+  @@index([tenantId, projectId, employeeId])
+  @@map("payroll_pf_entries")
+}
+
+model PayrollOperation {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  userId String @map("user_id")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  result Json
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId])
+  @@map("payroll_operations")
 }

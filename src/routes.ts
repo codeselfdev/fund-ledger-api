@@ -1,3 +1,5 @@
+import { payrollFinancialPrivacy } from "./core/security/payroll-privacy.js";
+import { payrollRouter } from "./modules/payroll/payroll.routes.js";
 import { impersonationRouter } from "./modules/auth/impersonation.routes.js";
 import { contactPersonsRouter } from './modules/contact-persons/contact-persons.routes.js';
 import { recurringExpensesRouter } from './modules/expenses/recurring-expenses.routes.js';
@@ -71,6 +73,7 @@ export function registerRoutes(app: Express) {
   app.use("/v1/projects", projectsRouter);
   app.use("/v1/integrations/telegram/webhook", telegramWebhookRouter);
   app.use(authenticate);
+  app.use(payrollFinancialPrivacy);
   app.use("/v1/subscription", subscriptionRouter);
   // Account notifications include private support replies, even after subscription expiry.
   app.use("/v1", accountNotificationsRouter);
@@ -102,6 +105,7 @@ export function registerRoutes(app: Express) {
   app.use("/v1/customers", customersRouter);
   app.use("/v1/accounting", accountingRouter);
   app.use("/v1/billing", billingRouter);
+  app.use("/v1/payroll", payrollRouter);
   app.use("/v1/construction", constructionRouter);
   app.use("/v1/fixed-assets", fixedAssetsRouter);
   app.use("/v1/shortcuts", shortcutsRouter);

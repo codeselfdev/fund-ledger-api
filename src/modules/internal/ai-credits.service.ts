@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
+import { queueAiCreditNotification } from './ai-credit-notifications.service.js';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../core/prisma/client.js';
 import { badRequest, conflict, notFound } from '../../core/http/api-error.js';
@@ -40,32 +42,56 @@ export async function grantAiCredits(tenantId: string, input: z.infer<typeof aiC
       ai_chat: extraFeatureCredits('ai_chat', contact, now), whatsapp_bot: extraFeatureCredits('whatsapp_bot', contact, now) };
     extension[input.channel] += input.credits;
     await tx.tenant.update({ where: { id: tenantId }, data: { contact: { ...contact, ai_credit_extension: extension } as Prisma.InputJsonValue } });
-    const metadata = { ...input, previous_limit: previousLimit, limit, expires_at: period.end.toISOString() };
-    await tx.internalAudit.create({ data: { tenantId, actor, action, metadata } });
+    const grantId = randomUUID();
+    const notification = await queueAiCreditNotification(tx, tenant, { id: grantId, channel: input.channel, credits: input.credits, limit, expires_at: period.end.toISOString() });
+    const metadata = { ...input, previous_limit: previousLimit, limit, expires_at: period.end.toISOString(), ...notification };
+    await tx.internalAudit.create({ data: { id: grantId, tenantId, actor, action, metadata } });
     return { ...metadata, replayed: false };
   });
 }
 
-export async function aiCreditTenants(offset: number, search?: string) {
+export const aiCreditSortFields = ['used', 'ai_chat', 'whatsapp_bot', 'lifetime_used'] as const;
+export async function aiCreditTenants(offset: number, search?: string, sort: typeof aiCreditSortFields[number] = 'used', direction: 'asc' | 'desc' = 'desc') {
   const where: Prisma.TenantWhereInput = search ? { OR: [
     { name: { contains: search, mode: 'insensitive' } }, { slug: { contains: search, mode: 'insensitive' } },
     { users: { some: { isActive: true, memberships: { some: { role: 'owner', isActive: true } },
       OR: [{ name: { contains: search, mode: 'insensitive' } }, { email: { contains: search, mode: 'insensitive' } }] } } },
   ] } : {};
-  const rows = await prisma.tenant.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], skip: offset, take: 51,
-    select: { id: true, name: true, slug: true, contact: true, deletionStartedAt: true,
-      users: { where: { isActive: true, memberships: { some: { role: 'owner', isActive: true } } },
-        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 1, select: { name: true, email: true } } } });
-  const tenants = rows.slice(0, 50), usage = await organizationAiUsage(tenants);
-  return { tenants: tenants.map(t => ({ id: t.id, name: t.name, slug: t.slug, package: packageId(t.contact),
-    owner: t.users[0] ?? null, frozen: !!t.deletionStartedAt, ai_usage: usage.get(t.id),
-    custom_active: packageId(t.contact) === 'custom' && evaluateSubscription(t.contact).status === 'active' })),
-    next_offset: rows.length > 50 ? offset + 50 : null };
+  // Aggregate every matching tenant before slicing the page, including zero usage
+  // and each tenant's package reset. Never sort just the 50 visible rows.
+  const rows = await prisma.tenant.findMany({ where, select: { id: true, name: true, slug: true, contact: true, deletionStartedAt: true, createdAt: true } });
+  const usage = await organizationAiUsage(rows);
+  const count = (id: string): number => {
+    const value = usage.get(id);
+    return sort === 'used' ? value?.used ?? 0 : sort === 'lifetime_used' ? value?.lifetime_used ?? 0 : value?.channels[sort]?.used ?? 0;
+  };
+  rows.sort((a, b) => (direction === 'asc' ? count(a.id) - count(b.id) : count(b.id) - count(a.id))
+    || b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id));
+  const page = rows.slice(offset, offset + 51), tenants = page.slice(0, 50);
+  const owners = tenants.length ? await prisma.user.findMany({ where: { tenantId: { in: tenants.map(t => t.id) }, isActive: true,
+    memberships: { some: { role: 'owner', isActive: true } } }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    select: { tenantId: true, name: true, email: true } }) : [];
+  return { sort, direction, tenants: tenants.map(t => {
+    const owner = owners.find(user => user.tenantId === t.id);
+    return { id: t.id, name: t.name, slug: t.slug, package: packageId(t.contact),
+      owner: owner ? { name: owner.name, email: owner.email } : null, frozen: !!t.deletionStartedAt, ai_usage: usage.get(t.id),
+      custom_active: packageId(t.contact) === 'custom' && evaluateSubscription(t.contact).status === 'active' };
+  }), next_offset: page.length > 50 ? offset + 50 : null };
 }
 
 export async function aiCreditHistory(tenantId: string, offset: number) {
   if (!await prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true } })) throw notFound('Organization not found');
   const rows = await prisma.internalAudit.findMany({ where: { tenantId, action }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], skip: offset, take: 21 });
-  return { grants: rows.slice(0, 20).map(row => ({ id: row.id, actor: row.actor, created_at: row.createdAt, ...row.metadata as Record<string, unknown> })),
-    next_offset: rows.length > 20 ? offset + 20 : null };
+  const page = rows.slice(0, 20), ids = page.map(row => (row.metadata as Record<string, unknown> | null)?.notification_id).filter((id): id is string => typeof id === 'string');
+  const deliveries = ids.length ? await prisma.aiCreditDelivery.findMany({ where: { tenantId, notificationId: { in: ids } },
+    select: { notificationId: true, channel: true, status: true, lastError: true } }) : [];
+  return { grants: page.map(row => {
+    const metadata = row.metadata as Record<string, unknown>;
+    const status = (channel: string) => {
+      const entry = deliveries.find(delivery => delivery.notificationId === metadata?.notification_id && delivery.channel === channel);
+      return entry ? { status: entry.status, error: entry.lastError } : { status: 'unavailable', error: null };
+    };
+    return { id: row.id, actor: row.actor, created_at: row.createdAt, ...metadata,
+      delivery: metadata?.notification_id ? { push: status('push'), email: status('email') } : null };
+  }), next_offset: rows.length > 20 ? offset + 20 : null };
 }

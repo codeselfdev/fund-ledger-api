@@ -375,7 +375,7 @@ export async function signupWithGoogleTicket(input: {
   ownerMobile?: string;
   projectName?: string;
   totalShares?: number;
-  projectType?: "fund_shares" | "accounting" | "billing" | "construction";
+  projectType?: "fund_shares" | "accounting" | "billing" | "construction" | "payroll_pf";
   ownerIsMember?: boolean;
 }): Promise<GoogleSignupResult> {
   pruneTickets();
