@@ -6,7 +6,7 @@ import type { Scope } from './document-settings.js';
 
 export { formatItemDetail, selectedItemDetails, itemDetailsSchema } from './item-detail-fields.js';
 import { descriptionItemDetails, formatItemDetail, type ItemDetails, type ItemDetailField, type ItemDetailValue } from './item-detail-fields.js';
-type Line = { item_id?: string; source?: string; unit?: string; item_code?: string; model?: string; brand?: string; country?: string; item_details?: ItemDetailValue[] };
+type Line = { item_description?: string; item_id?: string; source?: string; unit?: string; item_code?: string; model?: string; brand?: string; country?: string; item_details?: ItemDetailValue[] };
 export async function documentItemFields(db: Prisma.TransactionClient, auth: Scope): Promise<ItemDetailField[]> {
   const schema = await entitySchema(db, auth, 'item');
   return [...BUILTINS.item.filter(f => f.key !== 'name').map(f => ({ key: f.key, label: f.key === 'quantity' ? 'Stock quantity' : f.label, type: f.type, ...(['cost_price', 'quantity', 'reorder_level'].includes(f.key) ? { internal: true } : {}) })), { key: 'category', label: 'Category', type: 'text' as const }, ...schema.fields.filter(f => !f.archived).map(f => ({ key: `attributes.${f.key}`, label: f.label, type: f.type }))];
@@ -48,7 +48,7 @@ export async function snapshotItemDetails<T extends Line>(db: Prisma.Transaction
         else if (field.key === 'category') raw = item.category?.name;
         else { const builtin = BUILTINS.item.find(b => b.key === field.key); raw = builtin ? (item as unknown as Record<string, unknown>)[builtin.property] : undefined; }
       } else {
-        const external: Record<string, keyof Line> = { sku: 'item_code', unit: 'unit', 'attributes.model': 'model', 'attributes.brand': 'brand', 'attributes.country': 'country' };
+        const external: Record<string, keyof Line> = { description: 'item_description', sku: 'item_code', unit: 'unit', 'attributes.model': 'model', 'attributes.brand': 'brand', 'attributes.country': 'country' };
         const property = external[field.key];
         raw = property ? line[property] : undefined;
       }

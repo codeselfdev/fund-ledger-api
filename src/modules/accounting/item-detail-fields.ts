@@ -19,6 +19,8 @@ export function descriptionItemDetails(config: ItemDetails | null | undefined, i
   return { quotation: withDescription(config?.quotation), order: withDescription(config?.order), sale: withDescription(config?.sale) };
 }
 export function selectedItemDetails(line: { item_details?: ItemDetailValue[] }, config: ItemDetails | null | undefined, kind: string, includeDescription?: boolean): ItemDetailValue[] {
-  const selected = descriptionItemDetails(config, includeDescription);
-  return (selected?.[kind as keyof ItemDetails] ?? []).filter(key => key !== 'description' || includeDescription !== false).flatMap(key => { const value = line.item_details?.find(v => v.key === key); return value && value.value.trim() ? [value] : []; });
+  const configured = config?.[kind as keyof ItemDetails] ?? [];
+  const showDescription = includeDescription ?? configured.includes('description');
+  const keys = [...(showDescription ? ['description'] : []), ...configured.filter(key => key !== 'description')];
+  return keys.flatMap(key => { const value = line.item_details?.find(v => v.key === key); return value && value.value.trim() ? [value] : []; });
 }

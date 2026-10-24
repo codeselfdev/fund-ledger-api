@@ -31,7 +31,7 @@ before(async()=>{
  prisma.$transaction=async fn=>{const previous=queue;let release;queue=new Promise(r=>release=r);await previous;const snapshot=clone(db);try{return await fn(prisma);}catch(e){db=snapshot;throw e;}finally{release();}};
  const app=express();app.use(express.json());app.use(authenticate);app.use('/v1/shortcuts',shortcutsRouter);app.use(errorHandler);server=app.listen(0,'127.0.0.1');await new Promise((resolve,reject)=>{server.once('listening',resolve);server.once('error',reject);});base=`http://127.0.0.1:${server.address().port}/v1/shortcuts`;
 });
-beforeEach(()=>{counter=0;db={preferences:[],sessions:[],memberships:[],projects:[{id:'p',tenantId:'t',projectType:'fund_shares',isActive:true,portalSettings:null},{id:'accounting',tenantId:'t',projectType:'accounting',isActive:true,portalSettings:null},{id:'billing',tenantId:'t',projectType:'billing',isActive:true,portalSettings:null},{id:'construction',tenantId:'t',projectType:'construction',isActive:true,portalSettings:null},{id:'foreign',tenantId:'other',projectType:'fund_shares',isActive:true},{id:'inactive',tenantId:'t',projectType:'fund_shares',isActive:false}]};});
+beforeEach(()=>{counter=0;db={preferences:[],sessions:[],memberships:[],projects:[{id:'p',tenantId:'t',projectType:'fund_shares',isActive:true,portalSettings:null},{id:'accounting',tenantId:'t',projectType:'accounting',isActive:true,portalSettings:null},{id:'billing',tenantId:'t',projectType:'billing',isActive:true,portalSettings:null},{id:'construction',tenantId:'t',projectType:'construction',isActive:true,portalSettings:null},{id:'payroll',tenantId:'t',projectType:'payroll_pf',isActive:true,portalSettings:null},{id:'foreign',tenantId:'other',projectType:'fund_shares',isActive:true},{id:'inactive',tenantId:'t',projectType:'fund_shares',isActive:false}]};});
 after(async()=>{await new Promise(r=>server.close(r));await prisma.$disconnect();});
 function token(role,project,userId){const id=`s${++counter}`,value=signAccessToken({sessionId:id,tenantId:'t',userId});db.sessions.push({id,tenantId:'t',userId,tokenHash:hashToken(value),revokedAt:null,expiresAt:new Date(Date.now()+60000),activeProjectId:project,user:{isActive:true,lastActiveAt:new Date()}});db.memberships.push({tenantId:'t',projectId:project,userId,role,isActive:true,memberId:role==='member'?'member':null});return value;}
 async function request(path='',body,role='admin',project='p',userId=`user-${role}`,method=body?'PUT':'GET'){
@@ -104,4 +104,16 @@ test('business defaults include stock tools without overwriting personal choices
   assert.equal((await put(['customers'],0,'admin',project)).status,200);
   assert.deepEqual((await request('',undefined,'admin',project)).data.pinned,['customers']);
  }
+});
+
+
+test('Payroll tool preferences persist and reject employee financial or other project tools', async () => {
+ const config=await request('',undefined,'admin','payroll');assert.equal(config.status,200);
+ assert.ok(config.data.tools.some(t=>t.key==='payroll_run'));
+ assert.equal((await put(['assets','notices','polls','notifications','accounts','income','expenses','payroll_run'],0,'admin','payroll')).status,200);
+ assert.deepEqual((await request('',undefined,'admin','payroll')).data.pinned,['assets','notices','polls','notifications','accounts','income','expenses','payroll_run']);
+ assert.equal((await put(['members'],1,'admin','payroll')).status,400);
+ for(const key of ['accounts','income','expenses','ledger','payroll_settings'])assert.equal((await put([key],0,'member','payroll')).status,400);
+ assert.equal((await put(['payroll_leave','payroll_bills'],0,'member','payroll')).status,200);
+ assert.deepEqual((await request('',undefined,'member','payroll')).data.pinned,['payroll_leave','payroll_bills']);
 });

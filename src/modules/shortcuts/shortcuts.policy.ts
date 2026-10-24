@@ -8,15 +8,17 @@ export function availableCatalog(projectType: string, roles: readonly string[]) 
     const allowed = (t: {
         roles: string[];
         project_types: string[];
-    }) => t.project_types.includes(projectType) && t.roles.some(role => roles.includes(role));
+        project_roles?: Record<string, string[]>;
+    }) => t.project_types.includes(projectType) && (t.project_roles?.[projectType] ?? t.roles).some(role => roles.includes(role));
     const tools = catalog.tools.filter(allowed);
-    const order = projectType === 'accounting' ? ['add_customer', 'add_sale', 'add_income', 'add_expense', 'add_notice'] : projectType === 'billing' ? ['add_customer', 'add_invoice', 'add_collection', 'add_expense', 'add_income', 'add_notice'] : ['add_member', 'add_income', 'add_expense', 'add_notice'];
+    const order = projectType === 'payroll_pf' ? (roles.every(r => r === 'member') ? ['payroll_apply_leave', 'payroll_add_bill'] : ['payroll_add_bill', 'add_income', 'add_expense', 'add_notice']) : projectType === 'accounting' ? ['add_customer', 'add_sale', 'add_income', 'add_expense', 'add_notice'] : projectType === 'billing' ? ['add_customer', 'add_invoice', 'add_collection', 'add_expense', 'add_income', 'add_notice'] : ['add_member', 'add_income', 'add_expense', 'add_notice'];
     const quick_add = order.flatMap(key => catalog.quick_add.filter(t => t.key === key && allowed(t))).slice(0, 4);
     return { tools, quick_add, groups: catalog.groups.filter(g => tools.some(t => t.group === g.key)) };
 }
 export function defaultPins(projectType: string, roles: readonly string[], portalSettings?: unknown) {
     const available = new Set(availableCatalog(projectType, roles).tools.map(t => t.key));
     const defaults: Record<string, string[]> = {
+        payroll_pf: ['payroll_employees', 'payroll_run', 'payroll_leave', 'payroll_bills', 'payroll_pf', 'accounts', 'expenses', 'income'],
         fund_shares: ['members', 'income', 'expenses', 'schedules', 'notices', 'reports', 'accounts', 'assets'],
         accounting: ['customers', 'inventory', 'purchases', 'quotation', 'sale', 'receivables', 'expenses', 'accounts'],
         billing: ['customers', 'inventory', 'purchases', 'billing_invoices', 'billing_collections', 'billing_outstanding', 'billing_subscriptions', 'accounts'],
@@ -28,8 +30,10 @@ export function defaultPins(projectType: string, roles: readonly string[], porta
     } | null;
     const manage = roles.some(r => r === 'owner' || r === 'admin');
     let keys: unknown = !manage && roles.includes('accountant') && Array.isArray(raw?.accountant_shortcuts) ? raw.accountant_shortcuts : defaults[projectType] ?? defaults.fund_shares;
+    // Payroll has dedicated defaults; legacy fund portal settings do not apply.
+    if (projectType === 'payroll_pf') keys = defaults.payroll_pf;
     if (roles.every(r => r === 'member'))
-        keys = Array.isArray(raw?.member_shortcuts) ? raw.member_shortcuts : ['members', 'income', 'expenses', 'ledger'];
+        keys = projectType === 'payroll_pf' ? ['payroll_run', 'payroll_leave', 'payroll_bills', 'payroll_pf'] : Array.isArray(raw?.member_shortcuts) ? raw.member_shortcuts : ['members', 'income', 'expenses', 'ledger'];
     const aliases: Record<string, string> = { fixed_assets: 'assets', commerce: projectType === 'accounting' ? 'inventory' : 'commerce' };
     return [...new Set((keys as unknown[]).filter((v): v is string => typeof v === 'string').map(k => aliases[k] ?? k))].filter(k => available.has(k)).slice(0, MAX_PINS);
 }
