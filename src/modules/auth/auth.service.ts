@@ -32,12 +32,14 @@ export async function createSessionToken(input: {
   userId: string;
   activeProjectId?: string | null;
   recordLogin?: boolean;
+  verifiedEmail?: string | null;
 }) {
   const session = await prisma.session.create({
     data: {
       tenantId: input.tenantId,
       userId: input.userId,
       activeProjectId: input.activeProjectId ?? null,
+      verifiedEmail: input.verifiedEmail?.trim().toLowerCase() ?? null,
       tokenHash: "pending",
       expiresAt: sessionExpiryDate()
     }
@@ -198,7 +200,7 @@ export function toLoginSessionPayload(
   };
 }
 
-export async function issueLoginSession(user: LoginUser, projectId?: string, recordLogin = true): Promise<LoginSessionPayload> {
+export async function issueLoginSession(user: LoginUser, projectId?: string, recordLogin = true, verifiedEmail?: string | null): Promise<LoginSessionPayload> {
   if (!user) throw unauthorized("Invalid login");
   const identity = await linkedIdentityUsers(user.id);
   const allMemberships = await prisma.projectMembership.findMany({
@@ -207,7 +209,7 @@ export async function issueLoginSession(user: LoginUser, projectId?: string, rec
   const activeMembership = projectId ? allMemberships.find(row => row.projectId === projectId) : (user.memberships[0] ?? allMemberships[0]);
   if (projectId && !activeMembership) throw forbidden("No active membership for requested project");
   const selectedUser = activeMembership && activeMembership.userId !== user.id ? await getActiveUserForLogin(activeMembership.userId) : user;
-  const { token } = await createSessionToken({ tenantId: selectedUser.tenantId, userId: selectedUser.id, recordLogin, activeProjectId: activeMembership?.projectId ?? null });
+  const { token } = await createSessionToken({ tenantId: selectedUser.tenantId, userId: selectedUser.id, recordLogin, verifiedEmail, activeProjectId: activeMembership?.projectId ?? null });
   return { ...toLoginSessionPayload(selectedUser, token, activeMembership?.projectId ?? null),
     identity_root_id: identity.rootId, memberships: summarizeProjectMemberships(allMemberships) };
 

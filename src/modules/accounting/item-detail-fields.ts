@@ -12,7 +12,13 @@ export function formatItemDetail(value: unknown, type: ValueType): string {
   if (type === 'boolean' && typeof value === 'boolean') return value ? 'Yes' : 'No';
   return String(value).trim();
 }
-export function selectedItemDetails(line: { item_details?: ItemDetailValue[] }, config: ItemDetails | null | undefined, kind: string): ItemDetailValue[] {
-  if (!config) return [];
-  return (config[kind as keyof ItemDetails] ?? []).flatMap(key => { const value = line.item_details?.find(v => v.key === key); return value && value.value.trim() ? [value] : []; });
+/** The document choice changes Description only; other configured properties keep their order. */
+export function descriptionItemDetails(config: ItemDetails | null | undefined, includeDescription?: boolean): ItemDetails | null | undefined {
+  if (includeDescription !== true) return config;
+  const withDescription = (keys: string[] = []) => keys.includes('description') ? keys : [...keys, 'description'];
+  return { quotation: withDescription(config?.quotation), order: withDescription(config?.order), sale: withDescription(config?.sale) };
+}
+export function selectedItemDetails(line: { item_details?: ItemDetailValue[] }, config: ItemDetails | null | undefined, kind: string, includeDescription?: boolean): ItemDetailValue[] {
+  const selected = descriptionItemDetails(config, includeDescription);
+  return (selected?.[kind as keyof ItemDetails] ?? []).filter(key => key !== 'description' || includeDescription !== false).flatMap(key => { const value = line.item_details?.find(v => v.key === key); return value && value.value.trim() ? [value] : []; });
 }

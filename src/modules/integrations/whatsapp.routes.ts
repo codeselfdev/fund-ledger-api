@@ -14,7 +14,8 @@ import { ApiError } from "../../core/http/api-error.js";
 import { createGroupSchema, createManagedWhatsAppGroup, managedWhatsAppSetup } from "../../core/whatsapp/managed-whatsapp.service.js";
 const router = Router();
 router.get("/integrations/whatsapp/setup", requireProject, requireRoles("owner", "admin"), asyncHandler(async (req, res) => {
-  return ok(res, await managedWhatsAppSetup(requireProjectContext(req)));
+  const auth = requireProjectContext(req);
+  return ok(res, await managedWhatsAppSetup(auth, Boolean(auth.impersonation)));
 }));
 router.post("/integrations/whatsapp/groups", requireProject, requireRoles("owner", "admin"), validateBody(createGroupSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);

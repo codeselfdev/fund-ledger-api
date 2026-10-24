@@ -287,7 +287,7 @@ router.get("/:id/transactions", requireProject, requireRoles("staff"), validateP
   });
   if (!account) throw notFound("Account not found");
 
-  await ensureOpeningBalanceIncomeBackfill({
+  if (!auth.impersonation) await ensureOpeningBalanceIncomeBackfill({
     tenantId: auth.tenantId,
     projectId: auth.projectId,
     account: { id: account.id, balance: account.balance }
@@ -309,7 +309,7 @@ router.get("/:id/in-out", requireProject, requireRoles("staff"), validateParams(
   });
   if (!account) throw notFound("Account not found");
 
-  await ensureOpeningBalanceIncomeBackfill({
+  if (!auth.impersonation) await ensureOpeningBalanceIncomeBackfill({
     tenantId: auth.tenantId,
     projectId: auth.projectId,
     account: { id: account.id, balance: account.balance }
@@ -353,7 +353,7 @@ router.get("/:id/entries", requireProject, requireRoles("staff"), validateParams
   });
   if (!account) throw notFound("Account not found");
 
-  await ensureOpeningBalanceIncomeBackfill({
+  if (!auth.impersonation) await ensureOpeningBalanceIncomeBackfill({
     tenantId: auth.tenantId,
     projectId: auth.projectId,
     account: { id: account.id, balance: account.balance }

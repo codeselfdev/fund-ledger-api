@@ -34,6 +34,9 @@ router.get("/activity", requireProject, requireRoles("any"), asyncHandler(async 
   const activity = await prisma.activity.findMany({
     where: {
       tenantId: auth.tenantId,
+      // Support audit actors may belong to the platform organization. Keep their
+      // contact details and internal access reasons out of customer activity feeds.
+      NOT: { entityType: "support_impersonation" },
       OR: [
         { projectId: auth.projectId },
         { projectId: null }

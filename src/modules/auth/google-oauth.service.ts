@@ -276,14 +276,14 @@ export async function resolveGoogleAuthTicket(ticket: string): Promise<GoogleCom
 
   const users = await findActiveUsersByEmail(row.identity.email, row.tenantSlug);
   if (users.length > 1) {
-    const selection = createAccountSelection(users);
+    const selection = createAccountSelection(users, undefined, row.identity.email);
     tickets.delete(ticket);
     return selection;
   }
   const user = users[0];
   if (user) {
     tickets.delete(ticket);
-    const payload = await issueLoginSession(user);
+    const payload = await issueLoginSession(user, undefined, true, row.identity.email);
     return { kind: "session", ...payload };
   }
 

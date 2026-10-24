@@ -103,7 +103,7 @@ Users sign up themselves. Onboarding state is persisted in the database (`onboar
 4) Shareholders (share allocation)
 ```
 
-Every new org gets **3 calendar months free**. After expiry, an operator-issued bill and manual payment approval renew access for **1 year**. Customers cannot approve their own renewal. See [Organization billing](docs/ORGANIZATION_BILLING.md).
+Every new org gets **1 calendar month free**. After expiry, an operator-issued bill and manual payment approval renew access for **1 year**. Customers cannot approve their own renewal. See [Organization billing](docs/ORGANIZATION_BILLING.md).
 
 ### 1. Signup
 

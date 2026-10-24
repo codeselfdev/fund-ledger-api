@@ -16,8 +16,8 @@ type StoredSubscription = {
 };
 
 const DEFAULT_RENEWAL_TERM_YEARS = 1;
-/** Day-based provisioning override; new organizations default to three calendar months. */
-export const DEFAULT_TRIAL_DAYS = 90;
+/** Day-based provisioning override; new organizations default to one calendar month. */
+export const DEFAULT_TRIAL_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -156,14 +156,8 @@ export function createTrialSubscription(trialDays: number, now = new Date()) {
   return stored;
 }
 
-export function createThreeMonthTrial(now = new Date()) {
-  const end = new Date(now);
-  const day = end.getUTCDate();
-  end.setUTCDate(1);
-  end.setUTCMonth(end.getUTCMonth() + 3);
-  const last = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0)).getUTCDate();
-  end.setUTCDate(Math.min(day, last));
-  return { ...createTrialSubscription(0, now), status: "trial" as const, trial_ends_at: end.toISOString() };
+export function createOneMonthTrial(now = new Date()) {
+  return { ...createTrialSubscription(0, now), status: "trial" as const, trial_ends_at: addCalendarMonths(now, 1).toISOString() };
 }
 
 export function renewTenantSubscription(contact: unknown, now = new Date(), selection?: { package: PackageId; billing_cycle: BillingCycle }) {

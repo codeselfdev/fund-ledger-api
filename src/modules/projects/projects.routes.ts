@@ -4,7 +4,7 @@ import { billingMenus } from "../billing/billing.menu.js";
 import { readObject, StorageObjectNotFoundError } from "../../core/storage/object-storage.service.js";
 import { randomUUID } from "node:crypto";
 import { linkedIdentityUsers } from "../../core/security/linked-identity.js";
-import { createThreeMonthTrial } from "../../core/subscription/subscription.service.js";
+import { createOneMonthTrial } from "../../core/subscription/subscription.service.js";
 import { Router } from "express";
 import { z } from "zod";
 import { Role } from "@prisma/client";
@@ -84,9 +84,10 @@ function logoUrl(logoFileId: string | null) {
 
 projectsRouter.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
-  const identity = await linkedIdentityUsers(auth.userId);
+  const identity = auth.impersonation ? { userIds: [auth.userId] } : await linkedIdentityUsers(auth.userId);
   const memberships = await prisma.projectMembership.findMany({
     where: {
+      ...(auth.impersonation ? { tenantId: auth.tenantId } : {}),
       userId: { in: identity.userIds },
       isActive: true,
       project: { isActive: true }
@@ -120,7 +121,7 @@ projectsRouter.post("/owned-organization", requireRoles("any"), validateBody(req
   const result = await prisma.$transaction(async (tx) => {
     const tenant = await tx.tenant.create({ data: {
       name: body.organization_name, slug: `org-${randomUUID()}`, currency: "BDT", plan: "free",
-      contact: { subscription: createThreeMonthTrial() }
+      contact: { subscription: createOneMonthTrial() }
     } });
     const owner = await tx.user.create({ data: { tenantId: tenant.id, name: actor.name,
       mobile: actor.mobile, email: actor.email, identityRootId: identity.rootId, deviceId: actor.deviceId } });
@@ -298,8 +299,9 @@ projectsRouter.post("/", authenticate, requireActiveSubscription, requireProject
 // Discovery can display a granted project's current logo without handing out an operational session.
 projectsRouter.get("/:id/logo", validateParams(idParamSchema), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
-  const identity = await linkedIdentityUsers(auth.userId);
+  const identity = auth.impersonation ? { userIds: [auth.userId] } : await linkedIdentityUsers(auth.userId);
   const access = await prisma.projectMembership.findFirst({ where: {
+    ...(auth.impersonation ? { tenantId: auth.tenantId } : {}),
     projectId: req.params.id, userId: { in: identity.userIds }, isActive: true, project: { isActive: true }
   } });
   if (!access) throw forbidden();
@@ -311,7 +313,7 @@ projectsRouter.get("/:id/logo", validateParams(idParamSchema), asyncHandler(asyn
   try {
     const object = await readObject(upload.storageKey);
     res.setHeader("Content-Type", upload.mimeType);
-    res.setHeader("Cache-Control", "private, max-age=300");
+    res.setHeader("Cache-Control", auth.impersonation ? "no-store" : "private, max-age=300");
     return res.send(object.buffer);
   } catch (error) {
     if (error instanceof StorageObjectNotFoundError) throw notFound("Project logo not found");

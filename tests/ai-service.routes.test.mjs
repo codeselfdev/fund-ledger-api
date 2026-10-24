@@ -14,10 +14,10 @@ const {aiServiceRouter}=await import('../dist/modules/ai-service/ai-service.rout
 const {assistantRouter}=await import('../dist/modules/assistant/assistant.routes.js');
 const {authenticate}=await import('../dist/core/security/auth.middleware.js');
 const {errorHandler}=await import('../dist/core/http/error-handler.js');
-const {renewTenantSubscription,createThreeMonthTrial}=await import('../dist/core/subscription/subscription.service.js');
+const {renewTenantSubscription,createOneMonthTrial}=await import('../dist/core/subscription/subscription.service.js');
 let server,base,roles,active,revoked,records,contact,connection,userMatches;
 const token=signAccessToken({sessionId:'session',userId:'user',tenantId:'tenant'});
-const activeContact=()=>renewTenantSubscription({subscription:createThreeMonthTrial()},new Date(),{package:'business',billing_cycle:'yearly'}).contact;
+const activeContact=()=>renewTenantSubscription({subscription:createOneMonthTrial()},new Date(),{package:'business',billing_cycle:'yearly'}).contact;
 function encrypt(text){const iv=randomBytes(12),key=createHash('sha256').update(process.env.WHATSAPP_CREDENTIALS_KEY).digest(),cipher=createCipheriv('aes-256-gcm',key,iv);const b=Buffer.concat([cipher.update(text),cipher.final()]);return[iv,cipher.getAuthTag(),b].map(x=>x.toString('base64')).join('.');}
 before(async()=>{
  prisma.session.findFirst=async({where})=>revoked||where.tokenHash!==hashToken(token)?null:{id:'session',userId:'user',tenantId:'tenant',activeProjectId:'project',user:{id:'user',isActive:active,lastActiveAt:new Date()}};
@@ -55,7 +55,7 @@ const request=(path,body,headers={})=>fetch(base+'/v1/ai-service'+path,{method:b
 test('context uses a live scoped session, project roles and current approval rules',async()=>{const r=await request('/context');assert.equal(r.status,200);const c=(await r.json()).data;assert.equal(c.user_id,'user');assert.equal(c.project_id,'project');assert.equal(c.project_type,'fund_shares');assert.deepEqual(c.roles,['accountant']);assert.equal(c.policy.income,'accountant_only');assert.equal(c.policy.admin_deposit_finalize,true);assert.equal(c.whatsapp.group_id,'group');assert.equal(c.whatsapp.access_token,undefined);});
 test('all other roles, revoked sessions and inactive memberships are rejected',async()=>{for(const role of ['member','cashier','approver','auditor']){roles=[role];assert.equal((await request('/context')).status,403);}roles=['accountant'];revoked=true;assert.equal((await request('/context')).status,401);revoked=false;active=false;assert.equal((await request('/context')).status,401);});
 test('shared-key WhatsApp resolver is exact-group scoped, never public, and returns no permission for ambiguous phone matches',async()=>{const b={waba_id:'waba',phone_number_id:'phone',group_id:'group',sender:'8801700000000'};assert.equal((await request('/whatsapp/resolve',b)).status,403);let r=await request('/whatsapp/resolve',b,{'X-AI-Service-Key':process.env.AI_SERVICE_SHARED_SECRET});let data=(await r.json()).data;assert.equal(data.permitted,true);assert.equal(data.connection.access_token,'provider-secret');r=await request('/whatsapp/resolve',{...b,group_id:'other'},{'X-AI-Service-Key':process.env.AI_SERVICE_SHARED_SECRET});assert.equal((await r.json()).data,null);userMatches=[{id:'one',memberships:[{role:'admin'}]},{id:'two',memberships:[{role:'admin'}]}];r=await request('/whatsapp/resolve',b,{'X-AI-Service-Key':process.env.AI_SERVICE_SHARED_SECRET});data=(await r.json()).data;assert.equal(data.permitted,false);assert.equal(data.user_id,null);});
-test('Free and Starter can use action context while WhatsApp keeps its Business entitlement',async()=>{contact={subscription:createThreeMonthTrial()};assert.equal((await request('/context')).status,200);const r=await request('/whatsapp/resolve',{waba_id:'waba',phone_number_id:'phone',group_id:'group',sender:'8801700000000'},{'X-AI-Service-Key':process.env.AI_SERVICE_SHARED_SECRET});assert.equal((await r.json()).data,null);});
+test('Free and Starter can use action context while WhatsApp keeps its Business entitlement',async()=>{contact={subscription:createOneMonthTrial()};assert.equal((await request('/context')).status,200);const r=await request('/whatsapp/resolve',{waba_id:'waba',phone_number_id:'phone',group_id:'group',sender:'8801700000000'},{'X-AI-Service-Key':process.env.AI_SERVICE_SHARED_SECRET});assert.equal((await r.json()).data,null);});
 test('quota reservations reuse request keys, reject changed input and are already completed so the legacy worker cannot execute them',async()=>{const b={request_key:'request-key',channel:'ai_chat',prompt_hash:'a'.repeat(64)};assert.equal((await request('/usage',b)).status,200);assert.equal((await request('/usage',b)).status,200);assert.equal(records.length,1);assert.equal(records[0].status,'completed');assert.equal((await request('/usage',{...b,prompt_hash:'b'.repeat(64)})).status,409);});
 
 test('Telegram resolver requires the bridge key, exact project group and verified Telegram identity',async()=>{
@@ -192,7 +192,7 @@ test('draft edits proxy exact rows for revalidation and persist editable errors 
 
 test('Free and Starter quotas reject service admission with the next plan before extraction',async()=>{
  for(const [plan,limit,next] of [['free',10,'Starter'],['starter',100,'Business']]){
-  contact=plan==='free'?{subscription:createThreeMonthTrial()}:renewTenantSubscription({subscription:createThreeMonthTrial()},new Date(),{package:'starter',billing_cycle:'monthly'}).contact;
+  contact=plan==='free'?{subscription:createOneMonthTrial()}:renewTenantSubscription({subscription:createOneMonthTrial()},new Date(),{package:'starter',billing_cycle:'monthly'}).contact;
   assert.equal((await request('/context')).status,200);
   records=Array.from({length:limit},(_,i)=>({requestKey:'previous-'+i,status:i===0?'failed':'completed'}));
   const response=await request('/usage',{request_key:'over-limit-'+plan,channel:'ai_chat',prompt_hash:'a'.repeat(64)});

@@ -35,11 +35,11 @@ Onboarding is tracked in a dedicated DB table (`onboarding_progress`) and has **
 3. Bank/cash account setup
 4. Shareholder member setup (share allocation)
 
-Every new org gets **3 calendar months free**, then one-year renewal after operator approval of a submitted manual payment.
+Every new org gets **1 calendar month free**, then one-year renewal after operator approval of a submitted manual payment.
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| POST | `/v1/onboarding/signup` | public | Step 1: create org + owner + initial project + 3-month trial; returns token. Accepts Google or Firebase phone `id_token`. Google signup does not require `owner_mobile`. |
+| POST | `/v1/onboarding/signup` | public | Step 1: create org + owner + initial project + 1-month trial; returns token. Accepts Google or Firebase phone `id_token`. Google signup does not require `owner_mobile`. |
 | GET | `/v1/onboarding/status` | any | Current onboarding step states, approval flow, and completion status |
 | POST | `/v1/onboarding/organization` | owner | Update organization/project details and complete the organization step (`/project` is a compatibility alias) |
 | POST | `/v1/onboarding/accounting` | owner | Step 2: assign accountant and set approval flow (`accountant_only` / `accountant_and_approver`) for income & expense |
@@ -58,7 +58,7 @@ When a tenant subscription expires, operational APIs are blocked for all tenant 
 
 | Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
-| POST | `/v1/tenants` | api_key | Provision tenant, first owner, default project, default cash account, and subscription trial (three calendar months by default; optional `trial_days` override) |
+| POST | `/v1/tenants` | api_key | Provision tenant, first owner, default project, default cash account, and subscription trial (one calendar month by default; optional `trial_days` override) |
 | GET | `/v1/tenants/current` | any | Current tenant details |
 | PATCH | `/v1/tenants/current` | owner | Update tenant branding, contact, locale, currency |
 | GET | `/v1/projects` | any | Projects accessible to caller |

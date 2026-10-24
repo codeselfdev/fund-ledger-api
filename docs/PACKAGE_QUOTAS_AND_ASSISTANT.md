@@ -4,7 +4,7 @@ Quotas apply to the whole organization, across all projects. Each active uploade
 
 | Package | BDT monthly / yearly | Projects | Users & members | Documents |
 | --- | --- | ---: | ---: | ---: |
-| Free Trial | Free for 3 calendar months | 2 | Unlimited | 100 |
+| Free Trial | Free for 1 calendar month | 2 | Unlimited | 100 |
 | Starter | 1,000 / 10,000 | 6 | 20 | 1,000 |
 | Business | 5,000 / 50,000 | 20 | 500 | 15,000 |
 | Custom | Contact support | Negotiated | Negotiated | Negotiated |

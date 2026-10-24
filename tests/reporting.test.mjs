@@ -151,8 +151,8 @@ test('scheduler respects local weekdays and author access and skips an existing 
  // Subscription service grants access only with a configured subscription; use a future trial.
  s.project.tenant.contact={subscription:{status:'trial',trial_ends_at:'2099-01-01T00:00:00.000Z'}};
  // Reuse the repository's actual trial shape.
- const { createThreeMonthTrial }=await import('../dist/core/subscription/subscription.service.js');
- s.project.tenant.contact={subscription:createThreeMonthTrial(new Date('2026-10-01T00:00:00Z'))};
+ const { createOneMonthTrial }=await import('../dist/core/subscription/subscription.service.js');
+ s.project.tenant.contact={subscription:createOneMonthTrial(new Date('2026-10-01T00:00:00Z'))};
  await runReportsWorker(new Date('2026-10-15T14:59:00Z'));assert.equal(slots.length,0);
  await runReportsWorker(new Date('2026-10-15T15:00:00Z'));assert.deepEqual(slots,['project:2026-10-15']);
  prisma.projectMembership.findFirst=async()=>null;slots=[];

@@ -42,7 +42,7 @@ Required:
 Optional:
   --admin-email <email>           recommended (OTP login emails)
   --currency <ISO>                default: BDT
-  --trial-days <n>                default: three calendar months
+  --trial-days <n>                default: one calendar month
   --project-name <name>           default: Default Project
   --total-shares <n>              default: 1
   --print-otp                     issue + print a one-time login code

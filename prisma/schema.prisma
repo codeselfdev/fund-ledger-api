@@ -511,6 +511,11 @@ model OtpCode {
 }
 
 model Session {
+  verifiedEmail          String? @map("verified_email")
+  impersonatorUserId     String? @map("impersonator_user_id")
+  impersonatorSessionId  String? @map("impersonator_session_id")
+  impersonationReason    String? @map("impersonation_reason")
+  impersonationPolicyHash String? @map("impersonation_policy_hash")
   id              String    @id @default(cuid())
   tenantId        String    @map("tenant_id")
   userId          String    @map("user_id")
@@ -524,6 +529,7 @@ model Session {
 
   @@index([tenantId, userId])
   @@index([tokenHash])
+  @@index([impersonatorSessionId])
   @@map("sessions")
 }
 

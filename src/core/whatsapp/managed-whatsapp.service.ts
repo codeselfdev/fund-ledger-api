@@ -18,12 +18,12 @@ async function entitlement(scope: Pick<Scope, 'tenantId' | 'projectId'>) {
   return hasBusinessAssistant(tenant.contact);
 }
 
-export async function managedWhatsAppSetup(scope: Pick<Scope, 'tenantId' | 'projectId'>) {
+export async function managedWhatsAppSetup(scope: Pick<Scope, 'tenantId' | 'projectId'>, readOnly = false) {
   const [entitled, initial] = await Promise.all([
     entitlement(scope), prisma.whatsAppConnection.findFirst({ where: { tenantId: scope.tenantId, projectId: scope.projectId } }),
   ]);
   let connection = initial;
-  if (connection?.managedByFundNesta && connection.groupCreateRequestId && ['pending','unknown'].includes(connection.groupSetupStatus ?? '')) {
+  if (!readOnly && connection?.managedByFundNesta && connection.groupCreateRequestId && ['pending','unknown'].includes(connection.groupSetupStatus ?? '')) {
     await reconcileGroupCreation(connection.wabaId, connection.phoneNumberId, connection.groupCreateRequestId);
     connection = await prisma.whatsAppConnection.findFirst({ where: { tenantId: scope.tenantId, projectId: scope.projectId } });
   }

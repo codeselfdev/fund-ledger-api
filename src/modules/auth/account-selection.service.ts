@@ -12,13 +12,14 @@ export type AccountSelectionPayload = {
 type Selection = {
   expiresAt: number;
   projectId?: string;
+  verifiedEmail?: string | null;
   users: Array<{ id: string; tenantId: string; email: string | null; mobile: string; rootId: string }>;
 };
 const selections = new Map<string, Selection>();
 const SELECTION_TTL_MS = 5 * 60 * 1000;
 
 /** Only call after verifying the login identity; contact data alone is not proof. */
-export function createAccountSelection(users: LoginUser[], projectId?: string): AccountSelectionPayload {
+export function createAccountSelection(users: LoginUser[], projectId?: string, verifiedEmail?: string | null): AccountSelectionPayload {
   const now = Date.now();
   for (const [ticket, selection] of selections) {
     if (selection.expiresAt <= now) selections.delete(ticket);
@@ -28,6 +29,7 @@ export function createAccountSelection(users: LoginUser[], projectId?: string): 
   selections.set(ticket, {
     expiresAt,
     projectId,
+    verifiedEmail,
     users: users.map(user => ({
       id: user.id, tenantId: user.tenantId, email: user.email, mobile: user.mobile,
       rootId: user.identityRootId ?? user.id
@@ -58,7 +60,7 @@ export async function completeAccountSelection(ticket: string, accountId: string
       || user.mobile !== candidate.mobile || (user.identityRootId ?? user.id) !== candidate.rootId) {
       throw unauthorized("Your account has changed. Please sign in again.");
     }
-    return await issueLoginSession(user, selection.projectId);
+    return await issueLoginSession(user, selection.projectId, true, selection.verifiedEmail);
   } catch (error) {
     if (selection.expiresAt > Date.now()) selections.set(ticket, selection);
     throw error;

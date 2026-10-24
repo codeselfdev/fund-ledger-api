@@ -6116,7 +6116,7 @@
           "admin_name": { "type": "string", "minLength": 2 },
           "admin_mobile": { "type": "string", "minLength": 6 },
           "plan": { "$ref": "#/components/schemas/Plan" },
-          "trial_days": { "type": "integer", "minimum": 0, "maximum": 365, "default": 14 },
+          "trial_days": { "type": "integer", "minimum": 0, "maximum": 365, "description": "Optional day-based override. Omit for the default one calendar month trial." },
           "penalty_policy": { "$ref": "#/components/schemas/PenaltyPolicy" }
         }
       },

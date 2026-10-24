@@ -133,7 +133,7 @@ async function serviceRequest(req:import('express').Request,path:string,body?:un
   }
 }
 const upload=assistantUpload;
-const chatSchema=z.object({message:z.string().trim().min(1).max(2000),request_key:z.string().uuid()}).strict();
+const chatSchema=z.object({message:z.string().trim().min(1).max(2000),request_key:z.string().uuid(),reply_to_request_key:z.string().uuid().optional()}).strict();
 router.post('/events-ticket',asyncHandler(async(req,res)=>{
   const b=z.object({request_key:z.string().uuid()}).strict().parse(req.body);
   return ok(res,assistantEventTicket(requireProjectContext(req),b.request_key));
@@ -145,7 +145,13 @@ router.post('/chat',rateLimit({windowMs:60000,limit:12,keyGenerator:req=>require
   try {
   const result=await serviceRequest(req,'/chat',{...b,images},'POST',phase=>publishAssistantPhase(scope,phase));
   const row=await prisma.assistantReply.findUniqueOrThrow({where:{tenantId_channel_requestKey:{tenantId:a.tenantId,channel:'ai_chat',requestKey:`action:${b.request_key}`}}});
-  const attachments=await retainChatAttachments(a.tenantId,row.id,files);
+  let attachments=await retainChatAttachments(a.tenantId,row.id,files);
+  if(!attachments.length&&result&&typeof result==='object'&&'source_request_key' in result&&typeof result.source_request_key==='string'){
+    const context=await assistantContext(a.tenantId,a.projectId,a.userId);
+    const source=await prisma.assistantReply.findFirst({where:{tenantId:a.tenantId,projectId:a.projectId,userId:a.userId,channel:'ai_chat',requestKey:`action:${result.source_request_key}`,authorizationHash:context.authorization_hash},include:{attachments:{select:chatAttachmentSelection}}});
+    attachments=source?.attachments.length?source.attachments:source?.reply?JSON.parse(source.reply)?.source_attachments??[]:[];
+    (result as Record<string,unknown>).source_attachments=attachments;
+  }
   const saved=await prisma.assistantReply.update({where:{id:row.id},data:{prompt:b.message,reply:JSON.stringify(result)}});
   publishAssistantPhase(scope,'completed');
   return ok(res,{id:saved.id,message:saved.prompt,reply:null,status:'completed',request_key:b.request_key,created_at:saved.createdAt,attachments,action_result:result});
@@ -155,7 +161,7 @@ router.get('/messages',asyncHandler(async(req,res)=>{
   const a=requireProjectContext(req),context=await assistantContext(a.tenantId,a.projectId,a.userId);
   const {paged,...query}=await assistantHistoryQuery(prisma,{tenantId:a.tenantId,projectId:a.projectId,userId:a.userId,channel:'ai_chat',requestKey:{startsWith:'action:'},authorizationHash:context.authorization_hash,createdAt:{gt:new Date(Date.now()-90*86400000)}},req.query);
   const page=assistantHistoryWindow(await prisma.assistantReply.findMany({...query,include:{attachments:{select:chatAttachmentSelection}}}),paged);
-  const entries=page.rows.map(row=>{let result:unknown=null;try{result=JSON.parse(row.reply??'null');}catch{}return{id:row.id,message:row.prompt,reply:result?null:row.reply,status:row.status,request_key:row.requestKey.slice(7),created_at:row.createdAt,attachments:row.attachments,action_result:result};});
+  const entries=page.rows.map(row=>{let result:unknown=null;try{result=JSON.parse(row.reply??'null');}catch{}return{id:row.id,message:row.prompt,reply:result?null:row.reply,status:row.status,request_key:row.requestKey.slice(7),created_at:row.createdAt,attachments:row.attachments.length?row.attachments:(result as {source_attachments?:unknown[]}|null)?.source_attachments??[],action_result:result};});
   return ok(res,paged?{entries,next_cursor:page.next_cursor}:entries);
 }));
 router.post('/telegram/links',asyncHandler(async(req,res)=>ok(res,await startTelegramIdentityLink(requireProjectContext(req)))));

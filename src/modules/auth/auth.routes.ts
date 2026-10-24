@@ -15,6 +15,7 @@ import { authenticate, authenticateAccount, requireRoles } from "../../core/secu
 import { requireAuthContext } from "../../core/security/auth.context.js";
 import { hashToken } from "../../core/security/jwt.js";
 import { validateBody } from "../../core/validation/validate.js";
+import { switchImpersonationProject, stopImpersonation } from "./impersonation.service.js";
 import { findActiveUsersByEmail, findActiveUsersByMobile, issueLoginSession, resolveFirebaseIdentity, verifyOtp } from "./auth.service.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { buildGoogleAuthorizationUrl, handleGoogleOAuthCallback, resolveGoogleAuthTicket, sendOAuthResult, signupWithGoogleTicket } from "./google-oauth.service.js";
@@ -138,6 +139,7 @@ router.post("/login", rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHead
   const body = req.body as z.infer<typeof loginSchema>;
 
   let users;
+  let verifiedEmail: string | null = null;
   if (body.id_token) {
     let identity;
     try {
@@ -147,6 +149,7 @@ router.post("/login", rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHead
     }
 
     if (identity.provider === "google") {
+      if (identity.emailVerified === true) verifiedEmail = identity.email?.trim().toLowerCase() ?? null;
       users = await findActiveUsersByEmail(identity.email!, body.tenant_slug);
       if (users.length === 0) {
         const email = identity.email!.trim().toLowerCase();
@@ -184,6 +187,7 @@ router.post("/login", rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHead
   } else if (body.email) {
     const email = body.email.trim().toLowerCase();
     if (!await verifyOtp(`email:${email}`, body.otp)) throw unauthorized("Invalid or expired OTP");
+    verifiedEmail = email;
     const allUsers = await findActiveUsersByEmail(email);
     if (!allUsers.length) return ok(res, verifiedSignup({ provider: "email", email }));
     users = body.tenant_slug ? await findActiveUsersByEmail(email, body.tenant_slug) : allUsers;
@@ -202,12 +206,12 @@ router.post("/login", rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHead
 
   if (users.length === 0) throw unauthorized("Invalid login");
   if (users.length > 1) {
-    return ok(res, createAccountSelection(users, body.project_id));
+    return ok(res, createAccountSelection(users, body.project_id, verifiedEmail));
   }
 
   const user = users[0];
   if (!user) throw unauthorized("Invalid login");
-  const payload = await issueLoginSession(user, body.project_id);
+  const payload = await issueLoginSession(user, body.project_id, true, verifiedEmail);
 
   await writeAudit({
     tenantId: payload.tenant.id,
@@ -225,6 +229,7 @@ router.post("/switch-project", authenticateAccount, requireRoles("any"), validat
   const auth = requireAuthContext(req);
   const body = req.body as z.infer<typeof switchProjectSchema>;
 
+  if (auth.impersonation) return ok(res, await switchImpersonationProject(req, body.project_id));
   const identity = await linkedIdentityUsers(auth.userId);
   const membership = await prisma.projectMembership.findFirst({
     where: {
@@ -290,8 +295,8 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
       }
     })
   ]);
-  const identity = await linkedIdentityUsers(auth.userId);
-  const allMemberships = await prisma.projectMembership.findMany({ where: { userId: { in: identity.userIds }, isActive: true, project: { isActive: true } }, include: { project: true } });
+  const identity = auth.impersonation ? { rootId: auth.userId, userIds: [auth.userId] } : await linkedIdentityUsers(auth.userId);
+  const allMemberships = await prisma.projectMembership.findMany({ where: { ...(auth.impersonation ? { tenantId: auth.tenantId } : {}), userId: { in: identity.userIds }, isActive: true, project: { isActive: true } }, include: { project: true } });
   const canPayForMembersByRole = auth.roles.includes("admin") || auth.roles.includes("accountant") || auth.roles.includes("cashier");
   const canPayForMembers = canPayForMembersByRole || (
     auth.projectId ? hasDelegatedPayerAccess(user.tenant.contact, auth.projectId, auth.userId) : false
@@ -305,6 +310,7 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
   const subscription = evaluateSubscription(user.tenant.contact);
 
   return ok(res, {
+    ...(auth.impersonation ? { impersonation: { read_only: true, expires_at: auth.impersonation.expiresAt, target_email: user.email } } : {}),
     user: { id: user.id, name: user.name, mobile: user.mobile, email: user.email },
     tenant: { id: user.tenant.id, name: user.tenant.name, slug: user.tenant.slug },
     active_project_id: auth.projectId,
@@ -326,6 +332,7 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
 
 router.post("/logout", authenticateAccount, requireRoles("any"), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
+  if (auth.impersonation) return ok(res, await stopImpersonation(req));
   const token = req.header("authorization")?.slice("Bearer ".length).trim();
 
   await prisma.session.updateMany({
@@ -346,6 +353,7 @@ router.post("/logout", authenticateAccount, requireRoles("any"), asyncHandler(as
     entityId: auth.sessionId
   });
 
+  await prisma.session.updateMany({ where: { impersonatorSessionId: auth.sessionId, revokedAt: null }, data: { revokedAt: new Date() } });
   return ok(res, { revoked: true });
 }));
 

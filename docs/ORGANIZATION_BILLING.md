@@ -6,7 +6,7 @@ A nullable `users.identity_root_id` explicitly links accounts created through th
 
 `POST /v1/auth/switch-project` accepts `project_id`. Same-organization switching retains the existing token. Cross-organization switching verifies the explicit identity link and active target membership, then returns a new organization-scoped login payload with `token`, `user`, `tenant`, `identity_root_id`. Mobile must hydrate `/auth/me` using that new token and validate the identity root, target project, user, organization and membership before persisting. Role and member linkage come only from the target project's memberships. Switching back restores the original organization role. Clients must not send the old token to target operational APIs.
 
-New organizations receive three calendar months free (month-end dates are clamped), not a fixed 90-day approximation. Existing trial and paid-period records are retained. Expiry blocks operational APIs with 402. Billing, payment submission, discovery and switching remain available. No unpaid invoice is generated automatically: the operator issues one if a renewal payment is needed, choosing the yearly amount and instructions. Amounts are positive whole currency units; no hardcoded price.
+New organizations receive one calendar month free (month-end dates are clamped), not a fixed 30-day approximation. Existing trial and paid-period records are retained. Expiry blocks operational APIs with 402. Billing, payment submission, discovery and switching remain available. No unpaid invoice is generated automatically: the operator issues one if a renewal payment is needed, choosing the yearly amount and instructions. Amounts are positive whole currency units; no hardcoded price.
 
 ## Owner payment flow
 

@@ -4,13 +4,14 @@ import type { SignOptions } from "jsonwebtoken";
 import { env } from "../../config/env.js";
 
 export type AccessTokenPayload = {
+  impersonation?: true;
   sessionId: string;
   userId: string;
   tenantId: string;
 };
 
-export function signAccessToken(payload: AccessTokenPayload) {
-  const options: SignOptions = { expiresIn: env.jwtExpiresIn as SignOptions["expiresIn"] };
+export function signAccessToken(payload: AccessTokenPayload, expiresAt?: Date) {
+  const options: SignOptions = { expiresIn: expiresAt ? Math.max(1, Math.floor((expiresAt.getTime() - Date.now()) / 1000)) : env.jwtExpiresIn as SignOptions["expiresIn"] };
   return jwt.sign(payload, env.jwtSecret, options);
 }
 

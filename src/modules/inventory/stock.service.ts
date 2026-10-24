@@ -1,7 +1,7 @@
 import type { Prisma, StockMovementType } from '@prisma/client';
-import { badRequest, conflict, notFound } from '../../core/http/api-error.js';
+import { badRequest, conflict, forbidden, notFound } from '../../core/http/api-error.js';
 type Db = Prisma.TransactionClient;
-export type StockScope = { tenantId: string; projectId: string; userId?: string };
+export type StockScope = { tenantId: string; projectId: string; userId?: string; impersonation?: { actorUserId: string } };
 const scope = (auth: StockScope) => ({ tenantId: auth.tenantId, projectId: auth.projectId });
 export async function stockEnabled(db: Db, auth: StockScope) {
   const project = await db.project.findFirst({ where: { id: auth.projectId, tenantId: auth.tenantId } });
@@ -15,6 +15,7 @@ export async function stockLocation(db: Db, auth: StockScope, id?: string | null
     return row;
   }
   const existing = await db.inventoryLocation.findFirst({ where: { ...scope(auth), isDefault: true } });
+  if (!existing && auth.impersonation) throw forbidden('Inventory storage has not been initialized. View-only support access cannot create it.');
   return existing ?? db.inventoryLocation.create({ data: { ...scope(auth), name: 'Main store', isDefault: true } });
 }
 /** Legacy and imported opening quantities belong to Main store. Other locations

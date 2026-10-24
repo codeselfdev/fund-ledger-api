@@ -153,7 +153,7 @@ export async function buildProfessionalDocument(d: PrintableDocument, currency: 
   }
   tableHead();
   for (const [index, line] of documentLines.entries()) {
-    const description = configured ? [line.description, ...selectedItemDetails(line, p?.itemDetails, d.kind).map(v => `${v.label}: ${v.value}`)].join('\n') : [line.description, [shown(line.brand), hasValue(line.country) ? `Origin: ${line.country}` : ''].filter(hasValue).join(' | ')].filter(Boolean).join('\n');
+    const description = configured ? [line.description, ...selectedItemDetails(line, p?.itemDetails, d.kind, p?.includeItemDescription).map(v => `${v.label}: ${v.value}`)].join('\n') : [line.description, [shown(line.brand), hasValue(line.country) ? `Origin: ${line.country}` : ''].filter(hasValue).join(' | '), ...selectedItemDetails(line, null, d.kind, p?.includeItemDescription).map(v => `${v.label}: ${v.value}`)].filter(Boolean).join('\n');
     const cells = [String(index + 1), shown(line.item_code), shown(line.model), description, shown(line.unit), String(line.quantity), money(line.unit_price), money(line.line_total ?? Math.round(line.quantity * line.unit_price))];
     const wrapped = activeColumns.map(i => cells[i]).map((value, i) => value.split('\n').flatMap(v => wrap([{ text: v }], columns[i + 1] - columns[i] - 8, 8)));
     let offset = 0, count = Math.max(...wrapped.map(v => v.length));

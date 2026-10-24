@@ -307,3 +307,21 @@ test('a single email OTP cannot authorize concurrent login requests twice', asyn
  const replies=await Promise.all([1,2].map(()=>request('/auth/login',{email:'existing@example.com',otp:sent.body.data.dev_code})));
  assert.deepEqual(replies.map(r=>r.status).sort(),[200,401]);
 });
+
+test('only verified Google/email login proof is recorded for master access, never a phone login profile email', async () => {
+ const original = prisma.session.create, issued = [];
+ prisma.session.create = async ({data}) => { issued.push(data); return {id:'proof-session',...data}; };
+ try {
+  email='existing@example.com';
+  assert.equal((await request('/auth/login',{id_token:token})).status,200);
+  assert.equal(issued.at(-1).verifiedEmail,'existing@example.com');
+  assert.equal((await request('/auth/login',{email:'existing@example.com',otp:'123456'})).status,200);
+  assert.equal(issued.at(-1).verifiedEmail,'existing@example.com');
+  assert.equal((await request('/auth/login',{mobile,otp:'123456'})).status,200);
+  assert.equal(issued.at(-1).verifiedEmail,null);
+  addSecondAccount();
+  const selection=assertSelection(await request('/auth/login',{id_token:token}));
+  assert.equal((await request('/auth/select-account',{ticket:selection.ticket,account_id:'second-user'})).status,200);
+  assert.equal(issued.at(-1).verifiedEmail,'existing@example.com');
+ } finally { prisma.session.create=original; }
+});

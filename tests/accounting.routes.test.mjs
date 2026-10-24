@@ -448,3 +448,22 @@ for (const project of ['p', 'fund', 'billing', 'construction']) test(`income pos
  assert.ok(db.accounts.filter(a => a.id !== account_id).every(a => a.balance === 0));
  assert.equal(db.activity.filter(a => a.action === 'income.recorded').length, 1);
 });
+
+test('document Description is excluded by default and the explicit choice follows preview, edits and conversion',async()=>{
+ let settings=(await request('/accounting/document-settings')).body.data;
+ const itemDetails={quotation:['description','sku'],order:['description','sku'],sale:['description','sku']};
+ settings=(await request('/accounting/document-settings',{...settings,itemDetails},'admin','PUT')).body.data;
+ db.inventory[0].description='OPTIONALDESC';db.inventory[0].sku='KEEPSKU';
+ const lines=[{description:'Essential item name',item_id:'i',quantity:1,unit_price:1000}];
+ const defaults=await newDoc('quotation',{lines});assert.equal(defaults.presentationSnapshot.includeItemDescription,false);
+ const presentation={revision:settings.revision,terms:false,disclaimer:false,item_description:true};
+ const {request_key,...previewBody}=newBody('quotation',{lines,presentation});
+ const before=db.documents.length;const preview=await request('/accounting/documents/preview',previewBody);assert.equal(preview.status,200);assert.match(preview.body.data.html,/OPTIONALDESC/);assert.match(preview.body.data.html,/KEEPSKU/);assert.equal(db.documents.length,before);
+ assert.equal((await request('/accounting/documents/preview',{...previewBody,presentation:{...presentation,item_description:'yes'}})).status,400);
+ for(const include of [true,false]){
+  const quote=await newDoc('quotation',{lines,presentation:{...presentation,item_description:include}});assert.equal(quote.presentationSnapshot.includeItemDescription,include);
+  const {kind,request_key,...edit}=newBody('quotation',{lines,expected_revision:quote.revision,presentation:{...presentation,item_description:!include}});
+  const changed=await request(`/accounting/documents/${quote.id}`,edit,'admin','PATCH');assert.equal(changed.status,200);assert.equal(changed.body.data.presentationSnapshot.includeItemDescription,!include);
+  await action(quote,'send');await action(quote,'accept');const order=await convert(quote,'order');await action(order,'confirm');const invoice=await convert(order,'sale');assert.equal(invoice.presentationSnapshot.includeItemDescription,!include);assert.deepEqual(invoice.lines[0].item_details,quote.lines[0].item_details);
+ }
+});

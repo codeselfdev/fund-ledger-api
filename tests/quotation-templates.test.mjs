@@ -42,3 +42,13 @@ test('configured properties appear under descriptions in selected order for each
 test('long selected property values paginate safely and HTML previews escape markup',async()=>{
  const r=await buildProfessionalDocument({...data,lines:[{description:'Long specifications',quantity:1,unit_price:1000,item_details:[{key:'attributes.spec',label:'<Spec>',value:'<script>example</script> '+('detailed specification '.repeat(1500))}]}],presentationSnapshot:{version:1,profile,itemDetails:{quotation:['attributes.spec'],order:[],sale:[]},terms:{enabled:false,text:''},disclaimer:{enabled:false,text:''}}},'BDT','Company');assert.ok(r.pages>1);assert.match(r.html,/&lt;Spec&gt;/);assert.ok(!r.html.includes('<script>'));assert.ok(r.html.includes('1 / '+r.pages));
 });
+
+test('PDF Description choice affects only Description across all layouts and document kinds',async()=>{
+ for(const templateId of ['classic','executive','minimal','corporate','elegant']) for(const kind of ['quotation','order','sale']) for(const choice of [false,true,undefined]){
+  const itemDetails={quotation:['description','sku'],order:['description','sku'],sale:['description','sku']};
+  const line={description:'Essential item name',quantity:1,unit_price:1000,item_details:[{key:'description',label:'Description',value:'OPTIONALDESC'},{key:'sku',label:'SKU',value:'KEEPSKU'}]};
+  const result=await buildProfessionalDocument({...data,kind,lines:[line],presentationSnapshot:{version:1,templateId,profile,itemDetails,includeItemDescription:choice,terms:{enabled:false,text:''},disclaimer:{enabled:false,text:''}}},'BDT','Company');
+  assert.ok(result.pdf.subarray(0,5).equals(Buffer.from('%PDF-')));assert.equal(result.html.includes('OPTIONALDESC'),choice!==false);assert.match(result.html,/KEEPSKU/);assert.match(result.html,/Essential/);assert.match(result.html,/1,000.00/);
+ }
+ const legacy=await buildProfessionalDocument({...data,lines:[{description:'Item',quantity:1,unit_price:1000,item_code:'L-1',item_details:[{key:'description',label:'Description',value:'ADDEDDESC'}]}],presentationSnapshot:{version:1,profile,itemDetails:null,includeItemDescription:true,terms:{enabled:false,text:''},disclaimer:{enabled:false,text:''}}},'BDT','Company');assert.match(legacy.html,/ADDEDDESC/);assert.match(legacy.html,/L-1/);
+});

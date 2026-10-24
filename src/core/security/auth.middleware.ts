@@ -1,3 +1,4 @@
+import { validateImpersonatedRequest } from "./impersonation-policy.js";
 import { recordUserActivity } from "./client-activity.js";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import type { Role } from "@prisma/client";
@@ -39,6 +40,26 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
         throw unauthorized("Invalid or expired session");
       }
 
+      if (Boolean(payload.impersonation) !== Boolean(session.impersonatorSessionId)) throw unauthorized("Invalid support session");
+      const impersonation = session.impersonatorSessionId ? await validateImpersonatedRequest(req, session) : undefined;
+      if (impersonation) {
+        // Fail closed if the access attempt cannot be audited before returning data.
+        await prisma.activity.create({ data: {
+          tenantId: session.tenantId, actorUserId: impersonation.actorUserId,
+          action: "support.impersonation.request", entityType: "support_impersonation", entityId: session.id,
+          after: { target_user_id: session.userId, parent_session_id: impersonation.parentSessionId,
+            method: req.method, path: req.originalUrl.split("?")[0] }
+        } });
+        _res.setHeader("Cache-Control", "no-store");
+        _res.once("finish", () => {
+          void prisma.activity.create({ data: {
+            tenantId: session.tenantId, actorUserId: impersonation.actorUserId,
+            action: "support.impersonation.request_completed", entityType: "support_impersonation", entityId: session.id,
+            after: { target_user_id: session.userId, parent_session_id: impersonation.parentSessionId,
+              method: req.method, path: req.originalUrl.split("?")[0], status: _res.statusCode }
+          } }).catch(() => console.error("Support access audit could not be recorded", session.id));
+        });
+      }
       const requestedProjectId = resolveProject ? (req.header("x-project-id") ?? session.activeProjectId) : null;
       let roles: Role[] = [];
       let memberId: string | null = null;
@@ -66,7 +87,7 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
 
         // Repair a missing link only for users explicitly assigned the member role.
         // Management/access roles must never create a financial Member record.
-        if (hasMemberRole && !memberId) {
+        if (hasMemberRole && !memberId && !impersonation) {
           const ensured = await prisma.$transaction((tx) => ensureUserProjectMember(tx, {
             tenantId: session.tenantId,
             projectId: requestedProjectId,
@@ -95,9 +116,10 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
         roles = effectiveProjectRoles(roles);
       }
 
-      await recordUserActivity(session.userId, session.user.lastActiveAt);
+      if (!impersonation) await recordUserActivity(session.userId, session.user.lastActiveAt);
 
       req.auth = {
+        ...(impersonation ? { impersonation } : {}),
         sessionId: session.id,
         userId: session.userId,
         tenantId: session.tenantId,

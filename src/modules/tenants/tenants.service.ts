@@ -4,7 +4,7 @@ import { Prisma, TenantPlan, ProjectType } from "@prisma/client";
 import { prisma } from "../../core/prisma/client.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { createProvisionedOnboardingSeed } from "../../core/onboarding/onboarding.service.js";
-import { createTrialSubscription, createThreeMonthTrial, DEFAULT_TRIAL_DAYS } from "../../core/subscription/subscription.service.js";
+import { createTrialSubscription, createOneMonthTrial, DEFAULT_TRIAL_DAYS } from "../../core/subscription/subscription.service.js";
 import { ensureUserProjectMember } from "../../core/security/member-link.service.js";
 import { createSessionToken } from "../auth/auth.service.js";
 
@@ -76,7 +76,7 @@ async function provisionTenantOnce(input: ProvisionTenantInput): Promise<Provisi
     if (email && await tx.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } }, select: { id: true } })) {
       throw Object.assign(new Error("Email already registered"), { code: "EMAIL_TAKEN" });
     }
-    const contact = jsonValue({ subscription: input.trialDays === undefined ? createThreeMonthTrial() : createTrialSubscription(input.trialDays) });
+    const contact = jsonValue({ subscription: input.trialDays === undefined ? createOneMonthTrial() : createTrialSubscription(input.trialDays) });
     const onboarding = createProvisionedOnboardingSeed({ source });
 
     const tenant = await tx.tenant.create({

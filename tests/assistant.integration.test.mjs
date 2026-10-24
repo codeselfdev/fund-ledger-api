@@ -6,7 +6,7 @@ const url = process.env.QUOTA_TEST_DATABASE_URL;
 test('Business AI Chat and WhatsApp Bot integration', { skip: !url }, async t => {
   Object.assign(process.env, { DATABASE_URL: url, NODE_ENV: 'production', JWT_SECRET: 'assistant-isolated-secret', AI_CHAT_ENABLED: 'true', OPENAI_API_KEY: 'test-key-never-sent', OPENAI_CHAT_MODEL: 'test-model', WHATSAPP_ENABLED: 'true', WHATSAPP_APP_SECRET: 'test-meta-secret', WHATSAPP_WEBHOOK_VERIFY_TOKEN: 'test-verify' });
   const { prisma } = await import('../dist/core/prisma/client.js');
-  const { createThreeMonthTrial, renewTenantSubscription } = await import('../dist/core/subscription/subscription.service.js');
+  const { createOneMonthTrial, renewTenantSubscription } = await import('../dist/core/subscription/subscription.service.js');
   const { assistantStatus, reserveReply } = await import('../dist/modules/assistant/assistant.service.js');
   const { assistantContext } = await import('../dist/modules/assistant/assistant.context.js');
   const { monthlyPeriod } = await import('../dist/modules/assistant/assistant.policy.js');
@@ -32,7 +32,7 @@ test('Business AI Chat and WhatsApp Bot integration', { skip: !url }, async t =>
   };
   const prefix = `assistant-test-${randomUUID()}`, orgs = [];
   async function org(plan = 'business', paid = true) {
-    const trial = { subscription: createThreeMonthTrial() };
+    const trial = { subscription: createOneMonthTrial() };
     const contact = paid ? renewTenantSubscription(trial, new Date(), { package: plan, billing_cycle: 'yearly' }).contact : { subscription: { ...trial.subscription, package: plan } };
     const tenant = await prisma.tenant.create({ data: { name: prefix, slug: `${prefix}-${orgs.length}`, contact } }); orgs.push(tenant.id);
     const project = await prisma.project.create({ data: { tenantId: tenant.id, name: 'Authorized project', totalShares: 1 } });

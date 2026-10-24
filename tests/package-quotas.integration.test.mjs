@@ -11,7 +11,7 @@ test('organization package enforcement against PostgreSQL', { skip: !url }, asyn
   process.env.UPLOAD_STORAGE = 'local';
   process.env.UPLOAD_LOCAL_DIR = `/tmp/fundledger-retention-test-${process.pid}`;
   const { prisma } = await import('../dist/core/prisma/client.js');
-  const { createThreeMonthTrial, evaluateSubscription, renewTenantSubscription } = await import('../dist/core/subscription/subscription.service.js');
+  const { createOneMonthTrial, evaluateSubscription, renewTenantSubscription } = await import('../dist/core/subscription/subscription.service.js');
   const { tenantQuota, assertPersonCapacity } = await import('../dist/core/subscription/quota.service.js');
   const { freeDocumentsPurgeAt } = await import('../dist/core/subscription/document-retention.js');
   const { selectPackage } = await import('../dist/modules/subscription/package-selection.service.js');
@@ -20,7 +20,7 @@ test('organization package enforcement against PostgreSQL', { skip: !url }, asyn
   const orgs = [];
   async function org(plan = 'free') {
     const id = `${prefix}-${orgs.length}`;
-    const row = await prisma.tenant.create({ data: { id, name: id, slug: id, contact: { subscription: { ...createThreeMonthTrial(), package: plan } } } }); orgs.push(id); return row;
+    const row = await prisma.tenant.create({ data: { id, name: id, slug: id, contact: { subscription: { ...createOneMonthTrial(), package: plan } } } }); orgs.push(id); return row;
   }
   const project = tenantId => prisma.project.create({ data: { tenantId, name: 'Test project', totalShares: 1000 } });
   const user = (tenantId, mobile = randomUUID()) => prisma.user.create({ data: { tenantId, name: 'Test user', mobile } });
@@ -149,18 +149,18 @@ test('organization package enforcement against PostgreSQL', { skip: !url }, asyn
         await assert.rejects(readObject(removed.storageKey));
         // Free data expires three calendar months after trial end; paid legacy data is protected.
         const free = await org(), fp = await project(free.id), fu = await user(free.id);
-        const contact = { subscription: createThreeMonthTrial(new Date('2025-01-01')) };
+        const contact = { subscription: createOneMonthTrial(new Date('2025-01-01')) };
         await prisma.tenant.update({ where: { id: free.id }, data: { contact } });
         const key = `${free.id}/backup.pdf`; await storeObject({ storageKey: key, buffer: Buffer.from('backup'), contentType: 'application/pdf' });
         await prisma.upload.create({ data: document(free.id, fp.id, fu.id, { storageKey: key }) });
-        await cleanupRetainedDocuments(new Date('2025-06-30')); await readObject(key);
-        await cleanupRetainedDocuments(new Date('2025-07-01'));
+        await cleanupRetainedDocuments(new Date('2025-04-30')); await readObject(key);
+        await cleanupRetainedDocuments(new Date('2025-05-01'));
         assert.equal((await tenantQuota(free.id)).documents.used, 0); await assert.rejects(readObject(key));
       } finally { await new Promise(resolve => server.close(resolve)); }
     });
     await t.test('calendar billing clamps month ends, preserves prepaid time, and cleanup excludes legacy paid subscriptions', async () => {
-      const trial = { subscription: createThreeMonthTrial(new Date('2026-01-31T12:00:00Z')) };
-      assert.equal(freeDocumentsPurgeAt(trial).toISOString(), '2026-07-30T12:00:00.000Z');
+      const trial = { subscription: createOneMonthTrial(new Date('2026-01-31T12:00:00Z')) };
+      assert.equal(freeDocumentsPurgeAt(trial).toISOString(), '2026-05-28T12:00:00.000Z');
       const paid = renewTenantSubscription(trial, new Date('2026-01-31T12:00:00Z'), { package: 'starter', billing_cycle: 'monthly' });
       assert.equal(paid.subscription.current_period_end_at, '2026-02-28T12:00:00.000Z');
       assert.equal(evaluateSubscription(paid.contact, new Date('2026-02-01')).status, 'active');

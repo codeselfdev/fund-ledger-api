@@ -17,7 +17,7 @@ const { platformBillingRouter } = await import('../dist/modules/subscription/pla
 const { tenantsRouter } = await import('../dist/modules/tenants/tenants.routes.js');
 const { authenticate, requireProject, requireRoles } = await import('../dist/core/security/auth.middleware.js');
 const { signAccessToken, hashToken, verifyAccessToken } = await import('../dist/core/security/jwt.js');
-const { createThreeMonthTrial, createTrialSubscription, evaluateSubscription, renewTenantSubscription } = await import('../dist/core/subscription/subscription.service.js');
+const { createOneMonthTrial, createTrialSubscription, evaluateSubscription, renewTenantSubscription } = await import('../dist/core/subscription/subscription.service.js');
 const { issueLoginSession, findActiveUsersByEmail } = await import('../dist/modules/auth/auth.service.js');
 let users, tenants, projects, memberships, sessions, members, accounts, progress, audits, nextId, server, base;
 const copy = value => structuredClone(value);
@@ -45,7 +45,7 @@ function userRow(row) {
 function reset(role = 'member') {
   nextId = 0; sessions = []; members = []; accounts = []; progress = []; audits = [];
   users = [{ id: 'original-user', tenantId: 'original-org', identityRootId: null, name: 'Member', mobile: '+8801711000001', email: 'member@example.test', isActive: true, deviceId: null }];
-  tenants = [{ id: 'original-org', slug: 'original', name: 'Original', plan: 'free', contact: { subscription: createThreeMonthTrial() }, updatedAt: new Date(1) }];
+  tenants = [{ id: 'original-org', slug: 'original', name: 'Original', plan: 'free', contact: { subscription: createOneMonthTrial() }, updatedAt: new Date(1) }];
   projects = [{ id: 'original-project', tenantId: 'original-org', name: 'Original', projectType: 'fund_shares', totalShares: 10, portalSettings: null, logoFileId: null, isActive: true }];
   memberships = [{ id: 'original-membership', tenantId: 'original-org', projectId: 'original-project', userId: 'original-user', role, memberId: role === 'member' ? 'original-member' : null, isActive: true }];
 }
@@ -154,10 +154,16 @@ test('linked login deduplicates identity without merging unrelated accounts shar
   const login = await issueLoginSession(userRow(users[0]), own.id); assert.equal(login.tenant.id, own.tenantId); assert.equal(login.identity_root_id, 'original-user'); assert.equal(login.memberships.length, 2);
   users.push({ ...users[0], id: 'unrelated', identityRootId: null }); matches = await findActiveUsersByEmail('member@example.test'); assert.equal(matches.length, 2);
 });
-test('trial uses three calendar months, clamps month ends, and never changes existing trials', () => {
-  assert.equal(createThreeMonthTrial(new Date('2026-01-31T12:00:00Z')).trial_ends_at, '2026-04-30T12:00:00.000Z');
-  assert.equal(createThreeMonthTrial(new Date('2026-10-11T10:00:00Z')).trial_ends_at, '2027-01-11T10:00:00.000Z');
-  const contact = { subscription: createThreeMonthTrial(new Date('2026-01-31T12:00:00Z')) };
+test('trial uses one calendar month, clamps month ends, and never changes existing trials', () => {
+  assert.equal(createOneMonthTrial(new Date('2026-01-31T12:00:00Z')).trial_ends_at, '2026-02-28T12:00:00.000Z');
+  assert.equal(createOneMonthTrial(new Date('2026-10-11T10:00:00Z')).trial_ends_at, '2026-11-11T10:00:00.000Z');
+  assert.equal(createOneMonthTrial(new Date('2028-01-31T12:00:00Z')).trial_ends_at, '2028-02-29T12:00:00.000Z');
+  assert.equal(createOneMonthTrial(new Date('2026-12-31T12:00:00Z')).trial_ends_at, '2027-01-31T12:00:00.000Z');
+  const legacy = { subscription: { ...createOneMonthTrial(new Date('2026-01-31T12:00:00Z')), trial_ends_at: '2026-04-30T12:00:00.000Z' } };
+  const saved = structuredClone(legacy);
+  assert.equal(evaluateSubscription(legacy, new Date('2026-03-15')).has_access, true);
+  assert.deepEqual(legacy, saved);
+  const contact = { subscription: createOneMonthTrial(new Date('2026-01-31T12:00:00Z')) };
   assert.equal(evaluateSubscription(contact, new Date('2026-05-01')).has_access, false);
   assert.equal(renewTenantSubscription({ subscription: { renewal_term_years: 4 } }, new Date('2028-02-29T12:00:00Z')).subscription.current_period_end_at, '2029-02-28T12:00:00.000Z');
 });

@@ -1,3 +1,4 @@
+import { impersonationRouter } from "./modules/auth/impersonation.routes.js";
 import { contactPersonsRouter } from './modules/contact-persons/contact-persons.routes.js';
 import { recurringExpensesRouter } from './modules/expenses/recurring-expenses.routes.js';
 import { businessSetupRouter } from './modules/business-setup/business-setup.routes.js';
@@ -59,6 +60,7 @@ import { assistantRouter } from "./modules/assistant/assistant.routes.js";
 export function registerRoutes(app: Express) {
   app.use("/v1/ai-service", aiServiceRouter);
   app.use("/v1/internal", internalRouter);
+  app.use("/v1/support/impersonation", impersonationRouter);
   app.use("/v1/support", supportRouter);
   app.use("/v1/platform/billing", platformBillingRouter);
   app.use("/v1/tenants", tenantsRouter);

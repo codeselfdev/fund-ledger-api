@@ -7,9 +7,9 @@ export const sectionSchema = z.object({ enabled: z.boolean(), text: z.string().m
 export const profileSchema = z.object({ name: z.string().trim().min(2).max(160), address: z.string().max(500), phone: z.string().max(80), email: z.string().max(200), website: z.string().max(250).refine(v => !v || /^https?:\/\/[^\s]+$/i.test(v), 'Use a complete https:// website URL'), footer: z.string().max(300) }).strip();
 export const templateIds = ['classic', 'executive', 'minimal', 'corporate', 'elegant'] as const;
 export const settingsSchema = z.object({ revision: z.number().int().nonnegative(), prefixRevision: z.number().int().nonnegative(), templateId: z.enum(templateIds).default('classic'), accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().default(null), itemDetails: itemDetailsSchema.nullable().optional(), prefix: z.string().trim().regex(/^[A-Za-z0-9]{1,3}$/).transform(v => v.toUpperCase()), profile: profileSchema, terms: sectionSchema, disclaimer: sectionSchema }).strict();
-export const selectionSchema = z.object({ revision: z.number().int().nonnegative(), terms: z.boolean(), disclaimer: z.boolean(), terms_text: z.string().max(16000).optional(), disclaimer_text: z.string().max(16000).optional() }).strict();
+export const selectionSchema = z.object({ item_description: z.boolean().optional(), revision: z.number().int().nonnegative(), terms: z.boolean(), disclaimer: z.boolean(), terms_text: z.string().max(16000).optional(), disclaimer_text: z.string().max(16000).optional() }).strict();
 export type DocumentSettings = z.infer<typeof settingsSchema>;
-export type DocumentPresentation = { version: 1; itemDetails?: ItemDetails | null; profile: DocumentSettings['profile']; terms: z.infer<typeof sectionSchema>; disclaimer: z.infer<typeof sectionSchema>; settingsRevision: number; preparedByName: string; preparedBy?: { id: string; name: string; designation: string; mobile: string; email: string }; templateId?: typeof templateIds[number]; accentColor?: string | null; logoFileId?: string | null };
+export type DocumentPresentation = { includeItemDescription?: boolean; version: 1; itemDetails?: ItemDetails | null; profile: DocumentSettings['profile']; terms: z.infer<typeof sectionSchema>; disclaimer: z.infer<typeof sectionSchema>; settingsRevision: number; preparedByName: string; preparedBy?: { id: string; name: string; designation: string; mobile: string; email: string }; templateId?: typeof templateIds[number]; accentColor?: string | null; logoFileId?: string | null };
 export type Scope = { tenantId: string; projectId: string; userId?: string };
 export async function getDocumentSettings(db: Prisma.TransactionClient, auth: Scope): Promise<DocumentSettings> {
   const [project, tenant] = await Promise.all([db.project.findFirst({ where: { id: auth.projectId, tenantId: auth.tenantId } }), db.tenant.findFirst({ where: { id: auth.tenantId } })]);
@@ -42,6 +42,10 @@ export async function documentPresentation(db: Prisma.TransactionClient, auth: S
     result.preparedBy = { id: user?.id ?? '', name: user?.name ?? '', designation: profile?.designation ?? '', mobile: profile?.mobile ?? user?.mobile ?? '', email: profile?.email ?? user?.email ?? '' };
     result.preparedByName = result.preparedBy.name;
   }
+  // New documents exclude the optional Description property. Preserve legacy snapshots.
+  if (selection?.item_description !== undefined) result.includeItemDescription = selection.item_description;
+  else if (old?.includeItemDescription !== undefined) result.includeItemDescription = old.includeItemDescription;
+  else if (old?.version !== 1) result.includeItemDescription = false;
   result.terms = { enabled: selection?.terms ?? result.terms.enabled, text: selection?.terms_text ?? result.terms.text };
   result.disclaimer = { enabled: selection?.disclaimer ?? result.disclaimer.enabled, text: selection?.disclaimer_text ?? result.disclaimer.text };
   if (result.terms.enabled && !result.terms.text.trim() || result.disclaimer.enabled && !result.disclaimer.text.trim()) throw badRequest('Add paragraph text before enabling this section');
