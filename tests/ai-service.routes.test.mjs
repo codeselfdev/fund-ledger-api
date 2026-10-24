@@ -91,8 +91,9 @@ test('app chat forwards real service progress, saves the final result and propag
    if(url.origin!=='http://127.0.0.1:4010')return originalFetch(input,options);
    if(url.pathname==='/session')return Response.json(options?.method==='DELETE'?{}:{token:'test-service-session'});
    assert.equal(url.pathname,'/chat');assert.equal(url.searchParams.get('progress'),'1');
+   if(mode==='source')assert.equal(JSON.parse(options.body).reply_to_request_key,'223e4567-e89b-42d3-a456-426614174000');
    if(mode==='legacy')return Response.json({status:'completed',reply:'Old service response'});
-   const events=[{type:'progress',phase:'checking_access'},{type:'progress',phase:'reading_records'},mode==='success'?{type:'result',result:{status:'completed',reply:'Your balances'}}:{type:'error',error:{code:'AI_BILLING_REQUIRED',message:'AI provider has no remaining credit.'}}];
+   const events=[{type:'progress',phase:'checking_access'},{type:'progress',phase:'reading_records'},['success','source'].includes(mode)?{type:'result',result:{status:'completed',reply:'Your balances',...(mode==='source'?{source_request_key:'223e4567-e89b-42d3-a456-426614174000'}:{})}}:{type:'error',error:{code:'AI_BILLING_REQUIRED',message:'AI provider has no remaining credit.'}}];
    return new Response(events.map(event=>JSON.stringify(event)).join('\n')+'\n',{headers:{'Content-Type':'application/x-ndjson'}});
  };
  try {
@@ -102,6 +103,8 @@ test('app chat forwards real service progress, saves the final result and propag
    assert.deepEqual(phases,['connecting','checking_access','reading_records','completed']);
    mode='billing';const failed=await request('/chat',{message:'balances',request_key:requestKey});assert.equal(failed.status,503);assert.equal((await failed.json()).error.code,'AI_BILLING_REQUIRED');
    if(!phases.includes('failed'))await once(ws,'message');assert.equal(phases.at(-1),'failed');
+   prisma.assistantReply.findFirst=async({where})=>{assert.equal(where.tenantId,'tenant');assert.equal(where.projectId,'project');assert.equal(where.userId,'user');assert.equal(where.requestKey,'action:223e4567-e89b-42d3-a456-426614174000');assert.ok(where.authorizationHash);return{attachments:[{id:'source-proof',fileName:'receipt.png',mimeType:'image/png',size:100}]};};
+   mode='source';const sourced=await request('/chat',{message:'Add expense',request_key:requestKey,reply_to_request_key:'223e4567-e89b-42d3-a456-426614174000'});assert.equal(sourced.status,200);const sourceData=(await sourced.json()).data;assert.equal(sourceData.attachments[0].id,'source-proof');assert.equal(sourceData.action_result.source_attachments[0].id,'source-proof');
    mode='legacy';const legacy=await request('/chat',{message:'balances',request_key:requestKey});assert.equal((await legacy.json()).data.action_result.reply,'Old service response');
    roles=['member'];assert.equal((await request('/events-ticket',{request_key:requestKey})).status,403);
    roles=['accountant'];revoked=true;assert.equal((await request('/events-ticket',{request_key:requestKey})).status,401);

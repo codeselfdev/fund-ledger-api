@@ -20,6 +20,7 @@ import { platformAlerts, retryPlatformAlert } from "./alerts.service.js";
 import { deletionRequests, deletionRequest, reviewDeletionRequest, deletionPreview, executeAccountDeletion } from './account-deletion.service.js';
 import { billingRequests, billingRequestCounts } from './billing-requests.service.js';
 import { broadcastDraftSchema, broadcastSendSchema, platformBroadcasts } from './platform-broadcasts.service.js';
+import { aiCreditGrantSchema, grantAiCredits, aiCreditTenants, aiCreditHistory } from './ai-credits.service.js';
 const router = Router();
 router.use(requireInternalApiKey, rateLimit({ windowMs: 60000, limit: 120, standardHeaders: true, legacyHeaders: false }));
 const page = z.object({ offset: z.coerce.number().int().min(0).max(100000).default(0), search: z.string().trim().max(120).optional() });
@@ -69,6 +70,16 @@ router.post("/alerts/:id/read", asyncHandler(async (req, res) => { internalActor
     throw notFound("Alert not found"); return ok(res, { read: true }); }));
 router.post("/alerts/:id/retry", asyncHandler(async(req,res) => { internalActor(req); return ok(res,await retryPlatformAlert(String(req.params.id))); }));
 router.get("/summary", asyncHandler(async (_req, res) => ok(res, await overallUsage())));
+router.get('/ai-credits', asyncHandler(async (req, res) => {
+    const q = page.parse(req.query);
+    return ok(res, await aiCreditTenants(q.offset, q.search));
+}));
+router.get('/tenants/:id/ai-credits', asyncHandler(async (req, res) => {
+    const q = page.parse(req.query);
+    return ok(res, await aiCreditHistory(String(req.params.id), q.offset));
+}));
+router.post('/tenants/:id/ai-credits', asyncHandler(async (req, res) =>
+    ok(res, await grantAiCredits(String(req.params.id), aiCreditGrantSchema.parse(req.body), internalActor(req)))));
 router.get("/tenants", asyncHandler(async (req, res) => { const q = page.parse(req.query); return ok(res, await tenantSummaries(q.offset, q.search)); }));
 router.get("/tenants/:id", asyncHandler(async (req, res) => {
     const tenant = await prisma.tenant.findUnique({ where: { id: String(req.params.id) } });

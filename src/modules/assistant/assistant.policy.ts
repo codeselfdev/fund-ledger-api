@@ -15,7 +15,7 @@ export function allowancePeriod(contact: unknown, now = new Date()) {
   if (date && date > period.start && date <= now) period.start = date;
   return period;
 }
-export function featureLimit(channel: AssistantChannel, contact?: unknown) {
+export function baseFeatureLimit(channel: AssistantChannel, contact?: unknown) {
   const plan = contact === undefined ? "business" : packageId(contact);
   if (channel === "ai_chat" && plan === "free") return 10;
   if (channel === "ai_chat" && plan === "starter") return 100;
@@ -23,10 +23,20 @@ export function featureLimit(channel: AssistantChannel, contact?: unknown) {
   const configured = Number(process.env[channel === "ai_chat" ? "BUSINESS_AI_REPLIES_PER_MONTH" : "BUSINESS_WHATSAPP_REPLIES_PER_MONTH"] ?? 1000);
   return Number.isSafeInteger(configured) && configured > 0 ? configured : 1000;
 }
+/** A platform grant applies only to the exact allowance period it was issued for. */
+export function extraFeatureCredits(channel: AssistantChannel, contact: unknown, now = new Date()) {
+  const grant = (contact as { ai_credit_extension?: { period_start?: string; ai_chat?: number; whatsapp_bot?: number } } | null)?.ai_credit_extension;
+  const credits = grant?.[channel];
+  return grant?.period_start === allowancePeriod(contact, now).start.toISOString() && Number.isSafeInteger(credits) && credits! > 0 && credits! <= 2147483647 ? credits! : 0;
+}
+export function featureLimit(channel: AssistantChannel, contact?: unknown, now = new Date()) {
+  return baseFeatureLimit(channel, contact) + extraFeatureCredits(channel, contact, now);
+}
 export function hasBusinessAssistant(contact: unknown, now = new Date()) {
   return packageId(contact) === "business" && evaluateSubscription(contact, now).status === "active";
 }
 export function hasAssistant(contact: unknown, channel: AssistantChannel = "ai_chat", now = new Date()) {
+  if (channel === "ai_chat" && packageId(contact) === "custom" && evaluateSubscription(contact, now).status === "active") return extraFeatureCredits(channel, contact, now) > 0;
   if (channel === "whatsapp_bot") return hasBusinessAssistant(contact, now);
   const plan = packageId(contact), subscription = evaluateSubscription(contact, now);
   return subscription.has_access && (plan === "free" || plan === "starter" && subscription.status === "active" || hasBusinessAssistant(contact, now));

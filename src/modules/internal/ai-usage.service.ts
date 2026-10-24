@@ -1,5 +1,5 @@
 import { prisma } from '../../core/prisma/client.js';
-import { allowancePeriod, CHANNELS, featureLimit } from '../assistant/assistant.policy.js';
+import { allowancePeriod, CHANNELS, featureLimit, baseFeatureLimit, extraFeatureCredits, hasAssistant } from '../assistant/assistant.policy.js';
 
 /** Counts the same admitted replies as quota enforcement, including queued/failed attempts. */
 export async function organizationAiUsage(tenants: Array<{ id: string; contact: unknown }>, db = prisma, now = new Date()) {
@@ -14,7 +14,10 @@ export async function organizationAiUsage(tenants: Array<{ id: string; contact: 
     const period = periods.get(t.id)!;
     const channels = Object.fromEntries(CHANNELS.map(channel => [channel, {
       used: current.find(row => row.tenantId === t.id && row.channel === channel)?._count ?? 0,
-      limit: featureLimit(channel, t.contact),
+      limit: featureLimit(channel, t.contact, now),
+      base_limit: baseFeatureLimit(channel, t.contact),
+      extra_credits: extraFeatureCredits(channel, t.contact, now),
+      enabled: hasAssistant(t.contact, channel, now),
     }]));
     return [t.id, { period_start: period.start.toISOString(), resets_at: period.end.toISOString(),
       used: Object.values(channels).reduce((sum, channel) => sum + channel.used, 0),

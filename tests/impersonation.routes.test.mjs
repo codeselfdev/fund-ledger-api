@@ -1,6 +1,12 @@
 import test, { before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+const privateImageTestRoot = await mkdtemp(join(tmpdir(), 'fundnesta-support-images-'));
+process.env.UPLOAD_STORAGE = 'local';
+process.env.UPLOAD_LOCAL_DIR = privateImageTestRoot;
 process.env.DATABASE_URL = 'postgresql://test:test@127.0.0.1:1/test';
 process.env.JWT_SECRET = 'isolated-impersonation-jwt-secret-only';
 process.env.MASTER_USER_EMAIL = 'master@example.test';
@@ -15,6 +21,9 @@ const { stockRouter } = await import('../dist/modules/inventory/stock.routes.js'
 const { inventoryRouter } = await import('../dist/modules/inventory/inventory.routes.js');
 const { whatsappRouter } = await import('../dist/modules/integrations/whatsapp.routes.js');
 const { activityRouter } = await import('../dist/modules/activity/activity.routes.js');
+const { assistantRouter } = await import('../dist/modules/assistant/assistant.routes.js');
+const { assistantContext } = await import('../dist/modules/assistant/assistant.context.js');
+const { storeObject } = await import('../dist/core/storage/object-storage.service.js');
 const { authenticate } = await import('../dist/core/security/auth.middleware.js');
 const { hashToken, signAccessToken, verifyAccessToken } = await import('../dist/core/security/jwt.js');
 const { errorHandler } = await import('../dist/core/http/error-handler.js');
@@ -87,12 +96,12 @@ before(async () => {
   prisma.onboardingProgress.findUnique = async () => null;
   prisma.activity.create = async ({ data }) => { const row = { ...copy(data), createdAt: new Date() }; activities.push(row); return row; };
   prisma.activity.count = async ({ where }) => activities.filter(a => matches(a, where)).length;
-  const app = express(); app.use(express.json()); app.use('/v1/support/impersonation', impersonationRouter); app.use('/v1/auth', authRouter); app.use('/v1/projects', projectsRouter); app.use('/v1/accounts', authenticate, accountsRouter); app.use('/v1/inventory', authenticate, stockRouter, inventoryRouter); app.use('/v1', authenticate, whatsappRouter, activityRouter);
+  const app = express(); app.use(express.json()); app.use('/v1/support/impersonation', impersonationRouter); app.use('/v1/auth', authRouter); app.use('/v1/projects', projectsRouter); app.use('/v1/accounts', authenticate, accountsRouter); app.use('/v1/inventory', authenticate, stockRouter, inventoryRouter); app.use('/v1/assistant', authenticate, assistantRouter); app.use('/v1', authenticate, whatsappRouter, activityRouter);
   app.get('/v1/protected', authenticate, (req, res) => res.json({ ok: true, data: req.auth }));
   app.post('/v1/protected', authenticate, (_req, res) => { mutationCount++; res.json({ ok: true }); });
   app.use(errorHandler); server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve)); base = `http://127.0.0.1:${server.address().port}`;
 });
-beforeEach(reset); after(async () => { await new Promise(resolve => server.close(resolve)); await prisma.$disconnect(); });
+beforeEach(reset); after(async () => { await new Promise(resolve => server.close(resolve)); await prisma.$disconnect(); await rm(privateImageTestRoot, { recursive: true, force: true }); });
 async function request(path, { token, body, origin = 'https://support.example.test', platform = 'web' } = {}) {
   const response = await fetch(base + path, { method: body === undefined ? 'GET' : 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...(origin ? { origin } : {}), 'x-client-platform': platform }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   return { status: response.status, body: await response.json() };
@@ -269,4 +278,34 @@ test('customer activity feeds exclude private support audit actors and reasons',
     assert.doesNotMatch(JSON.stringify(response.body), /Private master name|Investigating the support request/);
     assert.ok(activities.some(row => row.action === 'support.impersonation.started'));
   } finally { prisma.activity.findMany = original; }
+});
+
+test('private chat images can be viewed during support access while origin, account, project and revocation checks stay enforced', async () => {
+  const saved = { tenant: prisma.tenant.findUniqueOrThrow, due: prisma.due.aggregate, account: prisma.account.aggregate, member: prisma.member.count, expense: prisma.expense.groupBy, attachment: prisma.assistantAttachment.findFirst };
+  try {
+    prisma.tenant.findUniqueOrThrow = async ({ where }) => ({ ...tenants.find(t => t.id === where.id), currency: 'BDT' });
+    prisma.due.aggregate = async () => ({ _sum: {} });
+    prisma.account.aggregate = async () => ({ _sum: {} });
+    prisma.member.count = async () => 0;
+    prisma.expense.groupBy = async () => [];
+    const context = await assistantContext('target-org', 'p1', 'target');
+    const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6LZkAAAAASUVORK5CYII=', 'base64');
+    const file = { storageKey: 'target-org/assistant/support-image', mimeType: 'image/png' };
+    await storeObject({ storageKey: file.storageKey, buffer: image, contentType: file.mimeType });
+    prisma.assistantAttachment.findFirst = async ({ where }) => where.id === 'private-receipt' && where.tenantId === 'target-org' && where.reply.userId === 'target' && where.reply.projectId === 'p1' && where.reply.channel === 'ai_chat' && where.reply.OR[0].authorizationHash === context.authorization_hash ? file : null;
+    const { parent, login } = await start();
+    const headers = { Authorization: `Bearer ${login.token}`, Origin: 'https://support.example.test', 'X-Project-Id': 'p1', 'X-Client-Platform': 'web' };
+    const url = base + '/v1/assistant/attachments/private-receipt';
+    assert.equal((await fetch(url, { headers: { ...headers, 'X-Client-Platform': '' } })).status, 403);
+    const response = await fetch(url, { headers });
+    assert.equal(response.status, 200); assert.equal(response.headers.get('Content-Type'), 'image/png');
+    assert.match(response.headers.get('Cache-Control'), /no-store/); assert.deepEqual(Buffer.from(await response.arrayBuffer()), image);
+    assert.equal((await fetch(url, { headers: { ...headers, Origin: 'https://wrong.example.test' } })).status, 403);
+    assert.equal((await fetch(url, { headers: { ...headers, 'X-Project-Id': 'foreign-project' } })).status, 403);
+    assert.equal((await fetch(url, { headers: { ...headers, Authorization: `Bearer ${parent}`, 'X-Project-Id': 'master-project' } })).status, 404);
+    assert.equal((await request('/v1/protected', { token: login.token, body: { amount: 999 } })).status, 403);
+    await request('/v1/support/impersonation/stop', { token: parent, body: {} });
+    assert.equal((await fetch(url, { headers })).status, 401);
+    assert.equal(mutationCount, 0);
+  } finally { prisma.tenant.findUniqueOrThrow = saved.tenant; prisma.due.aggregate = saved.due; prisma.account.aggregate = saved.account; prisma.member.count = saved.member; prisma.expense.groupBy = saved.expense; prisma.assistantAttachment.findFirst = saved.attachment; }
 });

@@ -9,7 +9,7 @@ export async function assistantStatus(tenantId: string, now = new Date()) {
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { contact: true } });
     const period = allowancePeriod(tenant.contact, now);
     const usage = await prisma.assistantReply.groupBy({ by: ["channel"], where: { tenantId, periodStart: period.start, status: { not: "cancelled" } }, _count: true });
-    return { action_service_enabled: !!process.env.AI_SERVICE_URL, resets_at: period.end.toISOString(), upgrade_plan: assistantUpgrade(tenant.contact), features: Object.fromEntries(CHANNELS.map(channel => [channel, { enabled: hasAssistant(tenant.contact, channel, now), configured: !!process.env.AI_SERVICE_URL || (channel === "ai_chat" ? aiConfigured() : botConfigured()), used: usage.find(row => row.channel === channel)?._count ?? 0, limit: featureLimit(channel, tenant.contact) }])) };
+    return { action_service_enabled: !!process.env.AI_SERVICE_URL, resets_at: period.end.toISOString(), upgrade_plan: assistantUpgrade(tenant.contact), features: Object.fromEntries(CHANNELS.map(channel => [channel, { enabled: hasAssistant(tenant.contact, channel, now), configured: !!process.env.AI_SERVICE_URL || (channel === "ai_chat" ? aiConfigured() : botConfigured()), used: usage.find(row => row.channel === channel)?._count ?? 0, limit: featureLimit(channel, tenant.contact, now) }])) };
 }
 export async function reserveReply(input: {
     tenantId: string;
@@ -33,7 +33,7 @@ export async function reserveReply(input: {
         await tx.$queryRaw `SELECT id FROM tenants WHERE id = ${input.tenantId} FOR NO KEY UPDATE`;
         const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: input.tenantId } });
         const period = allowancePeriod(tenant.contact, now);
-        if (!hasAssistant(tenant.contact, input.channel))
+        if (!hasAssistant(tenant.contact, input.channel, now))
             throw new ApiError(403, "ASSISTANT_PLAN_REQUIRED", "An active eligible plan is required to use this assistant channel.");
         const key = { tenantId: input.tenantId, channel: input.channel, requestKey: input.requestKey };
         const existing = await tx.assistantReply.findUnique({ where: { tenantId_channel_requestKey: key } });
@@ -45,7 +45,7 @@ export async function reserveReply(input: {
             return existing;
         }
         const used = await tx.assistantReply.count({ where: { tenantId: input.tenantId, channel: input.channel, periodStart: period.start, status: { not: "cancelled" } } });
-        if (used >= featureLimit(input.channel, tenant.contact))
+        if (used >= featureLimit(input.channel, tenant.contact, now))
             throw new ApiError(429, "ASSISTANT_QUOTA_EXCEEDED", assistantQuotaMessage(tenant.contact));
         const data = { ...key, userId: input.userId, projectId: input.projectId, promptHash: hash, prompt: input.prompt, periodStart: period.start, status: "queued", leaseUntil: null, errorCode: null, recipient: input.recipient, connectionId: input.connectionId };
         return tx.assistantReply.create({ data: { ...data, attachments: { create: input.attachments?.map(f => ({ ...f, tenantId: input.tenantId })) ?? [] } } });
