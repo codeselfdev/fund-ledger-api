@@ -13,6 +13,7 @@ import { audit, head, boq, scope, sameRequest, financialTransaction, decide, pay
 import { constructionReport } from './construction.reports.js';
 import { constructionMenus } from './construction.menu.js';
 import { vendorsRouter } from '../vendors/vendors.routes.js';
+import { phaseRouter } from './construction.phases.js';
 import { siteRouter } from './construction.site.routes.js';
 const router = Router();
 const write = requireRoles('accountant');
@@ -24,6 +25,7 @@ router.use(requireProject, requireRoles('accountant', 'approver', 'auditor', 'ca
     next();
 }));
 router.use(siteRouter);
+router.use(phaseRouter);
 router.get('/configuration', asyncHandler(async (req, res) => { const a = requireProjectContext(req); const p = await prisma.project.findFirstOrThrow({ where: { id: a.projectId, tenantId: a.tenantId } }); return ok(res, { settings: { ...(p.constructionSettings as object ?? { building: p.name, site: p.address ?? '', financial_target: 0 }), total_shares: p.totalShares }, menus: constructionMenus(a.roles) }); }));
 router.put('/configuration', requireRoles('admin'), validateBody(settingsSchema), asyncHandler(async (req, res) => { const a = requireProjectContext(req), b = settingsSchema.parse(req.body); await financialTransaction(async (tx) => { if (b.total_shares !== undefined) {
     const shares = await tx.member.aggregate({ where: { ...scope(a), status: 'active' }, _sum: { shares: true } });
@@ -32,7 +34,14 @@ router.put('/configuration', requireRoles('admin'), validateBody(settingsSchema)
 } await tx.project.update({ where: { id: a.projectId }, data: { name: b.building, address: b.site, totalShares: b.total_shares, constructionSettings: json(b) } }); await audit(tx, a, 'settings.updated', 'project', a.projectId, b); }); return ok(res, b); }));
 router.get('/overview', asyncHandler(async (req, res) => ok(res, await constructionReport(requireProjectContext(req)))));
 router.get('/cost-heads', asyncHandler(async (req, res) => ok(res, await prisma.constructionCostHead.findMany({ where: scope(requireProjectContext(req)), orderBy: [{ phase: 'asc' }, { name: 'asc' }] }))));
-router.post('/cost-heads', write, validateBody(headSchema), asyncHandler(async (req, res) => { const a = requireProjectContext(req), b = headSchema.parse(req.body); const row = await financialTransaction(async (tx) => { const row = await tx.constructionCostHead.create({ data: { ...scope(a), name: b.name, phase: b.phase, category: b.category, budget: b.budget, revisedBudget: b.budget, forecastRemaining: b.forecast_remaining, createdById: a.userId } }); await audit(tx, a, 'budget.requested', 'construction_cost_head', row.id, row); return row; }); return created(res, row); }));
+router.post('/cost-heads', write, validateBody(headSchema), asyncHandler(async (req, res) => { const a = requireProjectContext(req), b = headSchema.parse(req.body); const row = await financialTransaction(async (tx) => { let phase = await tx.constructionPhase.findFirst({ where: { ...scope(a), ...(b.phase_id ? { id: b.phase_id } : { name: b.phase! }) } });
+if (!phase && b.phase_id) throw notFound('Construction phase not found');
+if (phase && b.phase && phase.name !== b.phase) throw badRequest('Phase name does not match the selected phase');
+if (!phase) {
+  phase = await tx.constructionPhase.create({ data: { ...scope(a), name: b.phase!, createdById: a.userId } });
+  await audit(tx, a, 'phase.created', 'construction_phase', phase.id, phase);
+}
+const row = await tx.constructionCostHead.create({ data: { ...scope(a), name: b.name, phase: phase.name, phaseId: phase.id, category: b.category, budget: b.budget, revisedBudget: b.budget, forecastRemaining: b.forecast_remaining, createdById: a.userId } }); await audit(tx, a, 'budget.requested', 'construction_cost_head', row.id, row); return row; }); return created(res, row); }));
 router.patch('/cost-heads/:id/forecast', write, validateBody(z.object({ forecast_remaining: money }).strict()), asyncHandler(async (req, res) => { const a = requireProjectContext(req); const row = await financialTransaction(async (tx) => { const h = await head(tx, a, req.params.id); const row = await tx.constructionCostHead.update({ where: { id: h.id }, data: { forecastRemaining: req.body.forecast_remaining } }); await audit(tx, a, 'forecast.updated', 'construction_cost_head', h.id, row); return row; }); return ok(res, row); }));
 router.get('/boq', asyncHandler(async (req, res) => { const a = requireProjectContext(req); const rows = await prisma.constructionBoq.findMany({ where: scope(a), include: { costHead: true }, orderBy: { createdAt: 'desc' } }); return ok(res, rows.map(row => ({ ...row, quantity: Number(row.quantity) }))); }));
 router.post('/boq', write, validateBody(boqSchema), asyncHandler(async (req, res) => { const a = requireProjectContext(req), b = boqSchema.parse(req.body); const row = await financialTransaction(async (tx) => { await head(tx, a, b.cost_head_id); const row = await tx.constructionBoq.create({ data: { ...scope(a), costHeadId: b.cost_head_id, name: b.name, unit: b.unit, quantity: b.quantity, rate: b.rate, estimated: estimated(b.quantity, b.rate), isActive: b.is_active } }); await audit(tx, a, 'boq.created', 'construction_boq', row.id, row); return row; }); return created(res, { ...row, quantity: Number(row.quantity) }); }));

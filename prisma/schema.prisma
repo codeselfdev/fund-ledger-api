@@ -14,6 +14,7 @@ enum TenantPlan {
 }
 
 enum Role {
+  teacher
   owner
   admin
   member
@@ -168,6 +169,28 @@ enum CallOutcome {
 }
 
 model Tenant {
+  instituteNotificationDeliveryRecords InstituteNotificationDelivery[]
+  instituteWriteReceiptRecords InstituteWriteReceipt[]
+  instituteResultPublicationRecords InstituteResultPublication[]
+  instituteMarkRecords InstituteMark[]
+  instituteMarkSheetRecords InstituteMarkSheet[]
+  instituteExamRecords InstituteExam[]
+  instituteDocumentRecords InstituteDocument[]
+  institutePostRecipientRecords InstitutePostRecipient[]
+  institutePostRecords InstitutePost[]
+  instituteFeeReceiptRecords InstituteFeeReceipt[]
+  instituteFeePaymentRecords InstituteFeePayment[]
+  instituteFeeInvoiceRecords InstituteFeeInvoice[]
+  instituteFeePlanRecords InstituteFeePlan[]
+  instituteLeaveRequestRecords InstituteLeaveRequest[]
+  instituteAttendanceMarkRecords InstituteAttendanceMark[]
+  instituteAttendanceSheetRecords InstituteAttendanceSheet[]
+  instituteRoutineSlotRecords InstituteRoutineSlot[]
+  instituteSubjectRecords InstituteSubject[]
+  instituteTeacherAssignmentRecords InstituteTeacherAssignment[]
+  instituteGuardianLinkRecords InstituteGuardianLink[]
+  instituteStudentRecords InstituteStudent[]
+  instituteGroupRecords InstituteGroup[]
   documentPrefix String? @map("document_prefix") @db.VarChar(3)
   documentPrefixRevision Int @default(0) @map("document_prefix_revision")
   documentSequences DocumentNumberSequence[]
@@ -201,6 +224,7 @@ model Tenant {
 }
 
 enum ProjectType {
+  institute
   fund_shares
   accounting
   billing
@@ -214,6 +238,29 @@ enum DepositApprovalRoute {
 }
 
 model Project {
+  constructionPhases ConstructionPhase[]
+  instituteNotificationDeliveryRecords InstituteNotificationDelivery[]
+  instituteWriteReceiptRecords InstituteWriteReceipt[]
+  instituteResultPublicationRecords InstituteResultPublication[]
+  instituteMarkRecords InstituteMark[]
+  instituteMarkSheetRecords InstituteMarkSheet[]
+  instituteExamRecords InstituteExam[]
+  instituteDocumentRecords InstituteDocument[]
+  institutePostRecipientRecords InstitutePostRecipient[]
+  institutePostRecords InstitutePost[]
+  instituteFeeReceiptRecords InstituteFeeReceipt[]
+  instituteFeePaymentRecords InstituteFeePayment[]
+  instituteFeeInvoiceRecords InstituteFeeInvoice[]
+  instituteFeePlanRecords InstituteFeePlan[]
+  instituteLeaveRequestRecords InstituteLeaveRequest[]
+  instituteAttendanceMarkRecords InstituteAttendanceMark[]
+  instituteAttendanceSheetRecords InstituteAttendanceSheet[]
+  instituteRoutineSlotRecords InstituteRoutineSlot[]
+  instituteSubjectRecords InstituteSubject[]
+  instituteTeacherAssignmentRecords InstituteTeacherAssignment[]
+  instituteGuardianLinkRecords InstituteGuardianLink[]
+  instituteStudentRecords InstituteStudent[]
+  instituteGroupRecords InstituteGroup[]
   payrollAttendanceConfiguration PayrollAttendanceConfiguration?
   payrollAttendances PayrollAttendance[]
   payrollConfiguration PayrollConfiguration?
@@ -264,6 +311,7 @@ model Project {
   constructionWasteLimits ConstructionWasteLimit[]
   constructionPayments ConstructionPayment[]
   constructionChanges ConstructionChangeOrder[]
+  instituteSettings Json? @map("institute_settings")
   billingSettings Json? @map("billing_settings")
   billingPlans BillingPlan[]
   billingComplaints BillingComplaint[]
@@ -387,6 +435,7 @@ model OnboardingProgress {
 }
 
 model User {
+  responsibleConstructionPhases ConstructionPhase[]
   appGuideRequests AppGuideRequest[]
   professionalProfile Json? @map("professional_profile")
   supportTickets SupportTicket[]
@@ -1710,7 +1759,35 @@ model BillingMessage {
 }
 
 
+model ConstructionPhase {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  name String
+  plannedStart DateTime? @db.Date @map("planned_start")
+  plannedEnd DateTime? @db.Date @map("planned_end")
+  actualStart DateTime? @db.Date @map("actual_start")
+  actualEnd DateTime? @db.Date @map("actual_end")
+  responsibleUserId String? @map("responsible_user_id")
+  status String @default("draft")
+  revision Int @default(1)
+  requestKey String? @map("request_key")
+  requestHash String? @map("request_hash")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  responsibleUser User? @relation(fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  costHeads ConstructionCostHead[]
+  @@unique([projectId, name])
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, status])
+  @@map("construction_phases")
+}
+
 model ConstructionCostHead {
+  phaseId String? @map("phase_id")
+  phaseRecord ConstructionPhase? @relation(fields: [phaseId], references: [id], onDelete: Restrict)
   id String @id @default(cuid())
   tenantId String @map("tenant_id")
   projectId String @map("project_id")
@@ -2981,4 +3058,533 @@ model MasterAlertDelivery {
   @@index([status, nextAttemptAt, leaseUntil])
   @@index([tenantId])
   @@map("master_alert_deliveries")
+}
+
+model InstituteGroup {
+  instituteResultPublicationgroupId InstituteResultPublication[] @relation("InstituteResultPublicationgroupId")
+  instituteMarkSheetgroupId InstituteMarkSheet[] @relation("InstituteMarkSheetgroupId")
+  instituteDocumentgroupId InstituteDocument[] @relation("InstituteDocumentgroupId")
+  instituteFeePlangroupId InstituteFeePlan[] @relation("InstituteFeePlangroupId")
+  instituteAttendanceSheetgroupId InstituteAttendanceSheet[] @relation("InstituteAttendanceSheetgroupId")
+  instituteRoutineSlotgroupId InstituteRoutineSlot[] @relation("InstituteRoutineSlotgroupId")
+  instituteTeacherAssignmentgroupId InstituteTeacherAssignment[] @relation("InstituteTeacherAssignmentgroupId")
+  instituteStudentgroupId InstituteStudent[] @relation("InstituteStudentgroupId")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  name String
+  section String?
+  academicYear String @map("academic_year")
+  isActive Boolean @default(true) @map("is_active")
+  @@unique([projectId, academicYear, name])
+  @@index([tenantId, projectId])
+  @@map("institute_groups")
+}
+
+model InstituteStudent {
+  instituteMarkstudentId InstituteMark[] @relation("InstituteMarkstudentId")
+  instituteDocumentstudentId InstituteDocument[] @relation("InstituteDocumentstudentId")
+  institutePostRecipientstudentId InstitutePostRecipient[] @relation("InstitutePostRecipientstudentId")
+  instituteFeeReceiptstudentId InstituteFeeReceipt[] @relation("InstituteFeeReceiptstudentId")
+  instituteFeePaymentstudentId InstituteFeePayment[] @relation("InstituteFeePaymentstudentId")
+  instituteFeeInvoicestudentId InstituteFeeInvoice[] @relation("InstituteFeeInvoicestudentId")
+  instituteLeaveRequeststudentId InstituteLeaveRequest[] @relation("InstituteLeaveRequeststudentId")
+  instituteAttendanceMarkstudentId InstituteAttendanceMark[] @relation("InstituteAttendanceMarkstudentId")
+  instituteGuardianLinkstudentId InstituteGuardianLink[] @relation("InstituteGuardianLinkstudentId")
+  group InstituteGroup @relation("InstituteStudentgroupId", fields: [groupId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  name String
+  rollNo String @map("roll_no")
+  studentCode String? @map("student_code")
+  groupId String @map("group_id")
+  userId String? @map("user_id")
+  status String @default("active")
+  joinedOn DateTime @db.Date @map("joined_on")
+  leftOn DateTime? @db.Date @map("left_on")
+  @@unique([projectId, groupId, rollNo])
+  @@unique([projectId, studentCode])
+  @@index([tenantId, projectId])
+  @@map("institute_students")
+}
+
+model InstituteGuardianLink {
+  student InstituteStudent @relation("InstituteGuardianLinkstudentId", fields: [studentId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  studentId String @map("student_id")
+  userId String @map("user_id")
+  relation String
+  isPrimary Boolean @default(false) @map("is_primary")
+  canPay Boolean @default(true) @map("can_pay")
+  @@unique([studentId, userId])
+  @@index([tenantId, projectId])
+  @@map("institute_guardian_links")
+}
+
+model InstituteTeacherAssignment {
+  subject InstituteSubject? @relation("InstituteTeacherAssignmentsubjectId", fields: [subjectId], references: [id], onDelete: Restrict)
+  group InstituteGroup @relation("InstituteTeacherAssignmentgroupId", fields: [groupId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  userId String @map("user_id")
+  groupId String @map("group_id")
+  subjectId String? @map("subject_id")
+  isClassTeacher Boolean @default(false) @map("is_class_teacher")
+  @@unique([groupId, subjectId, userId])
+  @@index([tenantId, projectId])
+  @@map("institute_teacher_assignments")
+}
+
+model InstituteSubject {
+  instituteMarkSheetsubjectId InstituteMarkSheet[] @relation("InstituteMarkSheetsubjectId")
+  instituteRoutineSlotsubjectId InstituteRoutineSlot[] @relation("InstituteRoutineSlotsubjectId")
+  instituteTeacherAssignmentsubjectId InstituteTeacherAssignment[] @relation("InstituteTeacherAssignmentsubjectId")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  name String
+  code String
+  components Json
+  passPercent Int @default(33) @map("pass_percent")
+  @@unique([projectId, code])
+  @@index([tenantId, projectId])
+  @@map("institute_subjects")
+}
+
+model InstituteRoutineSlot {
+  subject InstituteSubject @relation("InstituteRoutineSlotsubjectId", fields: [subjectId], references: [id], onDelete: Restrict)
+  group InstituteGroup @relation("InstituteRoutineSlotgroupId", fields: [groupId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  groupId String @map("group_id")
+  weekday Int
+  startsAt String @map("starts_at")
+  endsAt String @map("ends_at")
+  subjectId String @map("subject_id")
+  teacherUserId String @map("teacher_user_id")
+  room String?
+  effectiveFrom DateTime @db.Date @map("effective_from")
+  effectiveTo DateTime? @db.Date @map("effective_to")
+
+  @@index([tenantId, projectId])
+  @@map("institute_routine_slots")
+}
+
+model InstituteAttendanceSheet {
+  instituteAttendanceMarksheetId InstituteAttendanceMark[] @relation("InstituteAttendanceMarksheetId")
+  group InstituteGroup @relation("InstituteAttendanceSheetgroupId", fields: [groupId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  groupId String @map("group_id")
+  date DateTime @db.Date
+  session Int @default(1)
+  savedById String? @map("saved_by_id")
+  savedAt DateTime? @map("saved_at")
+  @@unique([projectId, groupId, date, session])
+  @@index([tenantId, projectId])
+  @@map("institute_attendance_sheets")
+}
+
+model InstituteAttendanceMark {
+  student InstituteStudent @relation("InstituteAttendanceMarkstudentId", fields: [studentId], references: [id], onDelete: Restrict)
+  sheet InstituteAttendanceSheet @relation("InstituteAttendanceMarksheetId", fields: [sheetId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  sheetId String @map("sheet_id")
+  studentId String @map("student_id")
+  status String
+  note String?
+  @@unique([sheetId, studentId])
+  @@index([tenantId, projectId])
+  @@map("institute_attendance_marks")
+}
+
+model InstituteLeaveRequest {
+  student InstituteStudent @relation("InstituteLeaveRequeststudentId", fields: [studentId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  studentId String @map("student_id")
+  fromDate DateTime @db.Date @map("from_date")
+  toDate DateTime @db.Date @map("to_date")
+  reason String
+  requestedBy String @map("requested_by")
+  status String @default("pending")
+  decidedBy String? @map("decided_by")
+
+  @@index([tenantId, projectId])
+  @@map("institute_leave_requests")
+}
+
+model InstituteFeePlan {
+  instituteFeeInvoiceplanId InstituteFeeInvoice[] @relation("InstituteFeeInvoiceplanId")
+  group InstituteGroup? @relation("InstituteFeePlangroupId", fields: [groupId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  groupId String? @map("group_id")
+  name String
+  amount Int
+  cycle String
+  dueDay Int @map("due_day")
+
+  @@index([tenantId, projectId])
+  @@map("institute_fee_plans")
+}
+
+model InstituteFeeInvoice {
+  plan InstituteFeePlan @relation("InstituteFeeInvoiceplanId", fields: [planId], references: [id], onDelete: Restrict)
+  student InstituteStudent @relation("InstituteFeeInvoicestudentId", fields: [studentId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  studentId String @map("student_id")
+  planId String @map("plan_id")
+  period String
+  amount Int
+  paidAmount Int @default(0) @map("paid_amount")
+  dueOn DateTime @db.Date @map("due_on")
+  status String @default("open")
+  @@unique([studentId, planId, period])
+  @@index([tenantId, projectId])
+  @@map("institute_fee_invoices")
+}
+
+model InstituteFeePayment {
+  student InstituteStudent @relation("InstituteFeePaymentstudentId", fields: [studentId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  studentId String @map("student_id")
+  invoiceIds String[] @map("invoice_ids")
+  amount Int
+  method String
+  trxId String? @map("trx_id")
+  proofFileId String? @map("proof_file_id")
+  submittedBy String @map("submitted_by")
+  status String @default("submitted")
+  verifiedBy String? @map("verified_by")
+  receiptId String? @map("receipt_id")
+  accountId String? @map("account_id")
+  advanceAmount Int @default(0) @map("advance_amount")
+  @@unique([projectId, method, trxId])
+  @@index([tenantId, projectId])
+  @@map("institute_fee_payments")
+}
+
+model InstituteFeeReceipt {
+  student InstituteStudent @relation("InstituteFeeReceiptstudentId", fields: [studentId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  studentId String @map("student_id")
+  paymentId String @unique @map("payment_id")
+  receiptNo String @map("receipt_no")
+  amount Int
+  method String
+  issuedBy String @map("issued_by")
+  @@unique([projectId, receiptNo])
+  @@index([tenantId, projectId])
+  @@map("institute_fee_receipts")
+}
+
+model InstitutePost {
+  documents InstituteDocument[] @relation("InstituteDocumentPost")
+  institutePostRecipientpostId InstitutePostRecipient[] @relation("InstitutePostRecipientpostId")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  kind String
+  title String
+  body String
+  dueOn DateTime? @db.Date @map("due_on")
+  requiresAck Boolean @default(false) @map("requires_ack")
+  fileIds String[] @map("file_ids")
+  authorUserId String @map("author_user_id")
+  groupIds String[] @map("group_ids")
+  sentAt DateTime? @map("sent_at")
+  withdrawnAt DateTime? @map("withdrawn_at")
+
+  @@index([tenantId, projectId])
+  @@map("institute_posts")
+}
+
+model InstitutePostRecipient {
+  student InstituteStudent @relation("InstitutePostRecipientstudentId", fields: [studentId], references: [id], onDelete: Restrict)
+  post InstitutePost @relation("InstitutePostRecipientpostId", fields: [postId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  postId String @map("post_id")
+  studentId String @map("student_id")
+  userId String @map("user_id")
+  deliveredAt DateTime @default(now()) @map("delivered_at")
+  readAt DateTime? @map("read_at")
+  ackAt DateTime? @map("ack_at")
+  @@unique([postId, userId, studentId])
+  @@index([tenantId, projectId])
+  @@map("institute_post_recipients")
+}
+
+model InstituteDocument {
+  postId String? @map("post_id")
+  post InstitutePost? @relation("InstituteDocumentPost", fields: [postId], references: [id], onDelete: Restrict)
+  publicationId String? @map("publication_id")
+  publication InstituteResultPublication? @relation("InstituteDocumentPublication", fields: [publicationId], references: [id], onDelete: Restrict)
+  group InstituteGroup? @relation("InstituteDocumentgroupId", fields: [groupId], references: [id], onDelete: Restrict)
+  student InstituteStudent? @relation("InstituteDocumentstudentId", fields: [studentId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  studentId String? @map("student_id")
+  groupId String? @map("group_id")
+  category String
+  title String
+  fileId String? @map("file_id")
+  receiptId String? @map("receipt_id")
+  visibleFrom DateTime @map("visible_from")
+
+  @@index([tenantId, projectId])
+  @@map("institute_documents")
+}
+
+model InstituteExam {
+  instituteResultPublicationexamId InstituteResultPublication[] @relation("InstituteResultPublicationexamId")
+  instituteMarkSheetexamId InstituteMarkSheet[] @relation("InstituteMarkSheetexamId")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  name String
+  groupIds String[] @map("group_ids")
+  subjectIds String[] @map("subject_ids")
+  startsOn DateTime @db.Date @map("starts_on")
+  endsOn DateTime @db.Date @map("ends_on")
+  grading String?
+
+  @@index([tenantId, projectId])
+  @@map("institute_exams")
+}
+
+model InstituteMarkSheet {
+  instituteMarksheetId InstituteMark[] @relation("InstituteMarksheetId")
+  subject InstituteSubject @relation("InstituteMarkSheetsubjectId", fields: [subjectId], references: [id], onDelete: Restrict)
+  group InstituteGroup @relation("InstituteMarkSheetgroupId", fields: [groupId], references: [id], onDelete: Restrict)
+  exam InstituteExam @relation("InstituteMarkSheetexamId", fields: [examId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  examId String @map("exam_id")
+  groupId String @map("group_id")
+  subjectId String @map("subject_id")
+  authorUserId String? @map("author_user_id")
+  status String @default("draft")
+  @@unique([examId, groupId, subjectId])
+  @@index([tenantId, projectId])
+  @@map("institute_mark_sheets")
+}
+
+model InstituteMark {
+  student InstituteStudent @relation("InstituteMarkstudentId", fields: [studentId], references: [id], onDelete: Restrict)
+  sheet InstituteMarkSheet @relation("InstituteMarksheetId", fields: [sheetId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  sheetId String @map("sheet_id")
+  studentId String @map("student_id")
+  components Json
+  absent Boolean @default(false)
+  @@unique([sheetId, studentId])
+  @@index([tenantId, projectId])
+  @@map("institute_marks")
+}
+
+model InstituteResultPublication {
+  documents InstituteDocument[] @relation("InstituteDocumentPublication")
+  group InstituteGroup @relation("InstituteResultPublicationgroupId", fields: [groupId], references: [id], onDelete: Restrict)
+  exam InstituteExam @relation("InstituteResultPublicationexamId", fields: [examId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  examId String @map("exam_id")
+  groupId String @map("group_id")
+  version Int
+  showPosition Boolean @default(false) @map("show_position")
+  snapshot Json
+  publishedBy String @map("published_by")
+  reason String?
+  @@unique([examId, groupId, version])
+  @@index([tenantId, projectId])
+  @@map("institute_result_publications")
+}
+
+model InstituteWriteReceipt {
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  userId String @map("user_id")
+  key String
+  payloadHash String @map("payload_hash")
+  response Json
+  @@unique([projectId, userId, key])
+  @@index([tenantId, projectId])
+  @@map("institute_write_receipts")
+}
+
+model InstituteNotificationDelivery {
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  revision Int @default(0)
+  history Json @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  userId String @map("user_id")
+  dedupeKey String @map("dedupe_key")
+  type String
+  title String
+  body String
+  entityId String @map("entity_id")
+  channel String
+  status String @default("pending")
+  notBefore DateTime @default(now()) @map("not_before")
+  attempts Int @default(0)
+  lastError String? @map("last_error")
+  @@unique([projectId, userId, dedupeKey, channel])
+  @@index([tenantId, projectId])
+  @@map("institute_notification_deliveries")
 }

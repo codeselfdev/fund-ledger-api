@@ -1,6 +1,6 @@
 import type { Role } from "@prisma/client";
 
-const priority: Role[] = ["owner", "admin", "accountant", "approver", "auditor", "cashier", "member"];
+const priority: Role[] = ["owner", "admin", "accountant", "approver", "auditor", "cashier", "teacher", "member"];
 
 export function effectiveProjectRoles(roles: Role[]): Role[] {
   const result = Array.from(new Set(roles));
@@ -15,7 +15,7 @@ interface ProjectMembershipRow {
   customRoleId?: string | null;
   customRole?: { id: string; name: string; description: string; permissions: unknown; revision: number } | null;
   memberId: string | null;
-  project: { name: string; projectType: "fund_shares" | "accounting" | "billing" | "construction" | "payroll_pf"; isActive: boolean };
+  project: { name: string; projectType: "fund_shares" | "accounting" | "billing" | "construction" | "payroll_pf" | "institute"; isActive: boolean };
 }
 
 /** One access entry per project, retaining all assigned roles and only explicit member links. */

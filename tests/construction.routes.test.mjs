@@ -16,7 +16,7 @@ const { cycleAmount, aging, today } = await import('../dist/modules/billing/bill
 const { normalizePortalSettings, portalSettingsSchema } = await import('../dist/core/projects/project-settings.js');
 let db, counter, server, base, failAudit, retry, queue = Promise.resolve();
 const copy = value => structuredClone(value);
-const models = { inventoryLocation: 'locations', project: 'projects', customer: 'customers', account: 'accounts', constructionCostHead:'heads', constructionBoq:'boq', constructionCostAllocation:'allocations', constructionContractor:'contractors', constructionContract:'contracts', constructionRunningBill:'bills', constructionSupplierBill:'supplierBills', constructionLaborEntry:'labor', constructionMaterialEntry:'materials', constructionSiteLog:'siteLogs', constructionWasteLimit:'wasteLimits', upload:'uploads', constructionPayment:'payments', constructionChangeOrder:'changes', expense:'expenses', vendor:'vendors', purchase:'purchases', inventoryItem:'inventory', stockMovement:'stock', due:'dues', deposit:'deposits', member:'members', schedule:'schedules', activity: 'activity', accountTransaction: 'transactions', session: 'sessions', projectMembership: 'memberships' };
+const models = { inventoryLocation: 'locations', project: 'projects', customer: 'customers', account: 'accounts', constructionPhase:'phases', constructionCostHead:'heads', constructionBoq:'boq', constructionCostAllocation:'allocations', constructionContractor:'contractors', constructionContract:'contracts', constructionRunningBill:'bills', constructionSupplierBill:'supplierBills', constructionLaborEntry:'labor', constructionMaterialEntry:'materials', constructionSiteLog:'siteLogs', constructionWasteLimit:'wasteLimits', upload:'uploads', constructionPayment:'payments', constructionChangeOrder:'changes', expense:'expenses', vendor:'vendors', purchase:'purchases', inventoryItem:'inventory', stockMovement:'stock', due:'dues', deposit:'deposits', member:'members', schedule:'schedules', activity: 'activity', accountTransaction: 'transactions', session: 'sessions', projectMembership: 'memberships' };
 function reset() {
   counter = 0; failAudit = false; retry = false;
   db = Object.fromEntries(Object.values(models).map(t => [t, []]));
@@ -45,6 +45,8 @@ function match(row, where = {}) {
 function decorate(table, row, include) {
   if (!row) return null;
   const r = copy(row);
+  if (table==='memberships' && !r.user) r.user={id:row.userId,name:row.userId,isActive:true};
+  if (include?.responsibleUser) r.responsibleUser=copy(db.memberships.find(m=>m.userId===row.responsibleUserId&&m.projectId===row.projectId)?.user??null);
   if (include?.item) r.item=copy(db.inventory.find(i=>i.id===row.itemId));
   if (include?.expense) r.expense=copy(db.expenses.find(e=>e.id===row.expenseId));
   if (include?.contractor)r.contractor=copy(db.contractors.find(c=>c.id===row.contractorId));
@@ -66,6 +68,7 @@ function mutate(row, data) {
 }
 function defaults(table) {
   if (table==='siteLogs') return {version:1,status:'draft',laborIds:[],materialIds:[],submittedAt:null};
+  if (table==='phases') return {revision:1,status:'draft',plannedStart:null,plannedEnd:null,actualStart:null,actualEnd:null,responsibleUserId:null};
   if (table==='heads')return {status:'pending',decidedById:null};
   if (table==='contracts')return {certifiedAmount:0,advancePaid:0,advanceRecovered:0,retentionHeld:0,retentionReleased:0,status:'active'};
   if (['bills','supplierBills','labor','changes'].includes(table))return {status:'pending',paidAmount:0,decidedAt:null,purchaseId:null,boqId:null,receivedAt:null,wastageDeduction:0,wasteEntryIds:[]};
@@ -256,4 +259,68 @@ test('rejecting a running bill releases its proposed wastage deductions',async()
  const body=billBody(ct,800000,{waste_entry_ids:[w.id]}),b=(await request('/running-bills',body)).body.data;
  assert.equal((await request(`/running-bills/${b.id}/decision`,{decision:'reject'},'approver')).status,200);
  assert.equal((await request('/running-bills',{...body,request_key:randomUUID()})).status,201);
+});
+
+const phaseBody = (extra={}) => ({name:'Foundation',planned_start:'2026-01-01',planned_end:'2026-01-30',actual_start:null,actual_end:null,responsible_user_id:null,status:'planned',request_key:randomUUID(),...extra});
+const phaseUpdate = (extra={}) => ({planned_start:'2026-01-01',planned_end:'2026-01-30',actual_start:null,actual_end:null,responsible_user_id:null,status:'planned',revision:1,...extra});
+test('phase plans preserve calendar dates and inclusive duration, with safe create retries and shared budgets',async()=>{
+ const body=phaseBody(),first=await request('/phases',body);assert.equal(first.status,201,JSON.stringify(first.body));
+ assert.equal(first.body.data.plannedStart,'2026-01-01');assert.equal(first.body.data.plannedDays,30);
+ assert.equal((await request('/phases',body)).body.data.id,first.body.data.id);
+ assert.equal((await request('/phases',{...body,planned_end:'2026-02-01'})).status,409);
+ assert.equal((await request('/phases',phaseBody())).status,409);
+ const budget=await request('/cost-heads',headBody({phase:undefined,phase_id:first.body.data.id}));assert.equal(budget.status,201,JSON.stringify(budget.body));assert.equal(budget.body.data.phase,'Foundation');assert.equal(budget.body.data.phaseId,first.body.data.id);
+ await newHead({name:'Foundation labor',category:'labor'});assert.equal(db.phases.length,1);
+ assert.equal((await request('/cost-heads',headBody({phase_id:'foreign'}))).status,404);
+ assert.equal((await request('/cost-heads',headBody({phase:'Wrong phase',phase_id:first.body.data.id}))).status,400);
+});
+test('legacy budget creation creates a draft phase without inventing dates',async()=>{
+ await newHead();assert.equal(db.phases.length,1);const phase=(await request('/phases')).body.data[0];assert.equal(phase.status,'draft');assert.equal(phase.plannedDays,null);assert.equal(phase.actualStart,null);
+});
+test('phase updates reject stale and simultaneous saves, and require real actual dates for completion',async()=>{
+ const phase=(await request('/phases',phaseBody())).body.data;
+ const attempts=await Promise.all([request(`/phases/${phase.id}`,phaseUpdate({actual_start:'2026-01-02',status:'active'}),'accountant','PUT'),request(`/phases/${phase.id}`,phaseUpdate({actual_start:'2026-01-03',status:'active'}),'accountant','PUT')]);
+ assert.deepEqual(attempts.map(r=>r.status).sort(),[200,409]);assert.equal(db.phases[0].revision,2);
+ const completed=await request(`/phases/${phase.id}`,phaseUpdate({revision:2,actual_start:'2026-01-02',actual_end:'2026-02-02',status:'completed'}),'accountant','PUT');
+ assert.equal(completed.status,200,JSON.stringify(completed.body));assert.equal(completed.body.data.actualDays,32);assert.equal(completed.body.data.delayDays,3);assert.equal(completed.body.data.overdueDays,0);
+ assert.equal((await request(`/phases/${phase.id}`,phaseUpdate({revision:3,name:'Rename'}),'accountant','PUT')).status,400);
+});
+test('phase plans reject invalid dates, unsupported statuses and incomplete actual records',async()=>{
+ for(const extra of [{planned_start:'2026-02-30'},{planned_end:'2025-12-31'},{planned_start:null},{status:'active'},{status:'completed'},{status:'approved'},{actual_start:'2999-01-01',status:'active'},{actual_start:'2026-01-03',actual_end:'2026-01-02',status:'completed'},{actual_end:'2026-01-03'},{actual_start:'2026-01-01',status:'planned'}])assert.equal((await request('/phases',phaseBody(extra))).status,400,JSON.stringify(extra));
+ assert.equal((await request('/phases',phaseBody({planned_start:null,planned_end:null,status:'draft'}))).status,201);
+});
+test('phase assignment accepts active project staff and rejects other projects, inactive users and member-only users',async()=>{
+ db.memberships.push({tenantId:'t',projectId:'p',userId:'engineer',role:'accountant',isActive:true,user:{id:'engineer',name:'Site engineer',isActive:true}});
+ const assigned=await request('/phases',phaseBody({responsible_user_id:'engineer'}));assert.equal(assigned.status,201,JSON.stringify(assigned.body));
+ db.memberships.push({tenantId:'t',projectId:'foreign',userId:'foreign-user',role:'accountant',isActive:true});
+ db.memberships.push({tenantId:'t',projectId:'p',userId:'inactive',role:'accountant',isActive:false});
+ db.memberships.push({tenantId:'t',projectId:'p',userId:'inactive-user',role:'accountant',isActive:true,user:{isActive:false}});
+ db.memberships.push({tenantId:'t',projectId:'p',userId:'investor',role:'member',customRoleId:null,isActive:true});
+ for(const person of ['foreign-user','inactive','inactive-user','investor'])assert.equal((await request('/phases',phaseBody({name:person,responsible_user_id:person}))).status,400,person);
+ assert.equal((await request(`/phases/${assigned.body.data.id}`,phaseUpdate({responsible_user_id:'foreign-user'}),'accountant','PUT')).status,400);
+ assert.equal((await request(`/phases/${assigned.body.data.id}`,phaseUpdate(),'accountant','PUT','foreign')).status,403);
+ assert.equal((await request('/phases',phaseBody(), 'admin','POST','fund')).status,403);
+});
+test('phase plan writes and assignee directory are restricted while authorized auditors can read plans',async()=>{
+ const phase=(await request('/phases',phaseBody())).body.data;
+ for(const role of ['auditor','cashier','approver','member']) {
+  assert.equal((await request('/phases',phaseBody({name:role}),role)).status,403);
+  assert.equal((await request(`/phases/${phase.id}`,phaseUpdate(),role,'PUT')).status,403);
+  assert.equal((await request('/phases/assignees',undefined,role)).status,403);
+ }
+ assert.equal((await request('/phases',undefined,'auditor')).status,200);assert.equal((await request('/phases',undefined,'member')).status,403);
+});
+test('phase changes roll back when the audit cannot be written',async()=>{
+ const phase=(await request('/phases',phaseBody())).body.data;failAudit=true;const old=console.error;console.error=()=>{};
+ try{assert.equal((await request(`/phases/${phase.id}`,phaseUpdate({status:'active',actual_start:'2026-01-01'}),'accountant','PUT')).status,500);}finally{console.error=old;}
+ assert.equal(db.phases[0].revision,1);assert.equal(db.phases[0].status,'planned');
+});
+
+test('phase assignee directory returns distinct active project staff without contact details',async()=>{
+ const user={id:'engineer',name:'Site engineer',isActive:true};
+ db.memberships.push({tenantId:'t',projectId:'p',userId:user.id,role:'accountant',isActive:true,user},{tenantId:'t',projectId:'p',userId:user.id,role:'approver',isActive:true,user});
+ const r=await request('/phases/assignees');assert.equal(r.status,200,JSON.stringify(r.body));assert.equal(r.body.data.filter(u=>u.id===user.id).length,1);
+ const {canChoosePhaseAssignee}=await import('../dist/modules/construction/construction.phases.js');
+ assert.equal(canChoosePhaseAssignee({roles:['auditor'],menuPermissions:{construction_budgets:{read:true,write:true}}}),true);
+ assert.equal(canChoosePhaseAssignee({roles:['auditor'],menuPermissions:{construction_budgets:{read:true,write:false}}}),false);
 });

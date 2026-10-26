@@ -24,14 +24,14 @@ export async function assertProjectCapacity(tenantId: string) {
     throw new ApiError(409, "PROJECT_QUOTA_EXCEEDED", "Your organization has reached its project limit. Upgrade your package to create more projects.", quota);
   return quota;
 }
-export async function assertPersonCapacity(tenantId: string, input: { user_id?: string; mobile?: string; email?: string }) {
-  const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { contact: true } });
+export async function assertPersonCapacity(tenantId: string, input: { user_id?: string; mobile?: string; email?: string }, tx: Prisma.TransactionClient = prisma) {
+  const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { contact: true } });
   if (PACKAGES[packageId(tenant.contact)].users === null) return;
-  const quota = await tenantQuota(tenantId);
+  const quota = await tenantQuota(tenantId,tx);
   if (quota.users.limit === null || quota.users.used < quota.users.limit) return quota;
   const matches = [ ...(input.user_id ? [{ id: input.user_id }] : []), ...(input.mobile ? [{ mobile: input.mobile }] : []), ...(input.email ? [{ email: { equals: input.email, mode: "insensitive" as const } }] : []) ];
-  const user = matches.length ? await prisma.user.findFirst({ where: { tenantId, OR: matches } }) : null;
-  const member = await prisma.member.findFirst({ where: { tenantId, status: "active", OR: [ ...(user ? [{ userId: user.id }] : []), ...(input.mobile ? [{ mobile: input.mobile }] : []), ...(input.email ? [{ email: { equals: input.email, mode: "insensitive" as const } }] : []) ] } });
+  const user = matches.length ? await tx.user.findFirst({ where: { tenantId, OR: matches } }) : null;
+  const member = await tx.member.findFirst({ where: { tenantId, status: "active", OR: [ ...(user ? [{ userId: user.id }] : []), ...(input.mobile ? [{ mobile: input.mobile }] : []), ...(input.email ? [{ email: { equals: input.email, mode: "insensitive" as const } }] : []) ] } });
   if (user?.isActive || member) return quota;
   throw new ApiError(409, "USER_QUOTA_EXCEEDED", "Your organization has reached its user/member limit. Upgrade your package to add more people.", { quota });
 }

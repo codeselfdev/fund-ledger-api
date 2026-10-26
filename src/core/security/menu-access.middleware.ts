@@ -7,6 +7,7 @@ import { uploadMenuKeys } from './upload-menu-access.js';
 import { personalAccessPath, routeMenuKeys } from './menu-access.policy.js';
 
 export async function enforceMenuAccess(req: Request) {
+  if (/^\/v1\/institute(?:\/|$)/.test(req.originalUrl ?? "")) return;
   const a = req.auth;
   if (!a?.projectId || !a.menuPermissions) return;
   // A separately assigned built-in role retains its existing route policy.

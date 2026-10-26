@@ -1,7 +1,7 @@
 import type { Role } from "@prisma/client";
 
 export const STAFF_ROLES: Role[] = ["accountant", "approver", "auditor", "admin"];
-export const ALL_ROLES: Role[] = ["owner", "admin", "member", "cashier", "accountant", "approver", "auditor"];
+export const ALL_ROLES: Role[] = ["owner", "admin", "member", "cashier", "accountant", "approver", "auditor", "teacher"];
 export const MANAGEMENT_ROLES: Role[] = ["owner", "admin"];
 
 export type RoleGate = Role | "any" | "staff";

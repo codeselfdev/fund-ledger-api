@@ -1,3 +1,4 @@
+import { settingsSchema as instituteSettingsSchema, settings as instituteSettings } from '../institute/institute.policy.js';
 import { assertProjectCapacity } from "../../core/subscription/quota.service.js";
 import { constructionMenus } from "../construction/construction.menu.js";
 import { billingMenus } from "../billing/billing.menu.js";
@@ -39,6 +40,7 @@ projectsRouter.use(authenticateAccount);
 
 const createProjectSchema = z.object({
   project_type: projectTypeSchema.default("fund_shares"),
+  institute_settings: instituteSettingsSchema.optional(),
   owner_is_member: z.boolean().default(false),
   organization_name: z.string().trim().min(2).max(150),
   name: z.string().min(2),
@@ -53,6 +55,7 @@ const requireFundShares = <T extends z.AnyZodObject>(schema: T) => schema.refine
 );
 
 const updateProjectSchema = z.object({
+  institute_settings: instituteSettingsSchema.optional(),
   portal_settings: portalSettingsSchema.optional(),
   name: z.string().min(2).optional(),
   total_shares: z.number().int().positive().optional(),
@@ -60,7 +63,8 @@ const updateProjectSchema = z.object({
   penalty_policy: optionalPenaltyPolicySchema,
   address: z.string().optional()
 }).refine((value) => (
-  value.portal_settings !== undefined
+  value.institute_settings !== undefined
+  || value.portal_settings !== undefined
   || value.name !== undefined
   || value.total_shares !== undefined
   || value.logo_file_id !== undefined
@@ -100,7 +104,8 @@ projectsRouter.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
     const project = memberships.find(row => row.projectId === access.project_id)!.project;
     return {
       ...access, ...(project.projectType === "billing" ? { billing_menus: billingMenus(access.roles) } : {}), ...(project.projectType === "construction" ? { construction_menus: constructionMenus(access.roles) } : {}), name: project.name, address: project.address, total_shares: project.totalShares,
-      portal_settings: normalizePortalSettings(project.portalSettings, project.projectType),
+      institute_settings: project.projectType === "institute" ? instituteSettings(project.instituteSettings) : undefined,
+    portal_settings: normalizePortalSettings(project.portalSettings, project.projectType),
       logo_file_id: project.logoFileId, logo_url: project.logoFileId ? `/v1/projects/${project.id}/logo` : null,
       is_active: project.isActive,
       is_current: access.project_id === (req.header("x-project-id") ?? auth.sessionProjectId)
@@ -131,6 +136,7 @@ projectsRouter.post("/owned-organization", requireRoles("any"), validateBody(req
         name: body.name,
         totalShares: body.total_shares ?? 1,
         projectType: body.project_type,
+        ...(body.project_type === "institute" ? { instituteSettings: instituteSettings(body.institute_settings) } : {}),
         penaltyPolicy: body.penalty_policy,
         address: body.address
       }
@@ -202,6 +208,7 @@ projectsRouter.post("/owned-organization", requireRoles("any"), validateBody(req
     project_type: result.project.projectType,
     ...(result.project.projectType === "billing" ? { billing_menus: billingMenus(["admin"]) } : {}),
     ...(result.project.projectType === "construction" ? { construction_menus: constructionMenus(["admin"]) } : {}),
+    institute_settings: result.project.projectType === "institute" ? instituteSettings(result.project.instituteSettings) : undefined,
     portal_settings: normalizePortalSettings(result.project.portalSettings, result.project.projectType),
     logo_file_id: result.project.logoFileId,
     logo_url: logoUrl(result.project.logoFileId)
@@ -224,6 +231,7 @@ projectsRouter.post("/", authenticate, requireActiveSubscription, requireProject
         name: body.name,
         totalShares: body.total_shares ?? 1,
         projectType: body.project_type,
+        ...(body.project_type === "institute" ? { instituteSettings: instituteSettings(body.institute_settings) } : {}),
         penaltyPolicy: body.penalty_policy,
         address: body.address
       }
@@ -290,6 +298,7 @@ projectsRouter.post("/", authenticate, requireActiveSubscription, requireProject
     project_type: result.project.projectType,
     ...(result.project.projectType === "billing" ? { billing_menus: billingMenus(["admin"]) } : {}),
     ...(result.project.projectType === "construction" ? { construction_menus: constructionMenus(["admin"]) } : {}),
+    institute_settings: result.project.projectType === "institute" ? instituteSettings(result.project.instituteSettings) : undefined,
     portal_settings: normalizePortalSettings(result.project.portalSettings, result.project.projectType),
     logo_file_id: result.project.logoFileId,
     logo_url: logoUrl(result.project.logoFileId)
@@ -360,6 +369,7 @@ projectsRouter.get("/:id", requireActiveSubscription, validateParams(idParamSche
     project_type: project.projectType,
     ...(project.projectType === "billing" ? { billing_menus: billingMenus(roles) } : {}),
     ...(project.projectType === "construction" ? { construction_menus: constructionMenus(roles) } : {}),
+    institute_settings: project.projectType === "institute" ? instituteSettings(project.instituteSettings) : undefined,
     portal_settings: normalizePortalSettings(project.portalSettings, project.projectType),
     assigned_shares: assignedShares,
     remaining_shares: Math.max(0, project.totalShares - assignedShares),
@@ -394,6 +404,7 @@ projectsRouter.patch("/:id", requireActiveSubscription, validateParams(idParamSc
     where: { id, tenantId: auth.tenantId }
   });
   if (!before) throw notFound("Project not found");
+  if (body.institute_settings && before.projectType !== "institute") throw badRequest("Institute settings belong to institute projects");
 
   if (body.total_shares !== undefined) {
     const activeShares = await prisma.member.aggregate({
@@ -435,10 +446,11 @@ projectsRouter.patch("/:id", requireActiveSubscription, validateParams(idParamSc
     where: { id },
     data: {
       name: body.name,
-      totalShares: body.total_shares ?? 1,
+      totalShares: body.total_shares,
       logoFileId: body.logo_file_id,
       penaltyPolicy: body.penalty_policy,
       address: body.address,
+      instituteSettings: body.institute_settings,
       portalSettings: body.portal_settings
     }
   });
@@ -462,6 +474,7 @@ projectsRouter.patch("/:id", requireActiveSubscription, validateParams(idParamSc
     project_type: project.projectType,
     ...(project.projectType === "billing" ? { billing_menus: billingMenus([access.role]) } : {}),
     ...(project.projectType === "construction" ? { construction_menus: constructionMenus([access.role]) } : {}),
+    institute_settings: project.projectType === "institute" ? instituteSettings(project.instituteSettings) : undefined,
     portal_settings: normalizePortalSettings(project.portalSettings, project.projectType),
     logo_file_id: project.logoFileId,
     logo_url: logoUrl(project.logoFileId),

@@ -571,4 +571,97 @@ export const menuAccessCatalog = [
       "billing"
     ]
   }
+,
+{
+  "key": "institute_home",
+  "label": "Home",
+  "group": "project",
+  "project_types": [
+    "institute"
+  ]
+},
+{
+  "key": "institute_students",
+  "label": "Students & groups",
+  "group": "people",
+  "project_types": [
+    "institute"
+  ]
+},
+{
+  "key": "institute_fees",
+  "label": "Fees & receipts",
+  "group": "money",
+  "project_types": [
+    "institute"
+  ]
+},
+{
+  "key": "institute_attendance",
+  "label": "Attendance",
+  "group": "project",
+  "project_types": [
+    "institute"
+  ]
+},
+{
+  "key": "institute_routine",
+  "label": "Routine",
+  "group": "project",
+  "project_types": [
+    "institute"
+  ]
+},
+{
+  "key": "institute_posts",
+  "label": "Notices & homework",
+  "group": "project",
+  "project_types": [
+    "institute"
+  ]
+},
+{
+  "key": "institute_documents",
+  "label": "Documents",
+  "group": "project",
+  "project_types": [
+    "institute"
+  ]
+},
+{
+  "key": "institute_results",
+  "label": "Results",
+  "group": "project",
+  "project_types": [
+    "institute"
+  ]
+},
+{
+  "key": "institute_leave",
+  "label": "Leave requests",
+  "group": "project",
+  "project_types": [
+    "institute"
+  ]
+},
+{
+  "key": "institute_roles",
+  "label": "People & roles",
+  "group": "people",
+  "project_types": [
+    "institute"
+  ]
+},
+{
+  "key": "institute_settings",
+  "label": "Institute settings",
+  "group": "project",
+  "project_types": [
+    "institute"
+  ]
+},
+{"key": "institute_setup", "label": "Get started", "group": "people", "project_types": ["institute"]},
+{"key": "institute_groups", "label": "Classes / courses", "group": "people", "project_types": ["institute"]},
+{"key": "institute_subjects", "label": "Subjects / modules", "group": "people", "project_types": ["institute"]},
+{"key": "institute_teachers", "label": "Teachers", "group": "people", "project_types": ["institute"]}
 ] as const;

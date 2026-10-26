@@ -1,3 +1,4 @@
+import { settings as instituteSettings } from '../institute/institute.policy.js';
 import { assertSignupMobileAvailable, signupMobile } from "../auth/signup-contact.js";
 import { withAvailableOrganizationSlug } from "../../core/onboarding/available-slug.js";
 import { Prisma, TenantPlan, ProjectType } from "@prisma/client";
@@ -21,6 +22,7 @@ export type ProvisionTenantInput = {
   projectName?: string;
   projectTotalShares?: number;
   projectType?: ProjectType;
+  instituteSettings?: unknown;
   ownerIsMember?: boolean;
   plan?: TenantPlan;
   trialDays?: number;
@@ -96,6 +98,7 @@ async function provisionTenantOnce(input: ProvisionTenantInput): Promise<Provisi
         name: projectName,
         totalShares: projectTotalShares,
         projectType: input.projectType ?? "fund_shares",
+        ...(input.projectType === "institute" ? { instituteSettings: instituteSettings(input.instituteSettings) } : {}),
         penaltyPolicy: input.penaltyPolicy
       }
     });

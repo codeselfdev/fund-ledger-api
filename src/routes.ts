@@ -1,3 +1,5 @@
+import { instituteRouter } from './modules/institute/institute.routes.js';
+import { instituteFilesRouter } from './modules/institute/institute.files.js';
 import { appGuideRouter } from "./modules/app-guide/app-guide.routes.js";
 import { masterAdminRouter } from './modules/auth/master-admin.routes.js';
 import { projectRolesRouter } from "./modules/project-roles/project-roles.routes.js";
@@ -76,6 +78,7 @@ export function registerRoutes(app: Express) {
 
   app.use("/v1/projects", projectsRouter);
   app.use("/v1/integrations/telegram/webhook", telegramWebhookRouter);
+  app.use("/v1/institute-files", instituteFilesRouter);
   app.use(authenticate);
   app.use(payrollFinancialPrivacy);
   app.use("/v1/subscription", subscriptionRouter);
@@ -83,6 +86,7 @@ export function registerRoutes(app: Express) {
   app.use("/v1", accountNotificationsRouter);
   app.use("/v1/app-guide", appGuideRouter);
   app.use(requireActiveSubscription);
+  app.use("/v1/institute", instituteRouter);
   app.use("/v1/assistant", assistantRouter);
   app.use("/v1/reports", reportsRouter);
   app.use("/v1/integrations", integrationsRouter);

@@ -66,6 +66,7 @@ router.post("/", requireProject, requireRoles("any"), upload.single("file"), asy
     assertImageUploadSize(req.file);
   }
 
+  if (purpose === "institute_document" && !auth.builtinRoles?.some(role => ["owner", "admin", "teacher"].includes(role))) throw forbidden("Only institute staff can attach documents");
   if (purpose === "project_logo") {
     const canManageProject = auth.roles.includes("owner") || auth.roles.includes("admin");
     if (!canManageProject) throw forbidden("Only project admins can upload a project logo");
@@ -134,6 +135,8 @@ router.get("/:id/view", requireProject, requireRoles("any"), validateParams(idPa
     }
   });
   if (!record) throw notFound("Attachment not found");
+  if (record.purpose !== "project_logo" && record.userId !== auth.userId && !auth.builtinRoles?.some(role => ["owner", "admin", "accountant", "cashier", "auditor"].includes(role)) && (await prisma.project.findFirst({ where: { id: auth.projectId, tenantId: auth.tenantId }, select: { projectType: true } }))?.projectType === "institute") throw notFound("Attachment not found");
+  if (record.purpose === "institute_document") throw notFound("Open institute documents through the scoped document viewer");
 
   if ((record.purpose?.startsWith("customer_logo:") || record.purpose?.startsWith("dealer_logo:")) && !auth.roles.some(role => ["owner", "admin", "accountant", "cashier", "approver", "auditor", "staff"].includes(role))) throw forbidden("Business logo access requires a staff role");
 

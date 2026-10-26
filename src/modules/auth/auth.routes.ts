@@ -67,7 +67,7 @@ const googleCompleteSchema = z.object({
 });
 
 const googleSignupSchema = z.object({
-  project_type: z.enum(["fund_shares", "accounting", "billing", "construction", "payroll_pf"]).default("fund_shares"),
+  project_type: z.enum(["fund_shares", "accounting", "billing", "construction", "payroll_pf", "institute"]).refine(type => type !== "institute" || process.env.INSTITUTE_ENABLED === "true", "Institute is not enabled").default("fund_shares"),
   owner_is_member: z.boolean().default(false),
   ticket: z.string().min(8),
   org_name: z.string().min(2).max(120),

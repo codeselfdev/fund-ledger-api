@@ -9599,6 +9599,916 @@
       },
       "access": {},
       "readOnly": {}
+    },
+    "institute": {
+      "articles": {
+        "institute_setup": {
+          "en": {
+            "id": "institute_setup",
+            "title": "Get started with your institute",
+            "summary": "Prepare your institute in a clear order using real records.",
+            "why": "Prepare your institute in a clear order using real records.",
+            "steps": [
+              "Check Institute settings: school, coaching or training, academic year, timezone and days off.",
+              "Create or import Classes / courses, then Subjects / modules, Teachers, Students and each class Routine. Each page offers Add, Download sample CSV and Choose file & review.",
+              "Replace sample rows with real data. Keep headings, mobiles and roll numbers as text. Review every row, fix errors, confirm the review and import. Exact matches are kept; conflicts need correction.",
+              "Review saved-record progress in Get started. Link guardians in Students, assign admin/accountant access in People & roles, then prepare fees and a receiving account when needed."
+            ],
+            "path": "Office → Get started",
+            "related": [
+              "institute_groups",
+              "institute_subjects",
+              "institute_teachers",
+              "institute_students",
+              "institute_routine"
+            ],
+            "group": "setup",
+            "projectType": "institute",
+            "keywords": "setup Get started with your institute Prepare your institute in a clear order using real records. প্রতিষ্ঠান সেটআপ শুরু করুন প্রতিষ্ঠানের তথ্য ধাপে ধাপে সেভ করে কাজ শুরু করুন। Check Institute settings: school, coaching or training, academic year, timezone and days off. Create or import Classes / courses, then Subjects / modules, Teachers, Students and each class Routine. Each page offers Add, Download sample CSV and Choose file & review. Replace sample rows with real data. Keep headings, mobiles and roll numbers as text. Review every row, fix errors, confirm the review and import. Exact matches are kept; conflicts need correction. Review saved-record progress in Get started. Link guardians in Students, assign admin/accountant access in People & roles, then prepare fees and a receiving account when needed. Institute settings-এ স্কুল, কোচিং বা ট্রেনিং, শিক্ষাবর্ষ, সময় অঞ্চল ও বন্ধের দিন দেখুন। আগে Classes / courses, তারপর Subjects / modules, Teachers, Students ও প্রতিটি ক্লাসের Routine তৈরি বা ইমপোর্ট করুন। প্রতিটি পাতায় Add, Download sample CSV ও Choose file & review আছে। নমুনা বদলে আসল তথ্য লিখুন। শিরোনাম রাখুন; মোবাইল ও রোল টেক্সট হিসেবে লিখুন। ভুল ঠিক করে প্রতিটি সারি দেখে সম্মতি দিন, তারপর ইমপোর্ট করুন। Get started-এ সেভ করা তথ্যের অগ্রগতি দেখুন। Students থেকে অভিভাবক যুক্ত করুন, People & roles থেকে অ্যাডমিন/অ্যাকাউন্ট্যান্ট দিন, দরকার হলে ফি ও টাকা নেওয়ার অ্যাকাউন্ট সেট করুন।"
+          },
+          "bn": {
+            "id": "institute_setup",
+            "title": "প্রতিষ্ঠান সেটআপ শুরু করুন",
+            "summary": "প্রতিষ্ঠানের তথ্য ধাপে ধাপে সেভ করে কাজ শুরু করুন।",
+            "why": "প্রতিষ্ঠানের তথ্য ধাপে ধাপে সেভ করে কাজ শুরু করুন।",
+            "steps": [
+              "Institute settings-এ স্কুল, কোচিং বা ট্রেনিং, শিক্ষাবর্ষ, সময় অঞ্চল ও বন্ধের দিন দেখুন।",
+              "আগে Classes / courses, তারপর Subjects / modules, Teachers, Students ও প্রতিটি ক্লাসের Routine তৈরি বা ইমপোর্ট করুন। প্রতিটি পাতায় Add, Download sample CSV ও Choose file & review আছে।",
+              "নমুনা বদলে আসল তথ্য লিখুন। শিরোনাম রাখুন; মোবাইল ও রোল টেক্সট হিসেবে লিখুন। ভুল ঠিক করে প্রতিটি সারি দেখে সম্মতি দিন, তারপর ইমপোর্ট করুন।",
+              "Get started-এ সেভ করা তথ্যের অগ্রগতি দেখুন। Students থেকে অভিভাবক যুক্ত করুন, People & roles থেকে অ্যাডমিন/অ্যাকাউন্ট্যান্ট দিন, দরকার হলে ফি ও টাকা নেওয়ার অ্যাকাউন্ট সেট করুন।"
+            ],
+            "path": "Office → Get started",
+            "related": [
+              "institute_groups",
+              "institute_subjects",
+              "institute_teachers",
+              "institute_students",
+              "institute_routine"
+            ],
+            "group": "setup",
+            "projectType": "institute",
+            "keywords": "setup Get started with your institute Prepare your institute in a clear order using real records. প্রতিষ্ঠান সেটআপ শুরু করুন প্রতিষ্ঠানের তথ্য ধাপে ধাপে সেভ করে কাজ শুরু করুন। Check Institute settings: school, coaching or training, academic year, timezone and days off. Create or import Classes / courses, then Subjects / modules, Teachers, Students and each class Routine. Each page offers Add, Download sample CSV and Choose file & review. Replace sample rows with real data. Keep headings, mobiles and roll numbers as text. Review every row, fix errors, confirm the review and import. Exact matches are kept; conflicts need correction. Review saved-record progress in Get started. Link guardians in Students, assign admin/accountant access in People & roles, then prepare fees and a receiving account when needed. Institute settings-এ স্কুল, কোচিং বা ট্রেনিং, শিক্ষাবর্ষ, সময় অঞ্চল ও বন্ধের দিন দেখুন। আগে Classes / courses, তারপর Subjects / modules, Teachers, Students ও প্রতিটি ক্লাসের Routine তৈরি বা ইমপোর্ট করুন। প্রতিটি পাতায় Add, Download sample CSV ও Choose file & review আছে। নমুনা বদলে আসল তথ্য লিখুন। শিরোনাম রাখুন; মোবাইল ও রোল টেক্সট হিসেবে লিখুন। ভুল ঠিক করে প্রতিটি সারি দেখে সম্মতি দিন, তারপর ইমপোর্ট করুন। Get started-এ সেভ করা তথ্যের অগ্রগতি দেখুন। Students থেকে অভিভাবক যুক্ত করুন, People & roles থেকে অ্যাডমিন/অ্যাকাউন্ট্যান্ট দিন, দরকার হলে ফি ও টাকা নেওয়ার অ্যাকাউন্ট সেট করুন।"
+          }
+        },
+        "institute_groups": {
+          "en": {
+            "id": "institute_groups",
+            "title": "Classes / courses",
+            "summary": "Keep each class section, coaching batch or training course batch distinct.",
+            "why": "Keep each class section, coaching batch or training course batch distinct.",
+            "steps": [
+              "Choose Add class / batch / course. Enter a distinct name such as Class 8 A, optional section and academic year.",
+              "For many groups, download the sample CSV. Fill name, section and academic_year; each name must be unique within its year.",
+              "Choose file & review, fix duplicate or conflicting groups, confirm the reviewed rows and import. Existing exact matches are kept."
+            ],
+            "path": "Office → Classes / courses",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "setup",
+            "projectType": "institute",
+            "keywords": "groups Classes / courses Keep each class section, coaching batch or training course batch distinct. ক্লাস / কোর্স প্রতিটি ক্লাসের শাখা, ব্যাচ বা কোর্স আলাদা রাখুন। Choose Add class / batch / course. Enter a distinct name such as Class 8 A, optional section and academic year. For many groups, download the sample CSV. Fill name, section and academic_year; each name must be unique within its year. Choose file & review, fix duplicate or conflicting groups, confirm the reviewed rows and import. Existing exact matches are kept. Add থেকে আলাদা নাম, যেমন Class 8 A, শাখা ও শিক্ষাবর্ষ লিখুন। অনেক ক্লাস হলে Download sample CSV থেকে name, section ও academic_year পূরণ করুন। একই বছরে প্রতিটি নাম আলাদা হবে। Choose file & review চাপুন। ডুপ্লিকেট বা ভুল ঠিক করে সারিগুলো দেখে সম্মতি দিয়ে ইমপোর্ট করুন। হুবহু মিলে যাওয়া তথ্য আগের মতো থাকবে।"
+          },
+          "bn": {
+            "id": "institute_groups",
+            "title": "ক্লাস / কোর্স",
+            "summary": "প্রতিটি ক্লাসের শাখা, ব্যাচ বা কোর্স আলাদা রাখুন।",
+            "why": "প্রতিটি ক্লাসের শাখা, ব্যাচ বা কোর্স আলাদা রাখুন।",
+            "steps": [
+              "Add থেকে আলাদা নাম, যেমন Class 8 A, শাখা ও শিক্ষাবর্ষ লিখুন।",
+              "অনেক ক্লাস হলে Download sample CSV থেকে name, section ও academic_year পূরণ করুন। একই বছরে প্রতিটি নাম আলাদা হবে।",
+              "Choose file & review চাপুন। ডুপ্লিকেট বা ভুল ঠিক করে সারিগুলো দেখে সম্মতি দিয়ে ইমপোর্ট করুন। হুবহু মিলে যাওয়া তথ্য আগের মতো থাকবে।"
+            ],
+            "path": "Office → Classes / courses",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "setup",
+            "projectType": "institute",
+            "keywords": "groups Classes / courses Keep each class section, coaching batch or training course batch distinct. ক্লাস / কোর্স প্রতিটি ক্লাসের শাখা, ব্যাচ বা কোর্স আলাদা রাখুন। Choose Add class / batch / course. Enter a distinct name such as Class 8 A, optional section and academic year. For many groups, download the sample CSV. Fill name, section and academic_year; each name must be unique within its year. Choose file & review, fix duplicate or conflicting groups, confirm the reviewed rows and import. Existing exact matches are kept. Add থেকে আলাদা নাম, যেমন Class 8 A, শাখা ও শিক্ষাবর্ষ লিখুন। অনেক ক্লাস হলে Download sample CSV থেকে name, section ও academic_year পূরণ করুন। একই বছরে প্রতিটি নাম আলাদা হবে। Choose file & review চাপুন। ডুপ্লিকেট বা ভুল ঠিক করে সারিগুলো দেখে সম্মতি দিয়ে ইমপোর্ট করুন। হুবহু মিলে যাওয়া তথ্য আগের মতো থাকবে।"
+          }
+        },
+        "institute_subjects": {
+          "en": {
+            "id": "institute_subjects",
+            "title": "Subjects / modules",
+            "summary": "Use stable subject codes to connect teachers, routines and assessments.",
+            "why": "Use stable subject codes to connect teachers, routines and assessments.",
+            "steps": [
+              "Choose Add subject / module. Enter the name, unique code and assessment components totaling 100 marks.",
+              "For import, download the sample and fill name, code, pass_percent, written, mcq and practical. Leave unused components blank; component marks must total 100.",
+              "Choose file & review, fix errors, confirm and import. Existing subject codes with different mark schemes need manual review."
+            ],
+            "path": "Office → Subjects / modules",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "setup",
+            "projectType": "institute",
+            "keywords": "subjects Subjects / modules Use stable subject codes to connect teachers, routines and assessments. বিষয় / মডিউল বিষয়ের কোড দিয়ে শিক্ষক, রুটিন ও মূল্যায়ন যুক্ত করুন। Choose Add subject / module. Enter the name, unique code and assessment components totaling 100 marks. For import, download the sample and fill name, code, pass_percent, written, mcq and practical. Leave unused components blank; component marks must total 100. Choose file & review, fix errors, confirm and import. Existing subject codes with different mark schemes need manual review. Add subject / module থেকে নাম, আলাদা কোড ও মোট ১০০ নম্বরের অংশ লিখুন। ইমপোর্টের নমুনায় name, code, pass_percent, written, mcq ও practical পূরণ করুন। অব্যবহৃত অংশ ফাঁকা রাখুন; নম্বরের যোগফল ১০০ হবে। Choose file & review থেকে ভুল ঠিক করে সারি দেখে সম্মতি দিয়ে ইমপোর্ট করুন। আগের কোডে আলাদা নম্বরের নিয়ম থাকলে আগে সেটি দেখুন।"
+          },
+          "bn": {
+            "id": "institute_subjects",
+            "title": "বিষয় / মডিউল",
+            "summary": "বিষয়ের কোড দিয়ে শিক্ষক, রুটিন ও মূল্যায়ন যুক্ত করুন।",
+            "why": "বিষয়ের কোড দিয়ে শিক্ষক, রুটিন ও মূল্যায়ন যুক্ত করুন।",
+            "steps": [
+              "Add subject / module থেকে নাম, আলাদা কোড ও মোট ১০০ নম্বরের অংশ লিখুন।",
+              "ইমপোর্টের নমুনায় name, code, pass_percent, written, mcq ও practical পূরণ করুন। অব্যবহৃত অংশ ফাঁকা রাখুন; নম্বরের যোগফল ১০০ হবে।",
+              "Choose file & review থেকে ভুল ঠিক করে সারি দেখে সম্মতি দিয়ে ইমপোর্ট করুন। আগের কোডে আলাদা নম্বরের নিয়ম থাকলে আগে সেটি দেখুন।"
+            ],
+            "path": "Office → Subjects / modules",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "setup",
+            "projectType": "institute",
+            "keywords": "subjects Subjects / modules Use stable subject codes to connect teachers, routines and assessments. বিষয় / মডিউল বিষয়ের কোড দিয়ে শিক্ষক, রুটিন ও মূল্যায়ন যুক্ত করুন। Choose Add subject / module. Enter the name, unique code and assessment components totaling 100 marks. For import, download the sample and fill name, code, pass_percent, written, mcq and practical. Leave unused components blank; component marks must total 100. Choose file & review, fix errors, confirm and import. Existing subject codes with different mark schemes need manual review. Add subject / module থেকে নাম, আলাদা কোড ও মোট ১০০ নম্বরের অংশ লিখুন। ইমপোর্টের নমুনায় name, code, pass_percent, written, mcq ও practical পূরণ করুন। অব্যবহৃত অংশ ফাঁকা রাখুন; নম্বরের যোগফল ১০০ হবে। Choose file & review থেকে ভুল ঠিক করে সারি দেখে সম্মতি দিয়ে ইমপোর্ট করুন। আগের কোডে আলাদা নম্বরের নিয়ম থাকলে আগে সেটি দেখুন।"
+          }
+        },
+        "institute_teachers": {
+          "en": {
+            "id": "institute_teachers",
+            "title": "Teachers & class assignments",
+            "summary": "Give each teacher access through their own sign-in mobile and assigned classes.",
+            "why": "Give each teacher access through their own sign-in mobile and assigned classes.",
+            "steps": [
+              "Create classes and subjects first. Open Teachers → Add teacher and enter the real name and sign-in mobile with country code.",
+              "Choose the class, optional subject and class-teacher setting. A subject assignment allows that subject’s mark entry; class teachers can decide leave.",
+              "Download sample CSV for bulk entry. Use one row per mobile, class and subject assignment; repeat a teacher across distinct assignments. group_name and academic_year must match saved classes; subject_code must exist.",
+              "Choose file & review, check names and mobiles, confirm and import. This creates teacher access; it does not send invitations."
+            ],
+            "path": "Office → Teachers",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "setup",
+            "projectType": "institute",
+            "keywords": "teachers Teachers & class assignments Give each teacher access through their own sign-in mobile and assigned classes. শিক্ষক ও ক্লাসের দায়িত্ব নিজের মোবাইল দিয়ে শিক্ষককে নির্দিষ্ট ক্লাস ও বিষয়ের দায়িত্ব দিন। Create classes and subjects first. Open Teachers → Add teacher and enter the real name and sign-in mobile with country code. Choose the class, optional subject and class-teacher setting. A subject assignment allows that subject’s mark entry; class teachers can decide leave. Download sample CSV for bulk entry. Use one row per mobile, class and subject assignment; repeat a teacher across distinct assignments. group_name and academic_year must match saved classes; subject_code must exist. Choose file & review, check names and mobiles, confirm and import. This creates teacher access; it does not send invitations. আগে ক্লাস ও বিষয় তৈরি করুন। Teachers → Add teacher থেকে আসল নাম ও দেশের কোডসহ সাইন-ইন মোবাইল দিন। ক্লাস, প্রযোজ্য বিষয় ও ক্লাস-টিচার সেটিং বাছুন। বিষয়ের দায়িত্বে সেই বিষয়ের নম্বর লেখা যায়; ক্লাস শিক্ষক ছুটি অনুমোদন করতে পারেন। নমুনা CSV-তে প্রতি মোবাইল, ক্লাস ও বিষয়ের জন্য একটি সারি রাখুন। একই শিক্ষককে আলাদা দায়িত্বে আবার লিখতে পারবেন। ক্লাস, শিক্ষাবর্ষ ও বিষয়ের কোড আগের তথ্যের সঙ্গে মিলবে। Choose file & review থেকে নাম-মোবাইল মিলিয়ে সম্মতি দিয়ে ইমপোর্ট করুন। শিক্ষক অ্যাক্সেস তৈরি হবে; আমন্ত্রণ পাঠানো হবে না।"
+          },
+          "bn": {
+            "id": "institute_teachers",
+            "title": "শিক্ষক ও ক্লাসের দায়িত্ব",
+            "summary": "নিজের মোবাইল দিয়ে শিক্ষককে নির্দিষ্ট ক্লাস ও বিষয়ের দায়িত্ব দিন।",
+            "why": "নিজের মোবাইল দিয়ে শিক্ষককে নির্দিষ্ট ক্লাস ও বিষয়ের দায়িত্ব দিন।",
+            "steps": [
+              "আগে ক্লাস ও বিষয় তৈরি করুন। Teachers → Add teacher থেকে আসল নাম ও দেশের কোডসহ সাইন-ইন মোবাইল দিন।",
+              "ক্লাস, প্রযোজ্য বিষয় ও ক্লাস-টিচার সেটিং বাছুন। বিষয়ের দায়িত্বে সেই বিষয়ের নম্বর লেখা যায়; ক্লাস শিক্ষক ছুটি অনুমোদন করতে পারেন।",
+              "নমুনা CSV-তে প্রতি মোবাইল, ক্লাস ও বিষয়ের জন্য একটি সারি রাখুন। একই শিক্ষককে আলাদা দায়িত্বে আবার লিখতে পারবেন। ক্লাস, শিক্ষাবর্ষ ও বিষয়ের কোড আগের তথ্যের সঙ্গে মিলবে।",
+              "Choose file & review থেকে নাম-মোবাইল মিলিয়ে সম্মতি দিয়ে ইমপোর্ট করুন। শিক্ষক অ্যাক্সেস তৈরি হবে; আমন্ত্রণ পাঠানো হবে না।"
+            ],
+            "path": "Office → Teachers",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "setup",
+            "projectType": "institute",
+            "keywords": "teachers Teachers & class assignments Give each teacher access through their own sign-in mobile and assigned classes. শিক্ষক ও ক্লাসের দায়িত্ব নিজের মোবাইল দিয়ে শিক্ষককে নির্দিষ্ট ক্লাস ও বিষয়ের দায়িত্ব দিন। Create classes and subjects first. Open Teachers → Add teacher and enter the real name and sign-in mobile with country code. Choose the class, optional subject and class-teacher setting. A subject assignment allows that subject’s mark entry; class teachers can decide leave. Download sample CSV for bulk entry. Use one row per mobile, class and subject assignment; repeat a teacher across distinct assignments. group_name and academic_year must match saved classes; subject_code must exist. Choose file & review, check names and mobiles, confirm and import. This creates teacher access; it does not send invitations. আগে ক্লাস ও বিষয় তৈরি করুন। Teachers → Add teacher থেকে আসল নাম ও দেশের কোডসহ সাইন-ইন মোবাইল দিন। ক্লাস, প্রযোজ্য বিষয় ও ক্লাস-টিচার সেটিং বাছুন। বিষয়ের দায়িত্বে সেই বিষয়ের নম্বর লেখা যায়; ক্লাস শিক্ষক ছুটি অনুমোদন করতে পারেন। নমুনা CSV-তে প্রতি মোবাইল, ক্লাস ও বিষয়ের জন্য একটি সারি রাখুন। একই শিক্ষককে আলাদা দায়িত্বে আবার লিখতে পারবেন। ক্লাস, শিক্ষাবর্ষ ও বিষয়ের কোড আগের তথ্যের সঙ্গে মিলবে। Choose file & review থেকে নাম-মোবাইল মিলিয়ে সম্মতি দিয়ে ইমপোর্ট করুন। শিক্ষক অ্যাক্সেস তৈরি হবে; আমন্ত্রণ পাঠানো হবে না।"
+          }
+        },
+        "institute_students": {
+          "en": {
+            "id": "institute_students",
+            "title": "Students / trainees & import",
+            "summary": "Keep the roster and sign-in relationships attached to the correct class.",
+            "why": "Keep the roster and sign-in relationships attached to the correct class.",
+            "steps": [
+              "Choose the class and Add student / trainee. Enter name, roll and optional unique student code. A sign-in mobile is optional.",
+              "For bulk entry, download sample CSV and fill name, roll_no, student_code, mobile, group_name and academic_year. Keep rolls as text to preserve leading zeroes.",
+              "Choose file & review. Check the matched classes and duplicates. Existing conflicting rolls or student codes are flagged; importing never transfers students.",
+              "Confirm reviewed rows and import. To give a guardian access, use Link guardian on the saved student and review the fee-payment permission."
+            ],
+            "path": "Office → Students",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "setup",
+            "projectType": "institute",
+            "keywords": "students Students / trainees & import Keep the roster and sign-in relationships attached to the correct class. শিক্ষার্থী ও ইমপোর্ট সঠিক ক্লাসে শিক্ষার্থীর তালিকা ও সাইন-ইন সংযোগ রাখুন। Choose the class and Add student / trainee. Enter name, roll and optional unique student code. A sign-in mobile is optional. For bulk entry, download sample CSV and fill name, roll_no, student_code, mobile, group_name and academic_year. Keep rolls as text to preserve leading zeroes. Choose file & review. Check the matched classes and duplicates. Existing conflicting rolls or student codes are flagged; importing never transfers students. Confirm reviewed rows and import. To give a guardian access, use Link guardian on the saved student and review the fee-payment permission. ক্লাস বেছে Add student / trainee চাপুন। নাম, রোল ও প্রযোজ্য আলাদা কোড দিন। সাইন-ইন মোবাইল ঐচ্ছিক। একসঙ্গে আনতে নমুনা CSV-তে name, roll_no, student_code, mobile, group_name ও academic_year লিখুন। শুরুর শূন্য রাখতে রোল টেক্সট হিসেবে রাখুন। Choose file & review থেকে ক্লাস ও ডুপ্লিকেট দেখুন। আগের রোল বা কোডে আলাদা তথ্য থাকলে ভুল দেখাবে; ইমপোর্টে ক্লাস বদল হবে না। সারি দেখে সম্মতি দিয়ে ইমপোর্ট করুন। অভিভাবকের অ্যাক্সেস দিতে সেভ করা শিক্ষার্থীর Link guardian ব্যবহার করে ফি দেওয়ার অনুমতি দেখুন।"
+          },
+          "bn": {
+            "id": "institute_students",
+            "title": "শিক্ষার্থী ও ইমপোর্ট",
+            "summary": "সঠিক ক্লাসে শিক্ষার্থীর তালিকা ও সাইন-ইন সংযোগ রাখুন।",
+            "why": "সঠিক ক্লাসে শিক্ষার্থীর তালিকা ও সাইন-ইন সংযোগ রাখুন।",
+            "steps": [
+              "ক্লাস বেছে Add student / trainee চাপুন। নাম, রোল ও প্রযোজ্য আলাদা কোড দিন। সাইন-ইন মোবাইল ঐচ্ছিক।",
+              "একসঙ্গে আনতে নমুনা CSV-তে name, roll_no, student_code, mobile, group_name ও academic_year লিখুন। শুরুর শূন্য রাখতে রোল টেক্সট হিসেবে রাখুন।",
+              "Choose file & review থেকে ক্লাস ও ডুপ্লিকেট দেখুন। আগের রোল বা কোডে আলাদা তথ্য থাকলে ভুল দেখাবে; ইমপোর্টে ক্লাস বদল হবে না।",
+              "সারি দেখে সম্মতি দিয়ে ইমপোর্ট করুন। অভিভাবকের অ্যাক্সেস দিতে সেভ করা শিক্ষার্থীর Link guardian ব্যবহার করে ফি দেওয়ার অনুমতি দেখুন।"
+            ],
+            "path": "Office → Students",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "setup",
+            "projectType": "institute",
+            "keywords": "students Students / trainees & import Keep the roster and sign-in relationships attached to the correct class. শিক্ষার্থী ও ইমপোর্ট সঠিক ক্লাসে শিক্ষার্থীর তালিকা ও সাইন-ইন সংযোগ রাখুন। Choose the class and Add student / trainee. Enter name, roll and optional unique student code. A sign-in mobile is optional. For bulk entry, download sample CSV and fill name, roll_no, student_code, mobile, group_name and academic_year. Keep rolls as text to preserve leading zeroes. Choose file & review. Check the matched classes and duplicates. Existing conflicting rolls or student codes are flagged; importing never transfers students. Confirm reviewed rows and import. To give a guardian access, use Link guardian on the saved student and review the fee-payment permission. ক্লাস বেছে Add student / trainee চাপুন। নাম, রোল ও প্রযোজ্য আলাদা কোড দিন। সাইন-ইন মোবাইল ঐচ্ছিক। একসঙ্গে আনতে নমুনা CSV-তে name, roll_no, student_code, mobile, group_name ও academic_year লিখুন। শুরুর শূন্য রাখতে রোল টেক্সট হিসেবে রাখুন। Choose file & review থেকে ক্লাস ও ডুপ্লিকেট দেখুন। আগের রোল বা কোডে আলাদা তথ্য থাকলে ভুল দেখাবে; ইমপোর্টে ক্লাস বদল হবে না। সারি দেখে সম্মতি দিয়ে ইমপোর্ট করুন। অভিভাবকের অ্যাক্সেস দিতে সেভ করা শিক্ষার্থীর Link guardian ব্যবহার করে ফি দেওয়ার অনুমতি দেখুন।"
+          }
+        },
+        "institute_routine": {
+          "en": {
+            "id": "institute_routine",
+            "title": "Create or import a class routine",
+            "summary": "Keep weekly sessions and teacher availability consistent for each class.",
+            "why": "Keep weekly sessions and teacher availability consistent for each class.",
+            "steps": [
+              "Choose a class. Office staff use Create routine or Edit routine, then add weekdays, times, subject, assigned teacher and room.",
+              "For import, download sample CSV for the selected class. Fill weekday (Sunday–Saturday), starts_at and ends_at (HH:MM), subject_code, teacher_mobile, room and effective dates (YYYY-MM-DD).",
+              "Choose file & review. Check every session and resolve class/teacher overlaps. The teacher must already be assigned to the class.",
+              "Confirm replacement explicitly. Import replaces the selected class’s entire routine, including future sessions. Other class routines stay in place. Times use the institute timezone."
+            ],
+            "path": "Routine → Choose class",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "setup",
+            "projectType": "institute",
+            "keywords": "routine Create or import a class routine Keep weekly sessions and teacher availability consistent for each class. ক্লাসের রুটিন তৈরি বা ইমপোর্ট সপ্তাহের ক্লাস ও শিক্ষকের সময় মিলিয়ে রুটিন রাখুন। Choose a class. Office staff use Create routine or Edit routine, then add weekdays, times, subject, assigned teacher and room. For import, download sample CSV for the selected class. Fill weekday (Sunday–Saturday), starts_at and ends_at (HH:MM), subject_code, teacher_mobile, room and effective dates (YYYY-MM-DD). Choose file & review. Check every session and resolve class/teacher overlaps. The teacher must already be assigned to the class. Confirm replacement explicitly. Import replaces the selected class’s entire routine, including future sessions. Other class routines stay in place. Times use the institute timezone. ক্লাস বাছুন। অফিস থেকে Create routine বা Edit routine-এ দিন, সময়, বিষয়, নির্ধারিত শিক্ষক ও রুম দিন। ইমপোর্ট করতে নির্বাচিত ক্লাসের নমুনা নিন। weekday-তে Sunday–Saturday, সময় HH:MM, subject_code, teacher_mobile, রুম ও YYYY-MM-DD তারিখ লিখুন। Choose file & review থেকে প্রতিটি ক্লাস দেখুন। ক্লাস বা শিক্ষকের সময় মিলে গেলে ঠিক করুন। শিক্ষককে আগে ওই ক্লাসে যুক্ত থাকতে হবে। বদলানোর সম্মতি দিন। ইমপোর্টে এই ক্লাসের পুরো রুটিন, ভবিষ্যতের সেশনসহ, বদলাবে। অন্য ক্লাসের রুটিন থাকবে। প্রতিষ্ঠানের সময় অঞ্চল ব্যবহার হবে।"
+          },
+          "bn": {
+            "id": "institute_routine",
+            "title": "ক্লাসের রুটিন তৈরি বা ইমপোর্ট",
+            "summary": "সপ্তাহের ক্লাস ও শিক্ষকের সময় মিলিয়ে রুটিন রাখুন।",
+            "why": "সপ্তাহের ক্লাস ও শিক্ষকের সময় মিলিয়ে রুটিন রাখুন।",
+            "steps": [
+              "ক্লাস বাছুন। অফিস থেকে Create routine বা Edit routine-এ দিন, সময়, বিষয়, নির্ধারিত শিক্ষক ও রুম দিন।",
+              "ইমপোর্ট করতে নির্বাচিত ক্লাসের নমুনা নিন। weekday-তে Sunday–Saturday, সময় HH:MM, subject_code, teacher_mobile, রুম ও YYYY-MM-DD তারিখ লিখুন।",
+              "Choose file & review থেকে প্রতিটি ক্লাস দেখুন। ক্লাস বা শিক্ষকের সময় মিলে গেলে ঠিক করুন। শিক্ষককে আগে ওই ক্লাসে যুক্ত থাকতে হবে।",
+              "বদলানোর সম্মতি দিন। ইমপোর্টে এই ক্লাসের পুরো রুটিন, ভবিষ্যতের সেশনসহ, বদলাবে। অন্য ক্লাসের রুটিন থাকবে। প্রতিষ্ঠানের সময় অঞ্চল ব্যবহার হবে।"
+            ],
+            "path": "Routine → Choose class",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "setup",
+            "projectType": "institute",
+            "keywords": "routine Create or import a class routine Keep weekly sessions and teacher availability consistent for each class. ক্লাসের রুটিন তৈরি বা ইমপোর্ট সপ্তাহের ক্লাস ও শিক্ষকের সময় মিলিয়ে রুটিন রাখুন। Choose a class. Office staff use Create routine or Edit routine, then add weekdays, times, subject, assigned teacher and room. For import, download sample CSV for the selected class. Fill weekday (Sunday–Saturday), starts_at and ends_at (HH:MM), subject_code, teacher_mobile, room and effective dates (YYYY-MM-DD). Choose file & review. Check every session and resolve class/teacher overlaps. The teacher must already be assigned to the class. Confirm replacement explicitly. Import replaces the selected class’s entire routine, including future sessions. Other class routines stay in place. Times use the institute timezone. ক্লাস বাছুন। অফিস থেকে Create routine বা Edit routine-এ দিন, সময়, বিষয়, নির্ধারিত শিক্ষক ও রুম দিন। ইমপোর্ট করতে নির্বাচিত ক্লাসের নমুনা নিন। weekday-তে Sunday–Saturday, সময় HH:MM, subject_code, teacher_mobile, রুম ও YYYY-MM-DD তারিখ লিখুন। Choose file & review থেকে প্রতিটি ক্লাস দেখুন। ক্লাস বা শিক্ষকের সময় মিলে গেলে ঠিক করুন। শিক্ষককে আগে ওই ক্লাসে যুক্ত থাকতে হবে। বদলানোর সম্মতি দিন। ইমপোর্টে এই ক্লাসের পুরো রুটিন, ভবিষ্যতের সেশনসহ, বদলাবে। অন্য ক্লাসের রুটিন থাকবে। প্রতিষ্ঠানের সময় অঞ্চল ব্যবহার হবে।"
+          }
+        },
+        "institute_attendance": {
+          "en": {
+            "id": "institute_attendance",
+            "title": "Attendance",
+            "summary": "Choose the class, date and session. Teachers only see assigned classes; families see their linked students.",
+            "why": "Choose the class, date and session. Teachers only see assigned classes; families see their linked students.",
+            "steps": [
+              "Choose the class, date and session. Teachers only see assigned classes; families see their linked students.",
+              "Mark each student using the available controls and save. Unmarked days remain Not marked yet."
+            ],
+            "path": "Attendance",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Choose the class, date and session. Teachers only see assigned classes; families see their linked students. Mark each student using the available controls and save. Unmarked days remain Not marked yet."
+          },
+          "bn": {
+            "id": "institute_attendance",
+            "title": "Attendance",
+            "summary": "আপনার অনুমতি অনুযায়ী এই পাতার কাজ ও তথ্য দেখুন।",
+            "why": "সঠিক ক্লাস ও শিক্ষার্থীর তথ্য দেখে কাজ করুন।",
+            "steps": [
+              "সঠিক ক্লাস বা শিক্ষার্থী বেছে সেভ করা তথ্য দেখুন।",
+              "আপনার পোর্টালে যে কাজগুলো দেখানো আছে সেগুলো ব্যবহার করুন। দরকার হলে অফিসের সঙ্গে কথা বলুন।"
+            ],
+            "path": "Attendance",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Choose the class, date and session. Teachers only see assigned classes; families see their linked students. Mark each student using the available controls and save. Unmarked days remain Not marked yet."
+          }
+        },
+        "institute_fees": {
+          "en": {
+            "id": "institute_fees",
+            "title": "Fees & receipts",
+            "summary": "Select the student and review invoices and submitted payments.",
+            "why": "Select the student and review invoices and submitted payments.",
+            "steps": [
+              "Select the student and review invoices and submitted payments.",
+              "Office/accounts prepare fee plans and invoices. Submit only actual payments; an authorized accountant verifies them before a receipt and account credit."
+            ],
+            "path": "Fees & receipts",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Select the student and review invoices and submitted payments. Office/accounts prepare fee plans and invoices. Submit only actual payments; an authorized accountant verifies them before a receipt and account credit."
+          },
+          "bn": {
+            "id": "institute_fees",
+            "title": "Fees & receipts",
+            "summary": "আপনার অনুমতি অনুযায়ী এই পাতার কাজ ও তথ্য দেখুন।",
+            "why": "সঠিক ক্লাস ও শিক্ষার্থীর তথ্য দেখে কাজ করুন।",
+            "steps": [
+              "সঠিক ক্লাস বা শিক্ষার্থী বেছে সেভ করা তথ্য দেখুন।",
+              "আপনার পোর্টালে যে কাজগুলো দেখানো আছে সেগুলো ব্যবহার করুন। দরকার হলে অফিসের সঙ্গে কথা বলুন।"
+            ],
+            "path": "Fees & receipts",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Select the student and review invoices and submitted payments. Office/accounts prepare fee plans and invoices. Submit only actual payments; an authorized accountant verifies them before a receipt and account credit."
+          }
+        },
+        "institute_posts": {
+          "en": {
+            "id": "institute_posts",
+            "title": "Notices & homework",
+            "summary": "Read notices and homework for the groups available to you.",
+            "why": "Read notices and homework for the groups available to you.",
+            "steps": [
+              "Read notices and homework for the groups available to you.",
+              "Authorized staff choose the audience, review the message and publish. Families can acknowledge notices."
+            ],
+            "path": "Notices & homework",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Read notices and homework for the groups available to you. Authorized staff choose the audience, review the message and publish. Families can acknowledge notices."
+          },
+          "bn": {
+            "id": "institute_posts",
+            "title": "Notices & homework",
+            "summary": "আপনার অনুমতি অনুযায়ী এই পাতার কাজ ও তথ্য দেখুন।",
+            "why": "সঠিক ক্লাস ও শিক্ষার্থীর তথ্য দেখে কাজ করুন।",
+            "steps": [
+              "সঠিক ক্লাস বা শিক্ষার্থী বেছে সেভ করা তথ্য দেখুন।",
+              "আপনার পোর্টালে যে কাজগুলো দেখানো আছে সেগুলো ব্যবহার করুন। দরকার হলে অফিসের সঙ্গে কথা বলুন।"
+            ],
+            "path": "Notices & homework",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Read notices and homework for the groups available to you. Authorized staff choose the audience, review the message and publish. Families can acknowledge notices."
+          }
+        },
+        "institute_documents": {
+          "en": {
+            "id": "institute_documents",
+            "title": "Documents",
+            "summary": "Open documents available for your selected student or class.",
+            "why": "Open documents available for your selected student or class.",
+            "steps": [
+              "Open documents available for your selected student or class.",
+              "Families see their own receipts and published report cards; teachers have only their class documents."
+            ],
+            "path": "Documents",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Open documents available for your selected student or class. Families see their own receipts and published report cards; teachers have only their class documents."
+          },
+          "bn": {
+            "id": "institute_documents",
+            "title": "Documents",
+            "summary": "আপনার অনুমতি অনুযায়ী এই পাতার কাজ ও তথ্য দেখুন।",
+            "why": "সঠিক ক্লাস ও শিক্ষার্থীর তথ্য দেখে কাজ করুন।",
+            "steps": [
+              "সঠিক ক্লাস বা শিক্ষার্থী বেছে সেভ করা তথ্য দেখুন।",
+              "আপনার পোর্টালে যে কাজগুলো দেখানো আছে সেগুলো ব্যবহার করুন। দরকার হলে অফিসের সঙ্গে কথা বলুন।"
+            ],
+            "path": "Documents",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Open documents available for your selected student or class. Families see their own receipts and published report cards; teachers have only their class documents."
+          }
+        },
+        "institute_results": {
+          "en": {
+            "id": "institute_results",
+            "title": "Results",
+            "summary": "Choose the exam, class and subject, or your linked student.",
+            "why": "Choose the exam, class and subject, or your linked student.",
+            "steps": [
+              "Choose the exam, class and subject, or your linked student.",
+              "Assigned teachers enter and submit marks. Office reviews and publishes results; families see published report cards."
+            ],
+            "path": "Results",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Choose the exam, class and subject, or your linked student. Assigned teachers enter and submit marks. Office reviews and publishes results; families see published report cards."
+          },
+          "bn": {
+            "id": "institute_results",
+            "title": "Results",
+            "summary": "আপনার অনুমতি অনুযায়ী এই পাতার কাজ ও তথ্য দেখুন।",
+            "why": "সঠিক ক্লাস ও শিক্ষার্থীর তথ্য দেখে কাজ করুন।",
+            "steps": [
+              "সঠিক ক্লাস বা শিক্ষার্থী বেছে সেভ করা তথ্য দেখুন।",
+              "আপনার পোর্টালে যে কাজগুলো দেখানো আছে সেগুলো ব্যবহার করুন। দরকার হলে অফিসের সঙ্গে কথা বলুন।"
+            ],
+            "path": "Results",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Choose the exam, class and subject, or your linked student. Assigned teachers enter and submit marks. Office reviews and publishes results; families see published report cards."
+          }
+        },
+        "institute_leave": {
+          "en": {
+            "id": "institute_leave",
+            "title": "Leave requests",
+            "summary": "Families choose a linked student, dates and a real leave reason.",
+            "why": "Families choose a linked student, dates and a real leave reason.",
+            "steps": [
+              "Families choose a linked student, dates and a real leave reason.",
+              "The assigned class teacher or office reviews pending leave. Approved leave is reflected in attendance."
+            ],
+            "path": "Leave requests",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Families choose a linked student, dates and a real leave reason. The assigned class teacher or office reviews pending leave. Approved leave is reflected in attendance."
+          },
+          "bn": {
+            "id": "institute_leave",
+            "title": "Leave requests",
+            "summary": "আপনার অনুমতি অনুযায়ী এই পাতার কাজ ও তথ্য দেখুন।",
+            "why": "সঠিক ক্লাস ও শিক্ষার্থীর তথ্য দেখে কাজ করুন।",
+            "steps": [
+              "সঠিক ক্লাস বা শিক্ষার্থী বেছে সেভ করা তথ্য দেখুন।",
+              "আপনার পোর্টালে যে কাজগুলো দেখানো আছে সেগুলো ব্যবহার করুন। দরকার হলে অফিসের সঙ্গে কথা বলুন।"
+            ],
+            "path": "Leave requests",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Families choose a linked student, dates and a real leave reason. The assigned class teacher or office reviews pending leave. Approved leave is reflected in attendance."
+          }
+        },
+        "institute_settings": {
+          "en": {
+            "id": "institute_settings",
+            "title": "Institute settings",
+            "summary": "Open Institute settings and review school, coaching or training, academic year, timezone and days off.",
+            "why": "Open Institute settings and review school, coaching or training, academic year, timezone and days off.",
+            "steps": [
+              "Open Institute settings and review school, coaching or training, academic year, timezone and days off.",
+              "Save the intended settings. Use Subjects / modules to prepare mark schemes, and Academic setup to create exams. Set up a receiving account before verifying fees."
+            ],
+            "path": "Institute settings",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Open Institute settings and review school, coaching or training, academic year, timezone and days off. Save the intended settings. Use Subjects / modules to prepare mark schemes, and Academic setup to create exams. Set up a receiving account before verifying fees."
+          },
+          "bn": {
+            "id": "institute_settings",
+            "title": "Institute settings",
+            "summary": "আপনার অনুমতি অনুযায়ী এই পাতার কাজ ও তথ্য দেখুন।",
+            "why": "সঠিক ক্লাস ও শিক্ষার্থীর তথ্য দেখে কাজ করুন।",
+            "steps": [
+              "সঠিক ক্লাস বা শিক্ষার্থী বেছে সেভ করা তথ্য দেখুন।",
+              "আপনার পোর্টালে যে কাজগুলো দেখানো আছে সেগুলো ব্যবহার করুন। দরকার হলে অফিসের সঙ্গে কথা বলুন।"
+            ],
+            "path": "Institute settings",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Open Institute settings and review school, coaching or training, academic year, timezone and days off. Save the intended settings. Use Subjects / modules to prepare mark schemes, and Academic setup to create exams. Set up a receiving account before verifying fees."
+          }
+        },
+        "institute_roles": {
+          "en": {
+            "id": "institute_roles",
+            "title": "People & roles",
+            "summary": "Review existing project access. Add admin or accountant access through People & roles.",
+            "why": "Review existing project access. Add admin or accountant access through People & roles.",
+            "steps": [
+              "Review existing project access. Add admin or accountant access through People & roles.",
+              "Create teacher assignments through Teachers. Add students and link guardians through Students so access stays scoped to their class or child."
+            ],
+            "path": "People & roles",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Review existing project access. Add admin or accountant access through People & roles. Create teacher assignments through Teachers. Add students and link guardians through Students so access stays scoped to their class or child."
+          },
+          "bn": {
+            "id": "institute_roles",
+            "title": "People & roles",
+            "summary": "আপনার অনুমতি অনুযায়ী এই পাতার কাজ ও তথ্য দেখুন।",
+            "why": "সঠিক ক্লাস ও শিক্ষার্থীর তথ্য দেখে কাজ করুন।",
+            "steps": [
+              "সঠিক ক্লাস বা শিক্ষার্থী বেছে সেভ করা তথ্য দেখুন।",
+              "আপনার পোর্টালে যে কাজগুলো দেখানো আছে সেগুলো ব্যবহার করুন। দরকার হলে অফিসের সঙ্গে কথা বলুন।"
+            ],
+            "path": "People & roles",
+            "related": [
+              "institute_setup"
+            ],
+            "group": "workspace",
+            "projectType": "institute",
+            "keywords": "Review existing project access. Add admin or accountant access through People & roles. Create teacher assignments through Teachers. Add students and link guardians through Students so access stays scoped to their class or child."
+          }
+        },
+        "overview": {
+          "en": {
+            "id": "overview",
+            "title": "Your institute overview",
+            "summary": "Manage school, coaching or training classes, students, teachers, routines, attendance and fees.",
+            "why": "Start with saved records and the work available to your portal.",
+            "steps": [
+              "Office staff can open Get started for setup progress, entry pages and sample imports.",
+              "Choose the correct portal from Profile. Teachers see assigned classes; students and guardians see only their linked records.",
+              "Open the Nesta guide on each page for instructions in English or Bangla."
+            ],
+            "path": "Home → Get started / All tools",
+            "related": [
+              "institute_setup",
+              "institute_students",
+              "institute_routine",
+              "institute_fees"
+            ],
+            "group": "learn",
+            "projectType": "institute",
+            "keywords": "institute school coaching training onboarding start ক্লাস স্কুল কোচিং প্রতিষ্ঠান রুটিন শিক্ষক শিক্ষার্থী"
+          },
+          "bn": {
+            "id": "overview",
+            "title": "আপনার প্রতিষ্ঠানের কাজ",
+            "summary": "স্কুল, কোচিং বা ট্রেনিংয়ের ক্লাস, শিক্ষক, শিক্ষার্থী, রুটিন, উপস্থিতি ও ফি রাখুন।",
+            "why": "সেভ করা তথ্য ও আপনার পোর্টালের কাজ দেখে শুরু করুন।",
+            "steps": [
+              "অফিস থেকে Get started খুলে অগ্রগতি, তথ্য লেখার পাতা ও ইমপোর্টের নমুনা দেখুন।",
+              "Profile থেকে সঠিক পোর্টাল বাছুন। শিক্ষক নিজের ক্লাস এবং পরিবার যুক্ত শিক্ষার্থীর তথ্য দেখেন।",
+              "প্রতি পাতায় Nesta guide থেকে বাংলা বা ইংরেজিতে ধাপ দেখুন।"
+            ],
+            "path": "Home → Get started / All tools",
+            "related": [
+              "institute_setup",
+              "institute_students",
+              "institute_routine",
+              "institute_fees"
+            ],
+            "group": "learn",
+            "projectType": "institute",
+            "keywords": "institute school coaching training onboarding start ক্লাস স্কুল কোচিং প্রতিষ্ঠান রুটিন শিক্ষক শিক্ষার্থী"
+          }
+        },
+        "all_tools": {
+          "en": {
+            "id": "all_tools",
+            "title": "Institute tools",
+            "summary": "Manage school, coaching or training classes, students, teachers, routines, attendance and fees.",
+            "why": "Start with saved records and the work available to your portal.",
+            "steps": [
+              "Office staff can open Get started for setup progress, entry pages and sample imports.",
+              "Choose the correct portal from Profile. Teachers see assigned classes; students and guardians see only their linked records.",
+              "Open the Nesta guide on each page for instructions in English or Bangla."
+            ],
+            "path": "Home → Get started / All tools",
+            "related": [
+              "institute_setup",
+              "institute_students",
+              "institute_routine",
+              "institute_fees"
+            ],
+            "group": "learn",
+            "projectType": "institute",
+            "keywords": "institute school coaching training onboarding start ক্লাস স্কুল কোচিং প্রতিষ্ঠান রুটিন শিক্ষক শিক্ষার্থী"
+          },
+          "bn": {
+            "id": "all_tools",
+            "title": "আপনার প্রতিষ্ঠানের কাজ",
+            "summary": "স্কুল, কোচিং বা ট্রেনিংয়ের ক্লাস, শিক্ষক, শিক্ষার্থী, রুটিন, উপস্থিতি ও ফি রাখুন।",
+            "why": "সেভ করা তথ্য ও আপনার পোর্টালের কাজ দেখে শুরু করুন।",
+            "steps": [
+              "অফিস থেকে Get started খুলে অগ্রগতি, তথ্য লেখার পাতা ও ইমপোর্টের নমুনা দেখুন।",
+              "Profile থেকে সঠিক পোর্টাল বাছুন। শিক্ষক নিজের ক্লাস এবং পরিবার যুক্ত শিক্ষার্থীর তথ্য দেখেন।",
+              "প্রতি পাতায় Nesta guide থেকে বাংলা বা ইংরেজিতে ধাপ দেখুন।"
+            ],
+            "path": "Home → Get started / All tools",
+            "related": [
+              "institute_setup",
+              "institute_students",
+              "institute_routine",
+              "institute_fees"
+            ],
+            "group": "learn",
+            "projectType": "institute",
+            "keywords": "institute school coaching training onboarding start ক্লাস স্কুল কোচিং প্রতিষ্ঠান রুটিন শিক্ষক শিক্ষার্থী"
+          }
+        }
+      },
+      "roles": {
+        "owner": [
+          "institute_setup",
+          "institute_groups",
+          "institute_subjects",
+          "institute_teachers",
+          "institute_students",
+          "institute_routine",
+          "institute_attendance",
+          "institute_fees",
+          "institute_posts",
+          "institute_documents",
+          "institute_results",
+          "institute_leave",
+          "institute_settings",
+          "institute_roles",
+          "overview",
+          "all_tools"
+        ],
+        "admin": [
+          "institute_setup",
+          "institute_groups",
+          "institute_subjects",
+          "institute_teachers",
+          "institute_students",
+          "institute_routine",
+          "institute_attendance",
+          "institute_fees",
+          "institute_posts",
+          "institute_documents",
+          "institute_results",
+          "institute_leave",
+          "institute_settings",
+          "institute_roles",
+          "overview",
+          "all_tools"
+        ],
+        "accountant": [
+          "institute_students",
+          "institute_routine",
+          "institute_fees",
+          "overview",
+          "all_tools"
+        ],
+        "cashier": [
+          "institute_fees",
+          "overview",
+          "all_tools"
+        ],
+        "teacher": [
+          "institute_students",
+          "institute_routine",
+          "institute_attendance",
+          "institute_posts",
+          "institute_documents",
+          "institute_results",
+          "institute_leave",
+          "overview",
+          "all_tools"
+        ],
+        "member": [
+          "institute_routine",
+          "institute_attendance",
+          "institute_fees",
+          "institute_posts",
+          "institute_documents",
+          "institute_results",
+          "institute_leave",
+          "overview",
+          "all_tools"
+        ],
+        "auditor": [
+          "institute_students",
+          "institute_routine",
+          "institute_attendance",
+          "institute_fees",
+          "institute_posts",
+          "institute_documents",
+          "institute_results",
+          "institute_leave",
+          "overview",
+          "all_tools"
+        ]
+      },
+      "access": {
+        "institute_setup": {
+          "menu": "institute_setup",
+          "roles": [
+            "owner",
+            "admin"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin"
+          ],
+          "builtinOnly": true
+        },
+        "institute_groups": {
+          "menu": "institute_groups",
+          "roles": [
+            "owner",
+            "admin"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin"
+          ],
+          "builtinOnly": true
+        },
+        "institute_subjects": {
+          "menu": "institute_subjects",
+          "roles": [
+            "owner",
+            "admin"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin"
+          ],
+          "builtinOnly": true
+        },
+        "institute_teachers": {
+          "menu": "institute_teachers",
+          "roles": [
+            "owner",
+            "admin"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin"
+          ],
+          "builtinOnly": true
+        },
+        "institute_students": {
+          "menu": "institute_students",
+          "roles": [
+            "owner",
+            "admin",
+            "accountant",
+            "teacher",
+            "auditor"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin"
+          ],
+          "builtinOnly": true
+        },
+        "institute_routine": {
+          "menu": "institute_routine",
+          "roles": [
+            "owner",
+            "admin",
+            "accountant",
+            "teacher",
+            "member",
+            "auditor"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin"
+          ],
+          "builtinOnly": true
+        },
+        "institute_attendance": {
+          "menu": "institute_attendance",
+          "roles": [
+            "owner",
+            "admin",
+            "teacher",
+            "member",
+            "auditor"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin",
+            "teacher"
+          ],
+          "builtinOnly": true
+        },
+        "institute_fees": {
+          "menu": "institute_fees",
+          "roles": [
+            "owner",
+            "admin",
+            "accountant",
+            "cashier",
+            "member",
+            "auditor"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin",
+            "accountant",
+            "cashier",
+            "member"
+          ],
+          "builtinOnly": true
+        },
+        "institute_posts": {
+          "menu": "institute_posts",
+          "roles": [
+            "owner",
+            "admin",
+            "teacher",
+            "member",
+            "auditor"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin",
+            "teacher",
+            "member"
+          ],
+          "builtinOnly": true
+        },
+        "institute_documents": {
+          "menu": "institute_documents",
+          "roles": [
+            "owner",
+            "admin",
+            "teacher",
+            "member",
+            "auditor"
+          ],
+          "writeRoles": [],
+          "builtinOnly": true
+        },
+        "institute_results": {
+          "menu": "institute_results",
+          "roles": [
+            "owner",
+            "admin",
+            "teacher",
+            "member",
+            "auditor"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin",
+            "teacher"
+          ],
+          "builtinOnly": true
+        },
+        "institute_leave": {
+          "menu": "institute_leave",
+          "roles": [
+            "owner",
+            "admin",
+            "teacher",
+            "member",
+            "auditor"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin",
+            "teacher",
+            "member"
+          ],
+          "builtinOnly": true
+        },
+        "institute_settings": {
+          "menu": "institute_settings",
+          "roles": [
+            "owner",
+            "admin"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin"
+          ],
+          "builtinOnly": true
+        },
+        "institute_roles": {
+          "menu": "institute_roles",
+          "roles": [
+            "owner",
+            "admin"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin"
+          ],
+          "builtinOnly": true
+        }
+      }
     }
   }
 }

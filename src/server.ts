@@ -1,3 +1,4 @@
+import { startInstituteWorker, stopInstituteWorker } from './modules/institute/institute.worker.js';
 import { startMasterAdminAlerts, stopMasterAdminAlerts } from './modules/internal/master-alerts.service.js';
 import { startRecurringExpensesWorker, stopRecurringExpensesWorker } from './modules/expenses/recurring-expenses.worker.js';
 import { startBusinessImportRetention, stopBusinessImportRetention } from './modules/business-setup/retention.js';
@@ -23,6 +24,7 @@ import { startPlatformBroadcasts, stopPlatformBroadcasts } from './modules/inter
 import { startAiCreditNotifications, stopAiCreditNotifications } from './modules/internal/ai-credit-notifications.service.js';
 const app = createApp();
 logWhatsAppConfiguration();
+startInstituteWorker();
 startPlatformAlerts();
 startMasterAdminAlerts();
 startPlatformBroadcasts();
@@ -53,6 +55,7 @@ const server = app.listen(env.port, () => {
 const stopAssistantEvents = attachAssistantEvents(server);
 
 async function shutdown() {
+  stopInstituteWorker();
   stopAssistantEvents();
   stopPlatformAlerts();
   stopMasterAdminAlerts();

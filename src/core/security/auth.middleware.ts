@@ -97,7 +97,7 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
 
         // Repair a missing link only for users explicitly assigned the member role.
         // Management/access roles must never create a financial Member record.
-        if (hasMemberRole && !memberId && !impersonation) {
+        if (hasMemberRole && !memberId && !impersonation && (await prisma.project.findUnique({ where: { id: requestedProjectId }, select: { projectType: true } }))?.projectType !== "institute") {
           const ensured = await prisma.$transaction((tx) => ensureUserProjectMember(tx, {
             tenantId: session.tenantId,
             projectId: requestedProjectId,

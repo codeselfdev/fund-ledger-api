@@ -1,3 +1,4 @@
+import { settingsSchema as instituteSettingsSchema } from '../institute/institute.policy.js';
 import { assertSignupMobileAvailable, signupMobile } from "../auth/signup-contact.js";
 import { readSignupIdentity } from "../auth/signup-identity.js";
 import { Router } from "express";
@@ -39,6 +40,7 @@ const signupRateLimit = rateLimit({
 
 const signupSchema = z.object({
   project_type: projectTypeSchema.default("fund_shares"),
+  institute_settings: instituteSettingsSchema.optional(),
   owner_is_member: z.boolean().default(false),
   org_name: z.string().min(2).max(120),
   slug: z.string().min(3).max(48).regex(/^[a-z0-9-]+$/).optional(),
@@ -222,6 +224,7 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
       projectName: body.project_name,
       projectTotalShares: body.total_shares,
       projectType: body.project_type,
+      instituteSettings: body.institute_settings,
       ownerIsMember: body.owner_is_member,
       adminName: ownerName,
       adminMobile: ownerMobile,

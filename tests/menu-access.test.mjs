@@ -107,3 +107,11 @@ test('Construction inbox approval does not permit creating or paying the source 
     await assert.rejects(enforceMenuAccess(req('/v1/construction/payments','POST',{construction_approvals:rw})),/not allowed/);
   } finally {prisma.project.findFirst=original;}
 });
+
+test('Construction phase plans use budget access and cannot be changed through approval-only permissions',async()=>{
+ await enforceMenuAccess(req('/v1/construction/phases','GET',{construction_budgets:read}));
+ await assert.rejects(enforceMenuAccess(req('/v1/construction/phases/p','PUT',{construction_budgets:read})),/not allowed/);
+ await enforceMenuAccess(req('/v1/construction/phases/p','PUT',{construction_budgets:rw}));
+ await enforceMenuAccess(req('/v1/construction/phases/assignees','GET',{construction_budgets:rw}));
+ await assert.rejects(enforceMenuAccess(req('/v1/construction/phases/p','PUT',{construction_approvals:rw})),/not allowed/);
+});
