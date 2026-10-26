@@ -11,6 +11,10 @@ declare global {
         projectId: string | null;
         sessionProjectId?: string | null;
         roles: Role[];
+        builtinRoles?: Role[];
+        menuPermissions?: import('../core/security/menu-access.js').MenuPermissions;
+        customRoleOnly?: boolean;
+        menuRouteGranted?: boolean;
         memberId: string | null;
         memberIds?: string[];
       };

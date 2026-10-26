@@ -143,7 +143,7 @@ export function googlePlaceholderMobile(uid: string): string {
 const userLoginInclude = {
   memberships: {
     where: { isActive: true, project: { isActive: true } },
-    include: { project: true, member: true }
+    include: { project: true, member: true, customRole: true }
   },
   tenant: true
 } as const;
@@ -204,7 +204,7 @@ export async function issueLoginSession(user: LoginUser, projectId?: string, rec
   if (!user) throw unauthorized("Invalid login");
   const identity = await linkedIdentityUsers(user.id);
   const allMemberships = await prisma.projectMembership.findMany({
-    where: { userId: { in: identity.userIds }, isActive: true, project: { isActive: true } }, include: { project: true }
+    where: { userId: { in: identity.userIds }, isActive: true, project: { isActive: true } }, include: { project: true, customRole: true }
   });
   const activeMembership = projectId ? allMemberships.find(row => row.projectId === projectId) : (user.memberships[0] ?? allMemberships[0]);
   if (projectId && !activeMembership) throw forbidden("No active membership for requested project");

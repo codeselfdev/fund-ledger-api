@@ -14,6 +14,8 @@ const equal=(a,b)=>a instanceof Date&&b instanceof Date?a.getTime()===b.getTime(
 function matches(row,where){return Object.entries(where).every(([k,v])=>k==='OR'?v.some(w=>matches(row,w)):v&&typeof v==='object'&&!(v instanceof Date)?'lt'in v?row[k]<v.lt:'lte'in v?row[k]<=v.lte:false:equal(row[k],v));}
 function fresh(kind,id){return{id,tenantId:'org',userId:'customer',ticketId:null,kind,eventKey:`${kind}:invoice${kind==='billing_payment'?':request':''}`,createdAt:new Date(),readAt:null,emailSentAt:null,telegramSentAt:null,attempts:0,telegramAttempts:0,leaseUntil:null,telegramLeaseUntil:null,nextAttemptAt:new Date(0),telegramNextAttemptAt:new Date(0),tenant:{name:'Example Fund',slug:'example'}};}
 beforeEach(()=>{
+ delete process.env.MASTER_USER_EMAIL; delete process.env.Master_user_email; delete process.env.MASTER_USER_ID; process.env.PLATFORM_ALERT_EMAILS='admin@example.test';
+ prisma.masterAlertDelivery.count=async()=>1;
  mail=[];telegram=[];failEmail=false;failTelegram=false;rows=[fresh('billing_upgrade','upgrade'),fresh('billing_payment','payment')];env.smtp.user='test-user';env.smtp.pass='test-pass';process.env.ADMIN_WEB_URL='https://admin.example.test';process.env.PLATFORM_ALERT_TELEGRAM_CHAT_ID='test-chat';process.env.TELEGRAM_BOT_TOKEN='test-token';
  prisma.platformAlert.findMany=async({where})=>structuredClone(rows.filter(r=>matches(r,where)));
  prisma.platformAlert.findUnique=async({where})=>rows.find(r=>r.id===where.id)??null;
@@ -33,4 +35,21 @@ test('retry resets only undelivered channels and never clears a successful deliv
 
 test('a locally hosted portal does not block email or the existing Telegram alert group',async()=>{
  delete process.env.ADMIN_WEB_URL;await deliverPlatformAlerts();assert.equal(mail.length,2);assert.equal(telegram.length,2);assert.match(mail[1].text,/Open the super-admin panel/);assert.equal(telegram[1].reply_markup,undefined);assert.ok(rows.every(r=>r.emailSentAt&&r.telegramSentAt));
+});
+
+
+test('dedicated master email does not duplicate an address also present in legacy platform alert recipients',async()=>{
+ process.env.MASTER_USER_EMAIL='MASTER@example.test';process.env.MASTER_WEB_ORIGIN='https://fundnesta.appnesta.com';
+ process.env.PLATFORM_ALERT_EMAILS='master@example.test,ops@example.test';
+ await deliverPlatformAlerts();assert.equal(mail.length,2);assert.ok(mail.every(message=>message.to==='ops@example.test'));
+});
+test('master-only legacy recipients delegate new requests without sending duplicate emails',async()=>{
+ process.env.MASTER_USER_EMAIL='master@example.test';process.env.MASTER_WEB_ORIGIN='https://fundnesta.appnesta.com';
+ process.env.PLATFORM_ALERT_EMAILS='MASTER@example.test';await deliverPlatformAlerts();assert.equal(mail.length,0);
+ assert.ok(rows.every(row=>row.emailSentAt));
+});
+test('historical requests without dedicated master deliveries keep their existing legacy email routing',async()=>{
+ process.env.MASTER_USER_EMAIL='master@example.test';process.env.MASTER_WEB_ORIGIN='https://fundnesta.appnesta.com';
+ process.env.PLATFORM_ALERT_EMAILS='master@example.test';prisma.masterAlertDelivery.count=async()=>0;
+ await deliverPlatformAlerts();assert.equal(mail.length,2);assert.ok(mail.every(message=>message.to==='master@example.test'));
 });

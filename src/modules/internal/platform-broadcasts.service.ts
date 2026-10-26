@@ -30,10 +30,11 @@ const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const eligible = { isActive: true, tenant: { deletionStartedAt: null }, deviceId: { not: null } } satisfies Prisma.UserWhereInput;
 const userSelect = { id: true, tenantId: true, deviceId: true } satisfies Prisma.UserSelect;
 type Recipient = { id: string; tenantId: string; deviceId: string | null };
-export function broadcastAudience(users: Recipient[]) {
-  const recipients = users.filter(user => user.deviceId?.trim());
+export function broadcastAudience(users: Recipient[], includeInboxOnlyAccounts = false) {
+  const recipients = includeInboxOnlyAccounts ? users : users.filter(user => user.deviceId?.trim());
   const devices = new Map<string, string[]>();
   for (const user of recipients) {
+    if (!user.deviceId?.trim()) continue;
     const key = hash(user.deviceId!.trim());
     devices.set(key, [...(devices.get(key) ?? []), user.id]);
   }
@@ -42,10 +43,10 @@ export function broadcastAudience(users: Recipient[]) {
 }
 
 export function createPlatformBroadcasts(db = prisma, push = sendPushMessage,
-  configured = () => Boolean(getFirebaseAdminApp()), secret = env.internalApiKey ?? '') {
+  configured = () => Boolean(getFirebaseAdminApp()), secret = env.internalApiKey ?? '', includeInboxOnlyAccounts = false) {
   async function audience(client: Prisma.TransactionClient = db, testUserId?: string) {
-    const result = broadcastAudience(await client.user.findMany({ where: { ...eligible, ...(testUserId ? { id: testUserId } : {}) }, select: userSelect, orderBy: { id: 'asc' } }));
-    if (testUserId && result.recipients.length !== 1) throw badRequest('This user no longer has a registered push device. Search again.');
+    const result = broadcastAudience(await client.user.findMany({ where: { ...eligible, ...(includeInboxOnlyAccounts && !testUserId ? { deviceId: undefined } : {}), ...(testUserId ? { id: testUserId } : {}) }, select: userSelect, orderBy: { id: 'asc' } }), includeInboxOnlyAccounts);
+    if (testUserId && (result.recipients.length !== 1 || result.devices.size !== 1)) throw badRequest('This user no longer has a registered push device. Search again.');
     return result;
   }
   async function searchUsers(search: string) {
@@ -59,7 +60,7 @@ export function createPlatformBroadcasts(db = prisma, push = sendPushMessage,
   }
   function reviewToken(actor: string, draft: Draft, users: Recipient[], expires: string) {
     return createHmac('sha256', secret).update(JSON.stringify({ actor, draft, expires,
-      users: users.map(user => [user.id, user.tenantId, hash(user.deviceId!.trim())]).sort((a, b) => a[0].localeCompare(b[0])) })).digest('hex');
+      users: users.map(user => [user.id, user.tenantId, user.deviceId?.trim() ? hash(user.deviceId.trim()) : null]).sort((a, b) => a[0]!.localeCompare(b[0]!)) })).digest('hex');
   }
   async function reach() { return { ...(await audience()).reach, push_configured: configured() }; }
   async function preview(actor: string, draft: Draft) {
@@ -82,7 +83,7 @@ export function createPlatformBroadcasts(db = prisma, push = sendPushMessage,
       if (previous.payloadHash !== payloadHash) throw conflict('This request was already used for another message.');
       return summary(previous.id);
     }
-    if (!configured()) throw serviceUnavailable('Push delivery is not configured on the API.');
+    if (!includeInboxOnlyAccounts && !configured()) throw serviceUnavailable('Push delivery is not configured on the API.');
     const expires = Date.parse(input.expires_at);
     if (!Number.isFinite(expires) || expires < Date.now() || expires > Date.now() + 15 * 60000) throw conflict('The preview expired. Review the message again.');
     let id: string;
@@ -91,7 +92,8 @@ export function createPlatformBroadcasts(db = prisma, push = sendPushMessage,
         const current = await audience(tx, input.draft.test_user_id);
         if (reviewToken(actor, input.draft, current.recipients, input.expires_at) !== input.preview_token)
           throw conflict('The message or recipients changed. Review the message again.');
-        if (!current.devices.size) throw badRequest('No registered devices are available.');
+        if (!current.recipients.length || (!includeInboxOnlyAccounts && !current.devices.size)) throw badRequest('No registered devices or eligible accounts are available.');
+        if (current.devices.size && !configured()) throw serviceUnavailable('Push delivery is not configured on the API.');
         const row = await tx.platformBroadcast.create({ data: { actor, requestKey: input.request_key, payloadHash,
           title: input.draft.title, body: input.draft.body, actionUrl: input.draft.url, imageUrl: input.draft.image_url, deviceCount: current.reach.devices, accountCount: current.reach.accounts, organizationCount: current.reach.organizations } });
         const deliveries = [...current.devices].map(([tokenHash, recipientIds]) => ({ broadcastId: row.id, tokenHash, recipientIds }));

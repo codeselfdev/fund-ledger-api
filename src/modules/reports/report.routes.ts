@@ -16,12 +16,12 @@ router.use(requireProject);
 // Inbox recipients can open only exports explicitly delivered to their own account.
 router.get('/exports/:id',asyncHandler(async(req,res)=>{
   const s=requireProjectContext(req),id=String(req.params.id);
-  if(!s.roles.some(r=>r==='owner'||r==='admin')&&!await prisma.reportDelivery.findFirst({where:{exportId:id,channel:'inbox',target:s.userId,status:'sent',report:{tenantId:s.tenantId,projectId:s.projectId}}})) throw forbidden();
+  if(!s.roles.some(r=>r==='owner'||r==='admin')&&!(s.menuRouteGranted&&s.menuPermissions?.reports?.read)&&!await prisma.reportDelivery.findFirst({where:{exportId:id,channel:'inbox',target:s.userId,status:'sent',report:{tenantId:s.tenantId,projectId:s.projectId}}})) throw forbidden();
   return ok(res,await getExport(s,id));
 }));
 router.get('/exports/:id/files/:index',asyncHandler(async(req,res)=>{
   const s=requireProjectContext(req),id=String(req.params.id);
-  if(!s.roles.some(r=>r==='owner'||r==='admin')&&!await prisma.reportDelivery.findFirst({where:{exportId:id,channel:'inbox',target:s.userId,status:'sent',report:{tenantId:s.tenantId,projectId:s.projectId}}})) throw forbidden();
+  if(!s.roles.some(r=>r==='owner'||r==='admin')&&!(s.menuRouteGranted&&s.menuPermissions?.reports?.read)&&!await prisma.reportDelivery.findFirst({where:{exportId:id,channel:'inbox',target:s.userId,status:'sent',report:{tenantId:s.tenantId,projectId:s.projectId}}})) throw forbidden();
   const index=z.coerce.number().int().min(0).max(3).parse(req.params.index),file=await reportFile(s,id,index);
   return ok(res,{filename:file.filename,base64:file.buffer.toString('base64')});
 }));

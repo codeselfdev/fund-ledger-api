@@ -11,7 +11,7 @@ const users = [
   { id: 'u3', tenantId: 'org3', deviceId: 'another-device' },
 ];
 const digest = value => createHash('sha256').update(value).digest('hex');
-function fixture() {
+function fixture(includeInboxOnlyAccounts = false) {
   const rows = [], deliveries = [], inbox = [], audit = [], pushes = [];
   let recipients = structuredClone(users), ready = true, result = { sent_count: 1, failed_count: 0, invalid_tokens: [], skipped: false }, claimable = true;
   const writes = [], lookups = [];
@@ -38,7 +38,7 @@ function fixture() {
     internalAudit: { async create({ data }) { audit.push(data); return data; } },
     async $transaction(fn) { return fn(db); },
   };
-  const service = createPlatformBroadcasts(db, async input => { pushes.push(input); if (result instanceof Error) throw result; return result; }, () => ready, 'synthetic-preview-secret');
+  const service = createPlatformBroadcasts(db, async input => { pushes.push(input); if (result instanceof Error) throw result; return result; }, () => ready, 'synthetic-preview-secret', includeInboxOnlyAccounts);
   const input = async () => { const p = await service.preview(actor, draft); return { draft, request_key: randomUUID(), preview_token: p.preview_token, expires_at: p.expires_at }; };
   const workerRow = (extra = {}) => { deliveries.push({ id: 'delivery1', broadcastId: 'broadcast1', recipientIds: ['u1', 'u2'], tokenHash: digest('same-device'), attempts: 0, broadcast: draft, ...extra }); };
   return { service, rows, deliveries, inbox, audit, pushes, writes, lookups, input, workerRow,
@@ -255,4 +255,36 @@ test('changing only the poster invalidates the signed preview', async () => {
   const f = fixture(), input = await f.input();
   await assert.rejects(f.service.send(actor, { ...input, draft: { ...draft, image_url: 'https://cdn.test/promotion.png' } }), /review/i);
   assert.equal(f.rows.length, 0);
+});
+
+
+test('master announcements include inbox-only accounts and deduplicate registered devices', async () => {
+  const f = fixture(true);
+  f.recipients([...users, { id: 'web-only', tenantId: 'org4', deviceId: null }, { id: 'blank-device', tenantId: 'org4', deviceId: ' ' }]);
+  const p = await f.service.preview(actor, draft);
+  assert.equal(p.accounts, 5); assert.equal(p.devices, 2); assert.equal(p.organizations, 4);
+  await f.service.send(actor, { draft, request_key: randomUUID(), preview_token: p.preview_token, expires_at: p.expires_at });
+  assert.equal(f.inbox.length, 5); assert.equal(f.deliveries.length, 2);
+  assert.ok(f.inbox.some(row => row.recipientUserId === 'web-only'));
+  assert.equal(f.lookups[0].where.deviceId, undefined);
+});
+test('inbox-only announcements can be queued without Firebase, and recipient changes invalidate review', async () => {
+  const f = fixture(true);
+  f.recipients([{ id: 'web-only', tenantId: 'org1', deviceId: null }]); f.ready(false);
+  const input = await f.input();
+  await f.service.send(actor, input);
+  assert.equal(f.inbox.length, 1); assert.equal(f.deliveries.length, 0);
+  const g = fixture(true), p = await g.input();
+  g.recipients([...users, { id: 'new-user', tenantId: 'org1', deviceId: null }]);
+  await assert.rejects(g.service.send(actor, p), /review/i);
+  assert.equal(g.inbox.length, 0);
+});
+test('master test mode still requires one registered device and never includes other inbox accounts', async () => {
+  const f = fixture(true);
+  f.recipients([...users, { id: 'web-only', tenantId: 'org1', deviceId: null }]);
+  await assert.rejects(f.service.preview(actor, { ...draft, test_user_id: 'web-only' }), /no longer/);
+  const targeted = { ...draft, test_user_id: 'u1' }, p = await f.service.preview(actor, targeted);
+  await f.service.send(actor, { draft: targeted, request_key: randomUUID(), preview_token: p.preview_token, expires_at: p.expires_at });
+  assert.deepEqual(f.inbox.map(row => row.recipientUserId), ['u1']);
+  assert.deepEqual(f.deliveries.map(row => row.recipientIds), [['u1']]);
 });

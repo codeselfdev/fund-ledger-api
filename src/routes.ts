@@ -1,3 +1,6 @@
+import { appGuideRouter } from "./modules/app-guide/app-guide.routes.js";
+import { masterAdminRouter } from './modules/auth/master-admin.routes.js';
+import { projectRolesRouter } from "./modules/project-roles/project-roles.routes.js";
 import { payrollFinancialPrivacy } from "./core/security/payroll-privacy.js";
 import { payrollRouter } from "./modules/payroll/payroll.routes.js";
 import { impersonationRouter } from "./modules/auth/impersonation.routes.js";
@@ -62,6 +65,7 @@ import { assistantRouter } from "./modules/assistant/assistant.routes.js";
 export function registerRoutes(app: Express) {
   app.use("/v1/ai-service", aiServiceRouter);
   app.use("/v1/internal", internalRouter);
+  app.use("/v1/support/admin", masterAdminRouter);
   app.use("/v1/support/impersonation", impersonationRouter);
   app.use("/v1/support", supportRouter);
   app.use("/v1/platform/billing", platformBillingRouter);
@@ -77,6 +81,7 @@ export function registerRoutes(app: Express) {
   app.use("/v1/subscription", subscriptionRouter);
   // Account notifications include private support replies, even after subscription expiry.
   app.use("/v1", accountNotificationsRouter);
+  app.use("/v1/app-guide", appGuideRouter);
   app.use(requireActiveSubscription);
   app.use("/v1/assistant", assistantRouter);
   app.use("/v1/reports", reportsRouter);
@@ -88,6 +93,7 @@ export function registerRoutes(app: Express) {
   app.use("/v1", depositDelegatesRouter);
   app.use("/v1", memberDocumentsRouter);
   app.use("/v1/memberships", membershipsRouter);
+  app.use("/v1/project-roles", projectRolesRouter);
   app.use("/v1/schedules", schedulesRouter);
   app.use("/v1/recurring-schedules", recurringSchedulesRouter);
   app.use("/v1", duesRouter);

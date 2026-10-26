@@ -7,6 +7,8 @@ import { forbidden, unauthorized } from "../http/api-error.js";
 import { hashToken, verifyAccessToken } from "./jwt.js";
 import { hasAnyRole, type RoleGate } from "./roles.js";
 import { ensureUserProjectMember } from "./member-link.service.js";
+import { mergePermissions } from "./menu-access.js";
+import { enforceMenuAccess } from "./menu-access.middleware.js";
 import { effectiveProjectRoles } from "./project-access.js";
 
 function bearerToken(req: Request) {
@@ -62,6 +64,9 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
       }
       const requestedProjectId = resolveProject ? (req.header("x-project-id") ?? session.activeProjectId) : null;
       let roles: Role[] = [];
+      let builtinRoles: Role[] = [];
+      let menuPermissions: ReturnType<typeof mergePermissions> | undefined;
+      let customRoleOnly = false;
       let memberId: string | null = null;
       let memberIds: string[] = [];
 
@@ -73,14 +78,19 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
             userId: session.userId,
             isActive: true,
             project: { isActive: true }
-          }
+          },
+          include: { customRole: true }
         });
 
         if (memberships.length === 0) {
           throw forbidden("No active role for this project");
         }
 
-        roles = memberships.map((membership) => membership.role);
+        builtinRoles = memberships.filter(m => !m.customRoleId).map(m => m.role);
+        const customRoles = memberships.flatMap(m => m.customRole && m.customRole.tenantId === session.tenantId && m.customRole.projectId === requestedProjectId ? [m.customRole] : []);
+        menuPermissions = memberships.some(m => m.customRoleId) ? mergePermissions(customRoles) : undefined;
+        customRoleOnly = !builtinRoles.length;
+        roles = builtinRoles.length ? builtinRoles : customRoles.length ? ["auditor"] : [];
         const hasMemberRole = memberships.some((membership) => membership.role === "member");
         const linkedMember = memberships.find((membership) => membership.role === "member" && membership.memberId);
         memberId = linkedMember?.memberId ?? null;
@@ -125,11 +135,12 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
         tenantId: session.tenantId,
         projectId: requestedProjectId ?? null,
         sessionProjectId: session.activeProjectId ?? null,
-        roles,
+        roles, builtinRoles, menuPermissions, customRoleOnly,
         memberIds,
         memberId
       };
 
+      if (resolveProject) await enforceMenuAccess(req);
       next();
     } catch (error) {
       next(error);
@@ -155,6 +166,7 @@ export function requireRoles(...gates: RoleGate[]): RequestHandler {
   return (req, _res, next) => {
     if (!req.auth) return next(unauthorized());
     if (req.auth.roles.includes("owner") || req.auth.roles.includes("admin")) return next();
+    if (req.auth.menuRouteGranted) return next();
     if (gates.includes("any")) return next();
     if (hasAnyRole(req.auth.roles, gates)) return next();
     return next(forbidden());

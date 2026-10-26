@@ -1,3 +1,4 @@
+import { startMasterAdminAlerts, stopMasterAdminAlerts } from './modules/internal/master-alerts.service.js';
 import { startRecurringExpensesWorker, stopRecurringExpensesWorker } from './modules/expenses/recurring-expenses.worker.js';
 import { startBusinessImportRetention, stopBusinessImportRetention } from './modules/business-setup/retention.js';
 import { startSupportReplyNotifications, stopSupportReplyNotifications } from "./modules/support/support-reply-notifications.service.js";
@@ -23,6 +24,7 @@ import { startAiCreditNotifications, stopAiCreditNotifications } from './modules
 const app = createApp();
 logWhatsAppConfiguration();
 startPlatformAlerts();
+startMasterAdminAlerts();
 startPlatformBroadcasts();
 startSupportReplyNotifications();
 startAiCreditNotifications();
@@ -53,6 +55,7 @@ const stopAssistantEvents = attachAssistantEvents(server);
 async function shutdown() {
   stopAssistantEvents();
   stopPlatformAlerts();
+  stopMasterAdminAlerts();
   stopPlatformBroadcasts();
   stopSupportReplyNotifications();
   stopAiCreditNotifications();

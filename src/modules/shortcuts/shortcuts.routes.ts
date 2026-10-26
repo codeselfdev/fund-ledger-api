@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { availableForAccess, pinsForAccess } from './shortcuts.access.js';
 import { prisma } from '../../core/prisma/client.js';
 import { asyncHandler } from '../../core/http/async-handler.js';
 import { requireProject } from '../../core/security/auth.middleware.js';
@@ -19,14 +20,14 @@ async function context(req: Parameters<typeof requireProjectContext>[0]) {
 }
 router.get('/', asyncHandler(async (req, res) => {
     const { auth, project, where } = await context(req);
-    const available = availableCatalog(project.projectType, auth.roles), keys = available.tools.map(t => t.key);
+    const available = availableForAccess(project.projectType, auth), keys = available.tools.map(t => t.key);
     const preference = await prisma.shortcutPreference.findFirst({ where });
-    const defaults = defaultPins(project.projectType, auth.roles, project.portalSettings);
+    const defaults = pinsForAccess(project.projectType, auth, project.portalSettings);
     return ok(res, { ...available, pinned: preference ? visiblePins(preference.pinned, keys) : defaults, defaults, version: preference?.version ?? 0, max_pins: MAX_PINS });
 }));
 router.put('/preferences', validateBody(preferenceSchema), asyncHandler(async (req, res) => {
     const { auth, project, where } = await context(req), body = preferenceSchema.parse(req.body);
-    const keys = availableCatalog(project.projectType, auth.roles).tools.map(t => t.key);
+    const keys = availableForAccess(project.projectType, auth).tools.map(t => t.key);
     if (body.pinned.some(key => !keys.includes(key)))
         throw badRequest('A selected tool is unavailable for this project or your current role');
     const saved = await save(where, body.pinned, body.version);
@@ -34,7 +35,7 @@ router.put('/preferences', validateBody(preferenceSchema), asyncHandler(async (r
 }));
 router.post('/reset', validateBody(resetSchema), asyncHandler(async (req, res) => {
     const { auth, project, where } = await context(req), body = resetSchema.parse(req.body);
-    const defaults = defaultPins(project.projectType, auth.roles, project.portalSettings);
+    const defaults = pinsForAccess(project.projectType, auth, project.portalSettings);
     const saved = await save(where, defaults, body.version);
     return ok(res, { pinned: defaults, version: saved.version });
 }));

@@ -553,6 +553,23 @@
       ]
     },
     {
+      "key": "quick_sale",
+      "group": "money",
+      "label": "Quick sale",
+      "description": "Counter sales with walk-in customers, payment or due, and stock updates. Requires direct invoices.",
+      "icon": "M13 2 4 14h7l-1 8 10-13h-7z",
+      "keywords": "counter walk in pos shop store retail cash barcode বিক্রি দোকান",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant",
+        "cashier"
+      ],
+      "project_types": [
+        "accounting"
+      ]
+    },
+    {
       "key": "sale",
       "group": "money",
       "label": "Sales",

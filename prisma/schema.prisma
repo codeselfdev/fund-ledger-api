@@ -285,6 +285,7 @@ model Project {
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customRoles        ProjectRole[]
   memberships        ProjectMembership[]
   members            Member[]
   onboardingProgressRecords OnboardingProgress[]
@@ -386,6 +387,7 @@ model OnboardingProgress {
 }
 
 model User {
+  appGuideRequests AppGuideRequest[]
   professionalProfile Json? @map("professional_profile")
   supportTickets SupportTicket[]
   appInstallations AppInstallation[]
@@ -430,6 +432,24 @@ model User {
   @@map("users")
 }
 
+model ProjectRole {
+  id          String @id @default(cuid())
+  tenantId    String @map("tenant_id")
+  projectId   String @map("project_id")
+  name        String
+  nameKey     String @map("name_key")
+  description String @default("")
+  permissions Json
+  revision    Int @default(1)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  memberships ProjectMembership[]
+  @@unique([projectId, nameKey])
+  @@index([tenantId, projectId])
+  @@map("project_roles")
+}
+
 model ProjectMembership {
   id        String   @id @default(cuid())
   tenantId  String   @map("tenant_id")
@@ -437,6 +457,8 @@ model ProjectMembership {
   userId    String   @map("user_id")
   memberId  String?  @map("member_id")
   role      Role
+  customRoleId String? @map("custom_role_id")
+  customRole ProjectRole? @relation(fields: [customRoleId], references: [id], onDelete: Restrict)
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -2358,6 +2380,7 @@ model AssistantAttachment {
   @@map("assistant_attachments")
 }
 model PlatformAlert {
+  masterDeliveries MasterAlertDelivery[]
   id String @id @default(uuid())
   tenantId String @map("tenant_id")
   kind String
@@ -2920,4 +2943,42 @@ model PayrollAttendance {
   @@unique([projectId, employeeId, date])
   @@index([tenantId, projectId, date])
   @@map("payroll_attendances")
+}
+
+// Public guide selections only; never retain prompts or business snapshots.
+model AppGuideRequest {
+  identityUserId String @map("identity_user_id")
+  requestKey String @db.Uuid @map("request_key")
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  userId String @map("user_id")
+  promptHash String @map("prompt_hash")
+  authorizationHash String @map("authorization_hash")
+  plan Json?
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  identityUser User @relation(fields: [identityUserId], references: [id], onDelete: Cascade)
+  @@id([identityUserId, requestKey])
+  @@map("app_guide_requests")
+}
+
+// Durable, independently retryable master email and device alerts for customer requests.
+model MasterAlertDelivery {
+  id String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  alertId String @map("alert_id")
+  channel String
+  status String @default("pending")
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at")
+  leaseUntil DateTime? @map("lease_until")
+  leaseToken String? @map("lease_token")
+  sentAt DateTime? @map("sent_at")
+  lastError String? @map("last_error")
+  acceptedPushHashes String[] @default([]) @map("accepted_push_hashes")
+  createdAt DateTime @default(now()) @map("created_at")
+  alert PlatformAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  @@unique([alertId, channel])
+  @@index([status, nextAttemptAt, leaseUntil])
+  @@index([tenantId])
+  @@map("master_alert_deliveries")
 }

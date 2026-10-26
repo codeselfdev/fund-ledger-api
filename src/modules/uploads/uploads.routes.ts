@@ -1,3 +1,5 @@
+import { uploadMenuKeys } from '../../core/security/upload-menu-access.js';
+import { menuGrant } from '../../core/security/menu-access.js';
 import { assertImageUploadSize } from "../../core/storage/upload-image-policy.js";
 import { Router } from "express";
 import multer from "multer";
@@ -42,6 +44,11 @@ router.post("/", requireProject, requireRoles("any"), upload.single("file"), asy
   assertImageUploadSize(req.file);
   const purpose = typeof req.body.purpose === "string" ? req.body.purpose : undefined;
 
+  if (auth.menuPermissions) {
+    const granted = menuGrant(auth.menuPermissions, uploadMenuKeys(purpose), true);
+    if (granted) auth.roles = ['admin'];
+    else if (auth.customRoleOnly) throw forbidden('Write access is required for this attachment purpose');
+  }
   if (purpose?.startsWith("customer_logo:") || purpose?.startsWith("dealer_logo:")) throw badRequest("Use the customer or dealer logo editor to save logos.");
 
   if (purpose === "payroll_receipt" || purpose === "payroll_leave_note") {

@@ -17,8 +17,8 @@ function toJson(value: unknown): Prisma.InputJsonValue | undefined {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
-export async function writeAudit(input: AuditInput) {
-  return prisma.activity.create({
+export async function writeAudit(input: AuditInput, client: Pick<Prisma.TransactionClient, "activity"> = prisma) {
+  return client.activity.create({
     data: {
       tenantId: input.tenantId,
       projectId: input.projectId ?? null,

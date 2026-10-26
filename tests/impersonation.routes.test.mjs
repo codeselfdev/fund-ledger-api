@@ -13,6 +13,7 @@ process.env.MASTER_USER_EMAIL = 'master@example.test';
 process.env.MASTER_IMPERSONATION_CODE = 'test-only-master-passphrase-at-least-32-bytes';
 process.env.MASTER_WEB_ORIGIN = 'https://support.example.test';
 const { prisma } = await import('../dist/core/prisma/client.js');
+const { masterAdminRouter } = await import('../dist/modules/auth/master-admin.routes.js');
 const { impersonationRouter } = await import('../dist/modules/auth/impersonation.routes.js');
 const { authRouter } = await import('../dist/modules/auth/auth.routes.js');
 const { projectsRouter } = await import('../dist/modules/projects/projects.routes.js');
@@ -62,7 +63,9 @@ function tokenFor(userId = 'master', options = {}) {
     impersonationReason: null, impersonationPolicyHash: null, createdAt: new Date(), expiresAt: new Date(Date.now() + 3600_000), revokedAt: null, ...options };
   const token = signAccessToken({ sessionId: id, userId, tenantId: user.tenantId }); session.tokenHash = hashToken(token); sessions.push(session); return token;
 }
+let fixtureSequence = 0, fixtureIp;
 function reset() {
+  fixtureIp = `192.0.2.${++fixtureSequence}`;
   process.env.MASTER_USER_EMAIL = 'master@example.test'; process.env.MASTER_IMPERSONATION_CODE = 'test-only-master-passphrase-at-least-32-bytes'; delete process.env.MASTER_USER_ID;
   sequence = 0; mutationCount = 0; memberCreates = 0; sessions = []; activities = [];
   tenants = [{ id: 'admin-org', name: 'Platform', slug: 'platform', contact: {} }, { id: 'target-org', name: 'Target organization', slug: 'target', contact: {} }, { id: 'foreign-org', name: 'Another organization', slug: 'foreign', contact: {} }];
@@ -96,14 +99,17 @@ before(async () => {
   prisma.onboardingProgress.findUnique = async () => null;
   prisma.activity.create = async ({ data }) => { const row = { ...copy(data), createdAt: new Date() }; activities.push(row); return row; };
   prisma.activity.count = async ({ where }) => activities.filter(a => matches(a, where)).length;
-  const app = express(); app.use(express.json()); app.use('/v1/support/impersonation', impersonationRouter); app.use('/v1/auth', authRouter); app.use('/v1/projects', projectsRouter); app.use('/v1/accounts', authenticate, accountsRouter); app.use('/v1/inventory', authenticate, stockRouter, inventoryRouter); app.use('/v1/assistant', authenticate, assistantRouter); app.use('/v1', authenticate, whatsappRouter, activityRouter);
+  prisma.internalAudit.create = async ({ data }) => { activities.push(structuredClone(data)); return data; };
+  prisma.platformBroadcast.findMany = async () => [];
+  prisma.supportTicket.findMany = async () => [];
+  const app = express(); app.set('trust proxy', 1); app.use(express.json()); app.use('/v1/support/admin', masterAdminRouter); app.use('/v1/support/impersonation', impersonationRouter); app.use('/v1/auth', authRouter); app.use('/v1/projects', projectsRouter); app.use('/v1/accounts', authenticate, accountsRouter); app.use('/v1/inventory', authenticate, stockRouter, inventoryRouter); app.use('/v1/assistant', authenticate, assistantRouter); app.use('/v1', authenticate, whatsappRouter, activityRouter);
   app.get('/v1/protected', authenticate, (req, res) => res.json({ ok: true, data: req.auth }));
   app.post('/v1/protected', authenticate, (_req, res) => { mutationCount++; res.json({ ok: true }); });
   app.use(errorHandler); server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve)); base = `http://127.0.0.1:${server.address().port}`;
 });
 beforeEach(reset); after(async () => { await new Promise(resolve => server.close(resolve)); await prisma.$disconnect(); await rm(privateImageTestRoot, { recursive: true, force: true }); });
 async function request(path, { token, body, origin = 'https://support.example.test', platform = 'web' } = {}) {
-  const response = await fetch(base + path, { method: body === undefined ? 'GET' : 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...(origin ? { origin } : {}), 'x-client-platform': platform }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const response = await fetch(base + path, { method: body === undefined ? 'GET' : 'POST', headers: { 'x-forwarded-for': fixtureIp, 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...(origin ? { origin } : {}), 'x-client-platform': platform }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   return { status: response.status, body: await response.json() };
 }
 const startBody = () => ({ user_id: 'target', project_id: 'p1', code: process.env.MASTER_IMPERSONATION_CODE, reason: 'Investigating the support request' });
@@ -308,4 +314,98 @@ test('private chat images can be viewed during support access while origin, acco
     assert.equal((await fetch(url, { headers })).status, 401);
     assert.equal(mutationCount, 0);
   } finally { prisma.tenant.findUniqueOrThrow = saved.tenant; prisma.due.aggregate = saved.due; prisma.account.aggregate = saved.account; prisma.member.count = saved.member; prisma.expense.groupBy = saved.expense; prisma.assistantAttachment.findFirst = saved.attachment; }
+});
+
+async function unlockAdmin(token = tokenFor()) {
+  const result = await request('/v1/support/admin/unlock', { token, body: { code: process.env.MASTER_IMPERSONATION_CODE } });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  return { token, ...result.body.data };
+}
+async function adminRead(access, { path = '/notifications', headers = {}, token = access.token } = {}) {
+  const response = await fetch(base + '/v1/support/admin' + path, { headers: {
+    'x-forwarded-for': fixtureIp, authorization: `Bearer ${token}`, origin: 'https://support.example.test', 'x-client-platform': 'web',
+    'x-master-grant': access.grant, ...headers,
+  } });
+  return { status: response.status, body: await response.json() };
+}
+test('master administration requires verified identity and code before returning operational data', async () => {
+  assert.equal((await request('/v1/support/admin/status')).status, 401);
+  assert.equal((await request('/v1/support/admin/unlock', { token: tokenFor('target'), body: { code: process.env.MASTER_IMPERSONATION_CODE } })).status, 404);
+  const token = tokenFor();
+  assert.equal((await request('/v1/support/admin/notifications', { token })).status, 403);
+  const access = await unlockAdmin(token);
+  assert.equal((await adminRead(access)).status, 200);
+  assert.ok(new Date(access.expires_at).getTime() <= Date.now() + 15 * 60_000);
+  assert.doesNotMatch(JSON.stringify(activities), /test-only-master-passphrase|"grant"/);
+});
+test('master administration cannot use another login grant, a forged signature or impersonation session', async () => {
+  const access = await unlockAdmin();
+  assert.equal((await adminRead(access, { token: tokenFor() })).status, 403);
+  assert.equal((await adminRead({ ...access, grant: access.grant + 'tampered' })).status, 403);
+  const { login } = await start(access.token);
+  assert.equal((await adminRead(access, { token: login.token })).status, 404);
+  assert.equal((await request('/v1/support/admin/unlock', { token: login.token, body: { code: process.env.MASTER_IMPERSONATION_CODE } })).status, 403);
+});
+test('master administration enforces origin, platform, fresh login and the exact pinned master ID', async () => {
+  const access = await unlockAdmin();
+  for (const headers of [{ origin: 'https://untrusted.test' }, { origin: '' }, { 'x-client-platform': 'android' }])
+    assert.equal((await adminRead(access, { headers })).status, 403);
+  process.env.MASTER_USER_ID = 'other-user';
+  assert.equal((await adminRead(access)).status, 404); delete process.env.MASTER_USER_ID;
+  sessions.find(row => row.tokenHash === hashToken(access.token)).createdAt = new Date(Date.now() - 31 * 60_000);
+  assert.equal((await adminRead(access)).status, 403);
+});
+test('master administration grants expire and fail immediately on parent revocation or policy rotation', async () => {
+  let access = await unlockAdmin();
+  const now = Date.now;
+  try { Date.now = () => now() + 16 * 60_000; assert.equal((await adminRead(access)).status, 403); }
+  finally { Date.now = now; }
+  access = await unlockAdmin();
+  process.env.MASTER_IMPERSONATION_CODE += '-rotated';
+  assert.equal((await adminRead(access)).status, 403);
+  access = await unlockAdmin(); sessions.find(row => row.tokenHash === hashToken(access.token)).revokedAt = new Date();
+  assert.equal((await adminRead(access)).status, 401);
+});
+test('administration shares the account-wide failed-code lockout with impersonation', async () => {
+  const token = tokenFor();
+  for (let i = 0; i < 3; i++) assert.equal((await request('/v1/support/admin/unlock', { token, body: { code: 'wrong-admin-code' } })).status, 403);
+  for (let i = 0; i < 2; i++) assert.equal((await request('/v1/support/impersonation/start', { token, body: { ...startBody(), code: 'wrong-impersonation-code' } })).status, 403);
+  assert.equal((await request('/v1/support/admin/unlock', { token: tokenFor(), body: { code: process.env.MASTER_IMPERSONATION_CODE } })).status, 429);
+  assert.doesNotMatch(JSON.stringify(activities), /wrong-admin-code|wrong-impersonation-code/);
+});
+test('administration derives its operator from the master session and exposes no cleanup or key-based bypass', async () => {
+  const access = await unlockAdmin();
+  assert.equal((await adminRead(access, { headers: { 'x-internal-actor': 'forged-operator' } })).status, 200);
+  const audit = activities.findLast(row => row.action === 'master_admin.request');
+  assert.equal(audit.actor, 'master:master');
+  assert.equal(audit.metadata.session_id, verifyAccessToken(access.token).sessionId);
+  assert.equal((await adminRead(access, { path: '/tenants/target-org/cleanup' })).status, 404);
+  assert.equal((await adminRead({ ...access, grant: '' }, { headers: { 'x-internal-api-key': 'synthetic-internal-key', 'x-api-key': 'synthetic-provisioning-key' } })).status, 403);
+  assert.equal((await adminRead(access, { path: '/support/tickets' })).status, 200);
+  assert.doesNotMatch(JSON.stringify(activities), /forged-operator/);
+});
+test('failed administration audit prevents unlock and data disclosure', async () => {
+  const access = await unlockAdmin(), original = prisma.internalAudit.create;
+  prisma.internalAudit.create = async () => { throw new Error('Synthetic audit unavailable'); };
+  try {
+    assert.equal((await adminRead(access)).status, 500);
+    assert.equal((await request('/v1/support/admin/unlock', { token: access.token, body: { code: process.env.MASTER_IMPERSONATION_CODE } })).status, 500);
+  } finally { prisma.internalAudit.create = original; }
+});
+
+
+test('master billing notification links load the exact invoice only after master-code unlock', async () => {
+  const access = await unlockAdmin(), original = prisma.tenant.findFirst;
+  prisma.tenant.findFirst = async ({ where }) => {
+    assert.equal(where.deletionStartedAt, null);
+    return where.id === 'target-org' ? { id: 'target-org', name: 'Target organization', slug: 'target', contact: { billing: { invoices: [{ id: 'requested-invoice', status: 'submitted', amount: 5000, currency: 'BDT' }] } } } : null;
+  };
+  try {
+    const path = '/billing/target-org/invoices/requested-invoice';
+    assert.equal((await adminRead({ ...access, grant: '' }, { path })).status, 403);
+    const response = await adminRead(access, { path }); assert.equal(response.status, 200);
+    assert.equal(response.body.data.invoice.id, 'requested-invoice'); assert.equal(response.body.data.tenant.id, 'target-org');
+    assert.equal((await adminRead(access, { path: '/billing/target-org/invoices/missing' })).status, 404);
+    assert.equal((await adminRead(access, { path: '/billing/missing/invoices/requested-invoice' })).status, 404);
+  } finally { prisma.tenant.findFirst = original; }
 });

@@ -1,0 +1,13 @@
+import { Router } from 'express';
+import { rateLimit } from 'express-rate-limit';
+import { asyncHandler } from '../../core/http/async-handler.js';
+import { requireProject } from '../../core/security/auth.middleware.js';
+import { requireProjectContext } from '../../core/security/auth.context.js';
+import { ok } from '../../core/http/response.js';
+import { guideBody } from './app-guide.policy.js';
+import { appGuideStatus,askAppGuide } from './app-guide.service.js';
+const router=Router();
+router.use(requireProject,(_req,res,next)=>{res.setHeader('Cache-Control','private, no-store');next();});
+router.get('/status',asyncHandler(async(req,res)=>ok(res,await appGuideStatus(requireProjectContext(req),req.query.language==='bn'?'bn':'en'))));
+router.post('/ask',rateLimit({windowMs:60000,limit:10,keyGenerator:req=>requireProjectContext(req).userId,standardHeaders:true,legacyHeaders:false}),asyncHandler(async(req,res)=>ok(res,await askAppGuide(requireProjectContext(req),guideBody.parse(req.body)))));
+export {router as appGuideRouter};

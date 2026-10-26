@@ -1,3 +1,4 @@
+import { filterPayrollWorkspace } from './payroll.menu-access.js';
 import { Router } from 'express';
 import type { z } from 'zod';
 import { requireProject } from '../../core/security/auth.middleware.js';
@@ -17,7 +18,11 @@ router.use(requireProject, asyncHandler(async (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
   await project(prisma, requireProjectContext(req)); next();
 }));
-router.get('/workspace', asyncHandler(async (req, res) => ok(res, await workspace(requireProjectContext(req), monthSchema.parse(req.query.month)))));
+router.get('/workspace', asyncHandler(async (req, res) => {
+  const auth = requireProjectContext(req), data = await workspace(auth, monthSchema.parse(req.query.month));
+  if (!auth.menuPermissions || auth.builtinRoles?.some(role => ['owner', 'admin', 'accountant', 'approver', 'cashier', 'auditor'].includes(role))) return ok(res, data);
+  return ok(res, filterPayrollWorkspace(data, auth.menuPermissions));
+}));
 router.put('/settings', validateBody(settingsSchema), asyncHandler(async (req, res) => ok(res, await saveSettings(requireProjectContext(req), settingsSchema.parse(req.body)))));
 router.post('/employees/import', validateBody(importSchema), asyncHandler(async (req, res) => created(res, await importEmployees(requireProjectContext(req), req.body as z.infer<typeof importSchema>))));
 router.patch('/employees/:id/status', validateBody(employeeSchema), asyncHandler(async (req, res) => ok(res, await employeeStatus(requireProjectContext(req), req.params.id, employeeSchema.parse(req.body)))));

@@ -92,7 +92,7 @@ projectsRouter.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
       isActive: true,
       project: { isActive: true }
     },
-    include: { project: true, member: true },
+    include: { project: true, member: true, customRole: true },
     orderBy: { createdAt: "asc" }
   });
 

@@ -275,7 +275,7 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
         tenant: true,
         memberships: {
           where: { isActive: true, project: { isActive: true } },
-          include: { project: true, member: true }
+          include: { project: true, member: true, customRole: true }
         }
       }
     }),
@@ -296,7 +296,7 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
     })
   ]);
   const identity = auth.impersonation ? { rootId: auth.userId, userIds: [auth.userId] } : await linkedIdentityUsers(auth.userId);
-  const allMemberships = await prisma.projectMembership.findMany({ where: { ...(auth.impersonation ? { tenantId: auth.tenantId } : {}), userId: { in: identity.userIds }, isActive: true, project: { isActive: true } }, include: { project: true } });
+  const allMemberships = await prisma.projectMembership.findMany({ where: { ...(auth.impersonation ? { tenantId: auth.tenantId } : {}), userId: { in: identity.userIds }, isActive: true, project: { isActive: true } }, include: { project: true, customRole: true } });
   const canPayForMembersByRole = auth.roles.includes("admin") || auth.roles.includes("accountant") || auth.roles.includes("cashier");
   const canPayForMembers = canPayForMembersByRole || (
     auth.projectId ? hasDelegatedPayerAccess(user.tenant.contact, auth.projectId, auth.userId) : false

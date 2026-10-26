@@ -1,3 +1,5 @@
+import { masterAlertIdentity, MASTER_ALERT_KINDS } from './master-alerts.service.js';
+import { getFirebaseAdminApp } from '../../core/firebase/admin.js';
 import { notFound } from '../../core/http/api-error.js';
 import { env } from '../../config/env.js';
 import { invoicesFromContact } from '../subscription/billing.service.js';
@@ -8,7 +10,7 @@ export function billingAlertInvoiceId(row: { kind: string; eventKey: string }) {
     return ['billing_upgrade', 'billing_payment'].includes(row.kind) ? row.eventKey.split(':')[1] ?? null : null;
 }
 function deliveryConfiguration() {
-    return { email: !!(process.env.PLATFORM_ALERT_EMAILS?.split(',').some(s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim())) && env.smtp.user && env.smtp.pass), telegram: !!(process.env.PLATFORM_ALERT_TELEGRAM_CHAT_ID && process.env.TELEGRAM_BOT_TOKEN), admin_portal: !!process.env.ADMIN_WEB_URL };
+    return { master_email: !!(masterAlertIdentity() && env.smtp.user && env.smtp.pass), master_push: !!(masterAlertIdentity() && getFirebaseAdminApp()), email: !!(process.env.PLATFORM_ALERT_EMAILS?.split(',').some(s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim())) && env.smtp.user && env.smtp.pass), telegram: !!(process.env.PLATFORM_ALERT_TELEGRAM_CHAT_ID && process.env.TELEGRAM_BOT_TOKEN), admin_portal: !!process.env.ADMIN_WEB_URL };
 }
 function deliveryState(sent: Date | null, configured: boolean, attempts: number, lease?: Date | null) {
     return sent ? 'sent' : !configured ? 'not_configured' : lease && lease > new Date() ? 'sending' : attempts >= 5 ? 'failed' : 'pending';
@@ -22,9 +24,9 @@ export async function retryPlatformAlert(id: string) {
 }
 export async function platformAlerts(offset = 0, unread = false, kind?: string) {
     const where = { ...(unread ? { readAt: null } : {}), ...(kind ? { kind } : {}) };
-    const [rows, count] = await Promise.all([prisma.platformAlert.findMany({ where, include: { tenant: { select: { name: true, slug: true } } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 31, skip: offset }), prisma.platformAlert.count({ where: { readAt: null } })]);
+    const [rows, count] = await Promise.all([prisma.platformAlert.findMany({ where, include: { tenant: { select: { name: true, slug: true } }, masterDeliveries: { select: { channel: true, status: true, attempts: true, lastError: true, sentAt: true } } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 31, skip: offset }), prisma.platformAlert.count({ where: { readAt: null } })]);
     const configured = deliveryConfiguration();
-    return { delivery_configured: configured, alerts: await Promise.all(rows.slice(0, 30).map(async (row) => ({ ...row, delivery: {email:deliveryState(row.emailSentAt,configured.email,row.attempts,row.leaseUntil),telegram:deliveryState(row.telegramSentAt,configured.telegram,row.telegramAttempts,row.telegramLeaseUntil)}, invoice_id: billingAlertInvoiceId(row), deletion_request_id: row.kind === 'account_deletion' ? row.eventKey.slice('account_deletion:'.length) : null, customer: await customerDetails(row.tenantId, row.userId) }))), unread: count, next_offset: rows.length > 30 ? offset + 30 : null };
+    return { delivery_configured: configured, alerts: await Promise.all(rows.slice(0, 30).map(async (row) => ({ ...row, delivery: {master_email:row.masterDeliveries?.find(d => d.channel === 'email')?.status ?? 'not_queued',master_push:row.masterDeliveries?.find(d => d.channel === 'push')?.status ?? 'not_queued',email:deliveryState(row.emailSentAt,configured.email,row.attempts,row.leaseUntil),telegram:deliveryState(row.telegramSentAt,configured.telegram,row.telegramAttempts,row.telegramLeaseUntil)}, invoice_id: billingAlertInvoiceId(row), deletion_request_id: row.kind === 'account_deletion' ? row.eventKey.slice('account_deletion:'.length) : null, customer: await customerDetails(row.tenantId, row.userId) }))), unread: count, next_offset: rows.length > 30 ? offset + 30 : null };
 }
 let timer: ReturnType<typeof setInterval> | undefined, running = false;
 async function alertText(row: {
@@ -65,7 +67,12 @@ export async function deliverPlatformAlerts() {
                 const content = await alertText(row);
                 if (!content)
                     throw new Error();
-                const accepted = await sendMail({ to: emails.join(","), ...content });
+                // New requests have a dedicated master-email delivery. Do not send the same alert twice
+                // when the master address is also listed among the legacy operational recipients.
+                const master = masterAlertIdentity();
+                const dedicated = master && MASTER_ALERT_KINDS.includes(row.kind) && await prisma.masterAlertDelivery.count({ where: { alertId: row.id, channel: 'email' } });
+                const recipients = dedicated ? emails.filter(email => email.toLowerCase() !== master!.email) : emails;
+                const accepted = !recipients.length || await sendMail({ to: recipients.join(","), ...content });
                 if (!accepted)
                     throw new Error();
                 await prisma.platformAlert.updateMany({ where: { id: row.id, leaseUntil: lease }, data: { emailSentAt: new Date(), leaseUntil: null } });

@@ -42,6 +42,10 @@ router.use(requireProject, read, asyncHandler(async (req, _res, next) => {
 router.use('/customers', (req, res, next) => req.method === 'GET' ? next() : write(req, res, next), customersRouter);
 router.get('/overview', asyncHandler(async (req, res) => {
     const auth = requireProjectContext(req);
+    if (auth.menuPermissions && !auth.builtinRoles?.some(role => ['owner', 'admin', 'accountant', 'approver', 'cashier', 'auditor'].includes(role)) && !auth.menuPermissions.overview?.read) {
+      const project = await prisma.project.findFirstOrThrow({ where: { id: auth.projectId, tenantId: auth.tenantId } });
+      return ok(res, { stock_management_enabled: project.stockManagementEnabled !== false, workflow: workflow(project.commerceSettings), customers: 0, invoiced: 0, collected: 0, receivable: 0, overdue: 0, counts: { quotation: 0, order: 0, sale: 0 }, recent: [] });
+    }
     const [p, docs, customers] = await Promise.all([prisma.project.findFirstOrThrow({ where: { id: auth.projectId, tenantId: auth.tenantId } }), prisma.businessDocument.findMany({ where: scoped(auth), orderBy: { createdAt: 'desc' } }), prisma.customer.count({ where: { ...scoped(auth), isActive: true } })]);
     const sales = docs.filter(d => d.kind === 'sale' && d.status === 'issued');
     return ok(res, { stock_management_enabled: p.stockManagementEnabled !== false, workflow: workflow(p.commerceSettings), customers, invoiced: sales.reduce((n, d) => n + d.total, 0), collected: sales.reduce((n, d) => n + d.paidAmount, 0), receivable: sales.reduce((n, d) => n + d.total - d.paidAmount, 0), overdue: sales.filter(d => paymentStatus(d) === 'overdue').reduce((n, d) => n + d.total - d.paidAmount, 0), counts: { quotation: docs.filter(d => d.kind === 'quotation').length, order: docs.filter(d => d.kind === 'order').length, sale: sales.length }, recent: docs.slice(0, 5).map(mapDoc) });

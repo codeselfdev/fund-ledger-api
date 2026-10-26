@@ -168,3 +168,21 @@ test('sign-in does not promote an admin-only user to member', async () => {
   assert.equal(transactionCalls, 0);
   assert.equal(members.length, 0);
 });
+
+test('custom role assignment stores its scoped definition without granting an independent auditor or creating a member', async () => {
+  prisma.projectRole.updateMany = async ({where}) => ({count:where.id==='custom-project'&&where.projectId==='project'&&where.tenantId==='tenant'?1:0});
+  const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_id:user.id,role:'auditor',custom_role_id:'custom-project'})});
+  assert.equal(response.status,201); const result=await response.json(); assert.equal(result.data.custom_role_id,'custom-project');
+  assert.equal(memberships[0].customRoleId,'custom-project'); assert.equal(members.length,0);
+});
+test('a foreign-project custom role cannot be assigned or create any membership', async () => {
+  prisma.projectRole.updateMany = async () => ({count:0});
+  const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_id:user.id,role:'auditor',custom_role_id:'foreign'})});
+  assert.equal(response.status,404); assert.equal(memberships.length,0); assert.equal(members.length,0);
+});
+test('custom role assignment cannot smuggle an owner or admin storage role', async () => {
+  for(const role of ['owner','admin']){
+    const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_id:user.id,role,custom_role_id:'custom-project'})});
+    assert.equal(response.status,400); assert.equal(memberships.length,0);
+  }
+});

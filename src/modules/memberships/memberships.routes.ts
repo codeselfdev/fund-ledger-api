@@ -1,5 +1,6 @@
 import { assertPersonCapacity } from "../../core/subscription/quota.service.js";
 import { Router } from "express";
+import { roleResponse } from "../project-roles/project-roles.routes.js";
 import { z } from "zod";
 import { Role } from "@prisma/client";
 import { asyncHandler } from "../../core/http/async-handler.js";
@@ -26,6 +27,7 @@ const router = Router();
 const updateMembershipSchema = z.object({
   also_member: z.literal(true).optional(),
   role: z.nativeEnum(Role).optional(),
+  custom_role_id: z.string().min(1).nullable().optional(),
   is_active: z.boolean().optional()
 });
 
@@ -36,6 +38,7 @@ const createMembershipSchema = z
     name: z.string().min(2).optional(),
     email: z.string().email().optional(),
     role: z.nativeEnum(Role),
+    custom_role_id: z.string().min(1).optional(),
     also_member: z.boolean().default(false)
   })
   .refine((v) => v.user_id != null || v.mobile != null || v.email != null, {
@@ -51,13 +54,15 @@ router.get("/", requireProject, requireRoles("owner", "admin"), asyncHandler(asy
   const auth = requireProjectContext(req);
   const memberships = await prisma.projectMembership.findMany({
     where: { tenantId: auth.tenantId, projectId: auth.projectId },
-    include: { user: { select: { id: true, name: true, mobile: true, email: true } } },
+    include: { customRole: true, user: { select: { id: true, name: true, mobile: true, email: true } } },
     orderBy: { createdAt: "asc" }
   });
 
   return ok(res, memberships.map((membership) => ({
     id: membership.id,
     role: membership.role,
+    custom_role_id: membership.customRoleId,
+    custom_role: membership.customRole ? roleResponse(membership.customRole) : null,
     is_active: membership.isActive,
     member_id: membership.memberId,
     user: {
@@ -76,7 +81,12 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
     where: { id: auth.projectId, tenantId: auth.tenantId }
   });
 
+  if (body.custom_role_id && body.role !== 'auditor') throw badRequest('Custom role assignments use the auditor storage role');
   const result = await prisma.$transaction(async (tx) => {
+    if (body.custom_role_id) {
+      const role = await tx.projectRole.updateMany({ where: { id: body.custom_role_id, projectId: auth.projectId, tenantId: auth.tenantId }, data: { updatedAt: new Date() } });
+      if (!role.count) throw notFound('Custom role not found for this project');
+    }
     const normalizedEmail = body.email?.trim().toLowerCase();
     const matchingUsers = body.user_id
       ? await tx.user.findMany({
@@ -152,7 +162,7 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
     if (existing) {
       const membership = await tx.projectMembership.update({
         where: { id: existing.id },
-        data: { isActive: true, memberId: ensured?.memberId ?? null }
+        data: { isActive: true, memberId: ensured?.memberId ?? null, customRoleId: body.custom_role_id ?? null }
       });
       return { user, membership, userCreated, reactivated: true, before: existing };
     }
@@ -175,7 +185,8 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
         projectId: auth.projectId,
         userId: user.id,
         memberId: ensured?.memberId ?? null,
-        role: body.role
+        role: body.role,
+        customRoleId: body.custom_role_id ?? null
       }
     });
 
@@ -231,6 +242,7 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
   return created(res, {
     id: result.membership.id,
     role: result.membership.role,
+    custom_role_id: result.membership.customRoleId,
     is_active: result.membership.isActive,
     member_id: result.membership.memberId,
     user_id: result.user.id,
@@ -269,6 +281,8 @@ router.patch("/:id", requireProject, requireRoles("owner", "admin"), validatePar
   });
   if (!before) throw notFound("Membership not found");
 
+  const nextCustomRoleId = body.custom_role_id !== undefined ? body.custom_role_id : body.role !== undefined ? null : before.customRoleId;
+  if (nextCustomRoleId && (body.role ?? before.role) !== 'auditor') throw badRequest('Custom role assignments use the auditor storage role');
   const disabling = body.is_active === false || (body.role && body.role !== before.role);
   if (before.role === "owner" && before.isActive && disabling) {
     const otherActiveOwners = await prisma.projectMembership.count({
@@ -293,6 +307,10 @@ router.patch("/:id", requireProject, requireRoles("owner", "admin"), validatePar
   const nextRole = body.role ?? before.role;
   const nextIsActive = body.is_active ?? before.isActive;
   const membership = await prisma.$transaction(async (tx) => {
+    if (nextCustomRoleId) {
+      const role = await tx.projectRole.updateMany({ where: { id: nextCustomRoleId, projectId: auth.projectId, tenantId: auth.tenantId }, data: { updatedAt: new Date() } });
+      if (!role.count) throw notFound('Custom role not found for this project');
+    }
     let memberId: string | null | undefined;
 
     if (nextIsActive && (nextRole === "member" || body.also_member)) {
@@ -321,6 +339,7 @@ router.patch("/:id", requireProject, requireRoles("owner", "admin"), validatePar
     return tx.projectMembership.update({
       where: { id },
       data: {
+        customRoleId: nextCustomRoleId,
         ...(body.role !== undefined ? { role: body.role } : {}),
         ...(body.is_active !== undefined ? { isActive: body.is_active } : {}),
         ...(memberId !== undefined ? { memberId } : {})
