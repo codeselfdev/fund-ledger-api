@@ -42,3 +42,9 @@ test('employees outside the GPS area can request check-in/out; rejections need a
   assert.deepEqual([row.date, row.name, row.distanceM, row.decidedAt], ['2026-10-27', 'Sadia', 820, null]);
   assert.equal('latitude' in row, false);
 });
+test('a wrong joining date can be corrected with a reason', () => {
+  const key = '6f1c2d7e-1111-4a2b-9c3d-123456789abc';
+  assert.equal(policy.joiningDateSchema.safeParse({ joining_date: '2026-10-01', revision: 0, reason: 'Imported with next month by mistake', request_key: key }).success, true);
+  assert.equal(policy.joiningDateSchema.safeParse({ joining_date: '2026-10-01', revision: 0, reason: '', request_key: key }).success, false);
+  assert.equal(policy.joiningDateSchema.safeParse({ joining_date: '2026-13-01', revision: 0, reason: 'Fix', request_key: key }).success, false);
+});

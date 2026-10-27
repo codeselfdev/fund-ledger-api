@@ -36,6 +36,8 @@ export const disburseSchema = z.object({ account_id: id, revision: z.number().in
 export const leaveSchema = z.object({ employee_id: id, type: leaveType, start_date: dateSchema, days: z.number().int().min(1).max(366), reason: z.string().trim().min(1).max(2000), note_file_id: id.optional(), request_key: requestKey }).strict();
 export const leaveDecisionSchema = z.object({ decision: z.enum(['approve', 'reject']), reason: z.string().trim().max(2000).default(''), request_key: requestKey }).strict();
 export const billSchema = z.object({ employee_id: id, category: billCategory, amount: money.refine(n => n > 0), date: dateSchema, note: z.string().trim().max(2000), receipt_file_id: id, request_key: requestKey }).strict();
+/** Correcting a wrong joining date (for example an import that defaulted to next month). */
+export const joiningDateSchema = z.object({ joining_date: dateSchema, revision: z.number().int().nonnegative(), reason: z.string().trim().min(3).max(500), request_key: requestKey }).strict();
 export const employeeSchema = z.object({ revision: z.number().int().nonnegative(), status: z.enum(['active', 'probation', 'inactive']).optional(), probation_completed_on: dateSchema.optional(), request_key: requestKey }).strict();
 export type History = { action: string; actor: string; actorId: string; at: string; note?: string };
 export interface PayrollRow {

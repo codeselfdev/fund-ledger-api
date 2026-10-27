@@ -9,8 +9,8 @@ import { ok, created } from '../../core/http/response.js';
 import { validateBody } from '../../core/validation/validate.js';
 import { prisma } from '../../core/prisma/client.js';
 import { workspace, project } from './payroll.service.js';
-import { monthSchema, settingsSchema, importSchema, prepareSchema, runDecisionSchema, disburseSchema, leaveSchema, leaveDecisionSchema, billSchema, decisionSchema, employeeSchema } from './payroll.policy.js';
-import { saveSettings, importEmployees, prepare, transition, disburseRun, employeeStatus } from './payroll.actions.js';
+import { joiningDateSchema, monthSchema, settingsSchema, importSchema, prepareSchema, runDecisionSchema, disburseSchema, leaveSchema, leaveDecisionSchema, billSchema, decisionSchema, employeeSchema } from './payroll.policy.js';
+import { changeJoiningDate, saveSettings, importEmployees, prepare, transition, disburseRun, employeeStatus } from './payroll.actions.js';
 import { importOpening, importRun, importHistory } from './payroll.imports.js';
 import { openingSchema, runImportSchema, historyImportSchema } from './payroll.imports.policy.js';
 import { attendanceRequestSchema, attendanceRequestDecisionSchema, requestAttendance, decideAttendanceRequest } from './attendance.requests.js';
@@ -33,6 +33,7 @@ router.post('/employees/import', validateBody(importSchema), asyncHandler(async 
 router.post('/import/opening', validateBody(openingSchema), asyncHandler(async (req, res) => created(res, await importOpening(requireProjectContext(req), openingSchema.parse(req.body)))));
 router.post('/import/run', validateBody(runImportSchema), asyncHandler(async (req, res) => created(res, await importRun(requireProjectContext(req), runImportSchema.parse(req.body)))));
 router.post('/import/history', validateBody(historyImportSchema), asyncHandler(async (req, res) => created(res, await importHistory(requireProjectContext(req), historyImportSchema.parse(req.body)))));
+router.patch('/employees/:id/joining-date', validateBody(joiningDateSchema), asyncHandler(async (req, res) => ok(res, await changeJoiningDate(requireProjectContext(req), req.params.id, joiningDateSchema.parse(req.body)))));
 router.patch('/employees/:id/status', validateBody(employeeSchema), asyncHandler(async (req, res) => ok(res, await employeeStatus(requireProjectContext(req), req.params.id, employeeSchema.parse(req.body)))));
 router.post('/runs', validateBody(prepareSchema), asyncHandler(async (req, res) => created(res, await prepare(requireProjectContext(req), prepareSchema.parse(req.body)))));
 for (const action of ['check', 'approve'] as const) router.post(`/runs/:id/${action}`, validateBody(runDecisionSchema), asyncHandler(async (req, res) => ok(res, await transition(requireProjectContext(req), req.params.id, action, runDecisionSchema.parse(req.body)))));

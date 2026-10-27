@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { badRequest, conflict, forbidden, notFound } from '../../core/http/api-error.js';
 import { json } from '../billing/billing.policy.js';
 import { financialTransaction } from '../accounting/transaction.js';
-import { importSchema, settingsSchema, prepareSchema, runDecisionSchema, disburseSchema, employeeSchema, day, atDate, today, checkedMoney, mobile, type PayrollRow } from './payroll.policy.js';
+import { joiningDateSchema, importSchema, settingsSchema, prepareSchema, runDecisionSchema, disburseSchema, employeeSchema, day, atDate, today, monthEnd, checkedMoney, mobile, type PayrollRow } from './payroll.policy.js';
 import { access, allowed, mutate, project, config, rebuild, audit, history, revision, mapRun, postPayment, scope, type PayrollAuth } from './payroll.service.js';
 
 export async function importEmployees(a: PayrollAuth, b: z.infer<typeof importSchema>) {
@@ -58,6 +58,38 @@ export async function employeeStatus(a: PayrollAuth, employeeId: string, b: z.in
     await rebuild(tx, a, 'Reprepared after employee eligibility changed');
     await audit(tx, a, 'employee.status_changed', 'payroll_employee', row.id, { status: updated.status, probation_completed_on: updated.probationCompletedOn });
     return { id: updated.id, status: updated.status, revision: updated.revision };
+  });
+}
+/** Moves an employee's joining date when it was entered wrongly. Paid months and recorded history are never contradicted. */
+export async function changeJoiningDate(a: PayrollAuth, employeeId: string, b: z.infer<typeof joiningDateSchema>) {
+  allowed(access(a).manage);
+  return mutate(a, `employee:${employeeId}:joining`, b, async tx => {
+    const row = await tx.payrollEmployee.findFirst({ where: { id: employeeId, ...scope(a) } });
+    if (!row) throw notFound('Employee not found');
+    revision(row.revision, b.revision);
+    const before = day(row.joiningDate), next = atDate(b.joining_date);
+    if (b.joining_date === before) return { id: row.id, joiningDate: before, revision: row.revision };
+    if (row.probationCompletedOn && day(row.probationCompletedOn) < b.joining_date) throw conflict('Probation was confirmed before this date. Correct the probation date first.');
+    if (b.joining_date > before) {
+      // Moving later must not orphan anything already recorded for the employee.
+      const [attendance, leave, bill, request] = await Promise.all([
+        tx.payrollAttendance.findFirst({ where: { ...scope(a), employeeId: row.id, date: { lt: next } } }),
+        tx.payrollLeave.findFirst({ where: { ...scope(a), employeeId: row.id, status: { in: ['pending', 'approved'] }, startDate: { lt: next } } }),
+        tx.payrollBill.findFirst({ where: { ...scope(a), employeeId: row.id, status: { not: 'rejected' }, date: { lt: next } } }),
+        tx.payrollAttendanceRequest.findFirst({ where: { ...scope(a), employeeId: row.id, status: { not: 'rejected' }, date: { lt: next } } }),
+      ]);
+      if (attendance || leave || bill || request) throw conflict('Attendance, leave or bills are already recorded before this date. Correct those records first.');
+    }
+    // A paid month must keep matching the employees it paid.
+    const paid = await tx.payrollRun.findMany({ where: { ...scope(a), status: 'paid' }, select: { month: true, rows: true } });
+    for (const run of paid) {
+      const included = (run.rows as unknown as PayrollRow[]).some(r => r.employeeId === row.id), eligible = b.joining_date <= monthEnd(run.month);
+      if (included !== eligible) throw conflict(`Payroll for ${run.month} is already paid ${included ? 'including' : 'without'} this employee. Record a payroll adjustment instead.`);
+    }
+    const updated = await tx.payrollEmployee.update({ where: { id: row.id }, data: { joiningDate: next, revision: { increment: 1 } } });
+    await rebuild(tx, a, 'Reprepared after a joining date correction');
+    await audit(tx, a, 'employee.joining_date_changed', 'payroll_employee', row.id, { before, after: b.joining_date, reason: b.reason });
+    return { id: updated.id, joiningDate: b.joining_date, revision: updated.revision };
   });
 }
 export async function prepare(a: PayrollAuth, b: z.infer<typeof prepareSchema>) {
