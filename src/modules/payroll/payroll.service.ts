@@ -1,3 +1,6 @@
+import { records } from './portal.store.js';
+import { effectiveEmployment } from './portal.pay.js';
+import type { EmployeeProfile } from './portal.types.js';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_ATTENDANCE, type AttendanceSettings } from './attendance.policy.js';
 import type { Prisma, PayrollEmployee, PayrollRun } from '@prisma/client';
@@ -12,6 +15,12 @@ export const scope = (a: PayrollAuth) => ({ tenantId: a.tenantId, projectId: a.p
 export function access(a: PayrollAuth) {
   const manage = a.roles.some(r => r === 'owner' || r === 'admin');
   return { manage, check: a.roles.includes('accountant'), approve: manage || a.roles.includes('approver'), pay: manage || a.roles.some(r => r === 'accountant' || r === 'cashier'), staff: a.roles.some(r => ['owner', 'admin', 'accountant', 'approver', 'cashier', 'auditor'].includes(r)), member: a.roles.includes('member') };
+}
+/** Custom-only personal routes must not inherit a synthetic auditor's team access. */
+export function workspaceAccess(a: PayrollAuth & { builtinRoles?: readonly string[]; menuPermissions?: Record<string, {read:boolean;write:boolean}> }) {
+  const role=access({...a,roles:a.builtinRoles??a.roles});
+  const customTeamRead=['payroll_employees','payroll_run','payroll_attendance','payroll_leave','payroll_bills','payroll_pf'].some(key=>a.menuPermissions?.[key]?.read);
+  return {...role,staff:role.staff||customTeamRead,member:role.member||!!a.menuPermissions};
 }
 export function allowed(condition: boolean, message = 'This payroll action is not permitted for your role'): asserts condition { if (!condition) throw forbidden(message); }
 export async function project(tx: Tx, a: PayrollAuth) {
@@ -79,6 +88,7 @@ export async function rebuild(tx: Tx, a: PayrollAuth, reason: string) {
   const runs = await tx.payrollRun.findMany({ where: { ...scope(a), status: { not: 'paid' } }, orderBy: { month: 'asc' } });
   if (!runs.length) return;
   const settings = await config(tx, a);
+  const profiles = await records<EmployeeProfile>(tx, a, 'profile');
   const employees = await tx.payrollEmployee.findMany({ where: { ...scope(a), status: { not: 'inactive' } }, orderBy: { id: 'asc' } });
   const leaves = await tx.payrollLeave.findMany({ where: { ...scope(a), status: 'approved' } });
   const attendanceSettings = await attendanceConfig(tx, a);
@@ -90,7 +100,7 @@ export async function rebuild(tx: Tx, a: PayrollAuth, reason: string) {
     const rows = employees.filter(e => day(e.joiningDate) <= end).map(e => {
       const eligible = bills.filter(b => b.employeeId === e.id && day(b.date) <= end && !assigned.has(b.id) && (!b.reservedRunId || unpaidIds.has(b.reservedRunId)));
       eligible.forEach(b => assigned.set(b.id, run.id));
-      return salaryRow(e, run.month, settings, leaves.filter(l => l.employeeId === e.id), eligible, attendance.filter(r => r.employeeId === e.id), attendanceSettings.holidays);
+      return salaryRow(e, run.month, settings, leaves.filter(l => l.employeeId === e.id), eligible, attendance.filter(r => r.employeeId === e.id), attendanceSettings.holidays, profiles.find(p => p.employee_id === e.id)?.data);
     });
     if (JSON.stringify(rows) !== JSON.stringify(run.rows) || JSON.stringify(settings) !== JSON.stringify(run.settingsSnapshot)) {
       await tx.payrollRun.update({ where: { id: run.id }, data: { rows: json(rows), settingsSnapshot: json(settings), status: 'prepared', createdById: a.userId, checkedById: null, approvedById: null, revision: { increment: 1 }, history: json(await history(tx, a, reason, run.history)) } });
@@ -108,7 +118,7 @@ export function mapRun(row: PayrollRun, ownId?: string | null) {
 export async function workspace(a: PayrollAuth, month: string) {
   return financialTransaction(async tx => {
     await project(tx, a);
-    const role = access(a); allowed(role.staff || role.member);
+    const role = workspaceAccess(a); allowed(role.staff || role.member);
     const me = await ownEmployee(tx, a), where = { ...scope(a), ...(role.staff ? {} : { employeeId: me?.id ?? '__none__' }) };
     const [settings, employees, leaves, bills, run, contributions, attendanceSettings, attendanceRecords] = await Promise.all([
       config(tx, a), tx.payrollEmployee.findMany({ where: { ...scope(a), ...(role.staff ? {} : { id: me?.id ?? '__none__' }) }, orderBy: [{ name: 'asc' }, { id: 'asc' }] }),
@@ -119,11 +129,13 @@ export async function workspace(a: PayrollAuth, month: string) {
       attendanceConfig(tx, a), tx.payrollAttendance.findMany({ where: { ...where, date: { gte: atDate(`${month}-01`), lte: atDate(monthEnd(month)) } }, orderBy: [{ date: 'desc' }, { employeeId: 'asc' }] })
     ]);
     const date = today();
+    const profiles = await records<EmployeeProfile>(tx, a, 'profile');
     const mapped = employees.map(e => {
+      const profile = profiles.find(p => p.employee_id === e.id)?.data, terms = profile ? effectiveEmployment(profile, date) : null;
       const pf = contributions.find(c => c.employeeId === e.id)?._sum;
       const own = pf?.own ?? 0, company = pf?.company ?? 0, profit = pf?.profit ?? 0;
       const vest = vested(completedYears(day(e.joiningDate), date), settings.vesting);
-      return { id: e.id, revision: e.revision, name: e.name, mobile: e.mobile, designation: e.designation, department: e.department, joiningDate: day(e.joiningDate), basic: e.basic, medical: e.medical, transport: e.transport, pfMember: e.pfMember, status: e.status, leaveLeft: leaveLeft(leaves.filter(l => l.employeeId === e.id), date.slice(0, 4)), pf: { own, company, profit, loanOutstanding: 0, vestedPercent: vest, payable: checkedMoney(own + profit + Math.round(company * vest / 100)) } };
+      return { id: e.id, revision: e.revision, name: e.name, mobile: e.mobile, designation: terms?.designation ?? e.designation, department: e.department, joiningDate: day(e.joiningDate), basic: terms?.basic ?? e.basic, medical: e.medical, transport: e.transport, pfMember: e.pfMember, status: e.status, leaveLeft: leaveLeft(leaves.filter(l => l.employeeId === e.id), date.slice(0, 4)), pf: { own, company, profit, loanOutstanding: 0, vestedPercent: vest, payable: checkedMoney(own + profit + Math.round(company * vest / 100)) } };
     });
     return { month, today: date, settings, attendance: { settings: attendanceSettings, records: attendanceRecords.map(r => ({ id: r.id, employeeId: r.employeeId, date: day(r.date), status: r.status, checkIn: r.checkIn?.toISOString() ?? null, checkOut: r.checkOut?.toISOString() ?? null, source: r.source, officeVerified: r.officeVerified, revision: r.revision, history: r.history })) }, employees: mapped, me: mapped.find(e => e.id === me?.id) ?? null,
       run: run && (role.staff || (run.rows as unknown as PayrollRow[]).some(r => r.employeeId === me?.id)) ? mapRun(run, role.staff ? undefined : me?.id) : null,

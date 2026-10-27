@@ -238,6 +238,7 @@ enum DepositApprovalRoute {
 }
 
 model Project {
+  payrollPortalRecords PayrollPortalRecord[]
   constructionRequisitions ConstructionRequisition[]
   constructionSupplierQuotes ConstructionSupplierQuote[]
   constructionProcurementAwards ConstructionProcurementAward[]
@@ -2888,6 +2889,7 @@ model PayrollConfiguration {
 }
 
 model PayrollEmployee {
+  portalRecords PayrollPortalRecord[]
   userId String? @map("user_id")
   id String @id @default(cuid())
   tenantId String @map("tenant_id")
@@ -3974,4 +3976,23 @@ model ConstructionScopeChange {
   @@unique([projectId,requestKey])
   @@index([tenantId,projectId])
   @@map("construction_scope_changes")
+}
+
+// Typed JSON variants are validated by portal.policy.ts. Tenant/project/employee scope is enforced per record.
+model PayrollPortalRecord {
+  id String @id
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  employeeId String? @map("employee_id")
+  kind String
+  recordKey String @map("record_key")
+  data Json
+  revision Int @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz @map("created_at")
+  updatedAt DateTime @default(now()) @db.Timestamptz @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  employee PayrollEmployee? @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  @@unique([projectId, kind, recordKey])
+  @@index([tenantId, projectId, kind, employeeId], map: "payroll_portal_scope_idx")
+  @@map("payroll_portal_records")
 }

@@ -1,3 +1,5 @@
+import { records } from './portal.store.js';
+import type { OfficeProject } from './portal.types.js';
 import type { z } from 'zod';
 import type { PayrollAttendance } from '@prisma/client';
 import { badRequest, conflict } from '../../core/http/api-error.js';
@@ -46,13 +48,15 @@ export async function punchAttendance(a: PayrollAuth, b: z.infer<typeof attendan
     if (b.action === 'out' && (!old?.checkIn || old.checkOut)) throw conflict('Check in first; a completed check-out cannot be repeated');
     let officeVerified = false;
     if (settings.gpsRequired) {
-      if (settings.latitude === null || settings.longitude === null) throw conflict('The owner must configure the office location before GPS check-in');
+      const assignedSites = (await records<OfficeProject>(tx, a, 'office_project')).map(r => r.data).filter(p => p.status === 'active' && p.site === 'site' && p.startDate <= date && p.endDate >= date && p.team.some(t => t.employeeId === person.id) && p.latitude !== null && p.longitude !== null);
+      const zones = [...(settings.latitude !== null && settings.longitude !== null ? [{latitude:settings.latitude,longitude:settings.longitude,radiusM:settings.radiusM}] : []), ...assignedSites.map(p=>({latitude:p.latitude!,longitude:p.longitude!,radiusM:p.radiusM}))];
+      if (!zones.length) throw conflict('The owner must configure an office or assigned project site before GPS check-in');
       const l = b.location;
-      if (!l || l.mocked || Math.abs(now.getTime() - new Date(l.captured_at).getTime()) > 120000 || l.accuracy > Math.min(settings.radiusM, 100)) throw badRequest('A fresh, accurate device location is required. Enable precise location and try again.');
-      if (officeDistance(l.latitude, l.longitude, settings.latitude, settings.longitude) > settings.radiusM) throw conflict('You are outside the configured office check-in area');
+      if (!l || l.mocked || Math.abs(now.getTime() - new Date(l.captured_at).getTime()) > 120000 || l.accuracy > 100) throw badRequest('A fresh, accurate device location is required. Enable precise location and try again.');
+      if (!zones.some(z=>l.accuracy <= Math.min(z.radiusM,100) && officeDistance(l.latitude,l.longitude,z.latitude,z.longitude)<=z.radiusM)) throw conflict('You are outside the office and your assigned project check-in areas');
       officeVerified = true;
     }
-    const entry = json(await history(tx, a, b.action === 'in' ? 'Checked in' : 'Checked out', old?.history, officeVerified ? 'Office location verified' : 'Location not required'));
+    const entry = json(await history(tx, a, b.action === 'in' ? 'Checked in' : 'Checked out', old?.history, officeVerified ? 'Work location verified' : 'Location not required'));
     const row = b.action === 'in' ? await tx.payrollAttendance.create({ data: { ...scope(a), employeeId: person.id, date: atDate(date), checkIn: now, status: dhakaClock(now) > settings.lateAfter ? 'late' : 'present', source: 'phone', officeVerified, history: entry } }) : await tx.payrollAttendance.update({ where: { id: old!.id }, data: { checkOut: now, revision: { increment: 1 }, history: entry } });
     await rebuild(tx, a, 'Reprepared after employee attendance');
     // Coordinates are checked transiently and are not stored in attendance or audit records.

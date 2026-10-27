@@ -1,4 +1,12 @@
 export const menuAccessCatalog = [
+  {"key": "payroll_projects", "label": "Office projects", "group": "people", "project_types": ["payroll_pf"]},
+  {"key": "payroll_org", "label": "Departments & designations", "group": "setup", "project_types": ["payroll_pf"]},
+  {"key": "payroll_tasks", "label": "Employee tasks", "group": "people", "project_types": ["payroll_pf"]},
+  {"key": "payroll_work", "label": "Today\u2019s work", "group": "people", "project_types": ["payroll_pf"]},
+  {"key": "payroll_profile", "label": "My employee profile", "group": "people", "project_types": ["payroll_pf"]},
+  {"key": "payroll_documents", "label": "Employee documents", "group": "people", "project_types": ["payroll_pf"]},
+  {"key": "payroll_location", "label": "Live location", "group": "people", "project_types": ["payroll_pf"]},
+
   {"key":"construction_control","label":"Site planning & control","group":"money","project_types":["construction"]},
   {
     "key": "income",

@@ -1,3 +1,5 @@
+import { monthlyEmployment } from './portal.pay.js';
+import type { EmployeeProfile } from './portal.types.js';
 import { z } from 'zod';
 import { unpaidAttendance } from './attendance.policy.js';
 import type { PayrollEmployee, PayrollLeave } from '@prisma/client';
@@ -37,7 +39,7 @@ export const billSchema = z.object({ employee_id: id, category: billCategory, am
 export const employeeSchema = z.object({ revision: z.number().int().nonnegative(), status: z.enum(['active', 'probation', 'inactive']).optional(), probation_completed_on: dateSchema.optional(), request_key: requestKey }).strict();
 export type History = { action: string; actor: string; actorId: string; at: string; note?: string };
 export interface PayrollRow {
-  employeeId: string; name: string; basic: number; houseRent: number; medical: number; transport: number; gross: number;
+  employmentType?: string; payableHours?: number; hourlyRate?: number; employeeId: string; name: string; basic: number; houseRent: number; medical: number; transport: number; gross: number;
   unpaidDays: number; attendanceUnpaidDays: number; leaveUnpaidDays: number; unpaidDeduction: number; pf: number; companyPF: number; tax: number; advance: number; bills: number; billIds: string[]; net: number;
 }
 export interface Posting { id: string; accountId: string; accountName: string; amount: number; paidAt: string; ledgerTransactionIds: string[]; expenseId: string }
@@ -59,14 +61,15 @@ export function monthEnd(month: string) { const [year, m] = month.split('-').map
 export function leaveLeft(leaves: Pick<PayrollLeave, 'type' | 'status' | 'days' | 'startDate'>[], year: string, pending = false) {
   return Object.fromEntries(Object.entries(ALLOWANCE).map(([type, limit]) => [type, Math.max(0, limit - leaves.filter(l => l.type === type && (l.status === 'approved' || pending && l.status === 'pending') && day(l.startDate).startsWith(year)).reduce((sum, l) => sum + l.days, 0))])) as Record<keyof typeof ALLOWANCE, number>;
 }
-export function salaryRow(employee: PayrollEmployee, month: string, config: PFSettings, leaves: Pick<PayrollLeave, 'type' | 'status' | 'workingDates'>[], bills: { id: string; amount: number }[], attendance: { date: Date; status: string }[] = [], holidays: { date: string }[] = []): PayrollRow {
-  const houseRent = checkedMoney(Math.round(employee.basic * .5));
-  const gross = checkedMoney(employee.basic + houseRent + employee.medical + employee.transport);
+export function salaryRow(employee: PayrollEmployee, month: string, config: PFSettings, leaves: Pick<PayrollLeave, 'type' | 'status' | 'workingDates'>[], bills: { id: string; amount: number }[], attendance: { date: Date; status: string; checkIn?: Date | null; checkOut?: Date | null }[] = [], holidays: { date: string }[] = [], profile?: EmployeeProfile): PayrollRow {
+  const pay = profile ? monthlyEmployment(day(employee.joiningDate), profile, month, attendance) : { basic: employee.basic, medical: employee.medical, transport: employee.transport, houseRent: Math.round(employee.basic * .5), pfMember: employee.pfMember, employmentType: 'permanent', payableHours: 0, hourlyRate: 0 };
+  const houseRent = checkedMoney(pay.houseRent);
+  const gross = checkedMoney(pay.basic + houseRent + pay.medical + pay.transport);
   const end = monthEnd(month), joined = day(employee.joiningDate);
-  const eligible = employee.pfMember && (config.eligibility === 'joining' || config.eligibility === 'one_year' && completedYears(joined, end) >= 1 || config.eligibility === 'probation' && employee.probationCompletedOn !== null && day(employee.probationCompletedOn) <= end);
-  const own = eligible ? checkedMoney(Math.round((config.basis === 'basic' ? employee.basic : gross) * config.rate / 100)) : 0;
+  const eligible = pay.pfMember && (config.eligibility === 'joining' || config.eligibility === 'one_year' && completedYears(joined, end) >= 1 || config.eligibility === 'probation' && employee.probationCompletedOn !== null && day(employee.probationCompletedOn) <= end);
+  const own = eligible ? checkedMoney(Math.round((config.basis === 'basic' ? pay.basic : gross) * config.rate / 100)) : 0;
   const companyPF = checkedMoney(Math.round(own * (config.match === 'equal' ? 1 : config.match === 'half' ? .5 : 0)));
-  const unpaid = unpaidAttendance(month, joined, leaves, attendance, holidays), unpaidDays = unpaid.total;
+  const unpaid = unpaidAttendance(month, joined, leaves, attendance, holidays), unpaidDays = pay.employmentType === 'part_time' ? 0 : unpaid.total;
   const unpaidDeduction = checkedMoney(Math.min(gross, Math.round(gross / 30 * unpaidDays)));
   const annual = gross * 12, taxable = annual - Math.min(annual / 3, 450000);
   const tax = checkedMoney(Math.max(0, Math.round((taxable - 350000) * .05 / 12 / 10) * 10));
@@ -74,5 +77,5 @@ export function salaryRow(employee: PayrollEmployee, month: string, config: PFSe
   const advance = Math.min(employee.advance, Math.max(0, gross - unpaidDeduction - own - tax));
   const net = gross - unpaidDeduction - own - tax - advance + reimbursements;
   if (net < 0) throw badRequest(`Deductions exceed earnings for ${employee.name}. Review leave or PF before preparing payroll.`);
-  return { employeeId: employee.id, name: employee.name, basic: employee.basic, houseRent, medical: employee.medical, transport: employee.transport, gross, unpaidDays, attendanceUnpaidDays: unpaid.attendanceDays, leaveUnpaidDays: unpaid.leaveDays, unpaidDeduction, pf: own, companyPF, tax, advance, bills: reimbursements, billIds: bills.map(b => b.id), net: checkedMoney(net) };
+  return { employeeId: employee.id, name: employee.name, basic: pay.basic, houseRent, medical: pay.medical, transport: pay.transport, gross, employmentType: pay.employmentType, payableHours: pay.payableHours, hourlyRate: pay.hourlyRate, unpaidDays, attendanceUnpaidDays: unpaid.attendanceDays, leaveUnpaidDays: unpaid.leaveDays, unpaidDeduction, pf: own, companyPF, tax, advance, bills: reimbursements, billIds: bills.map(b => b.id), net: checkedMoney(net) };
 }

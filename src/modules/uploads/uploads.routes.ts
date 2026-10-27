@@ -1,3 +1,4 @@
+import { portalGrant } from '../payroll/portal.service.js';
 import { uploadMenuKeys } from '../../core/security/upload-menu-access.js';
 import { menuGrant } from '../../core/security/menu-access.js';
 import { assertImageUploadSize } from "../../core/storage/upload-image-policy.js";
@@ -51,7 +52,7 @@ router.post("/", requireProject, requireRoles("any"), upload.single("file"), asy
   }
   if (purpose?.startsWith("customer_logo:") || purpose?.startsWith("dealer_logo:")) throw badRequest("Use the customer or dealer logo editor to save logos.");
 
-  if (purpose === "payroll_receipt" || purpose === "payroll_leave_note") {
+  if (purpose === "payroll_employee_document" || purpose === "payroll_receipt" || purpose === "payroll_leave_note") {
     const project = await prisma.project.findFirst({ where: { id: auth.projectId, tenantId: auth.tenantId, projectType: "payroll_pf", isActive: true } });
     if (!project) throw forbidden("Payroll attachments require a Payroll & PF project");
     if (!req.file.mimetype.startsWith("image/") && req.file.mimetype !== "application/pdf") throw badRequest("Attach an image or PDF");
@@ -152,6 +153,10 @@ router.get("/:id/view", requireProject, requireRoles("any"), validateParams(idPa
     if (!staff && auth.memberId !== memberId && !auth.memberIds?.includes(memberId)) throw forbidden();
   }
 
+  if (record.purpose === 'payroll_employee_document' && record.userId !== auth.userId && !portalGrant(auth, 'payroll_documents')) {
+    const linked = await prisma.$queryRaw<{id:string}[]>`SELECT r.id FROM payroll_portal_records r JOIN payroll_employees e ON e.id=r.employee_id WHERE r.tenant_id=${auth.tenantId} AND r.project_id=${auth.projectId} AND r.kind='document' AND r.data->>'fileId'=${record.id} AND e.user_id=${auth.userId}`;
+    if (!linked.length) throw forbidden('This employee document belongs to another account');
+  }
   if (record.purpose === "payroll_receipt" || record.purpose === "payroll_leave_note") {
     const staff = auth.roles.some(role => ["owner", "admin", "accountant", "approver", "cashier", "auditor"].includes(role));
     if (!staff && record.userId !== auth.userId) {

@@ -1,3 +1,4 @@
+import { payrollPersonalRoute } from './payroll-personal-routes.js';
 /** All paths are absolute API paths. Unknown endpoints stay closed for custom-only access. */
 export function routeMenuKeys(path: string, method: string, query: Record<string, unknown> = {}, body: Record<string, unknown> = {}): string[] | null {
   const parts = path.split('/').filter(Boolean), root = parts[1], action = parts[2] ?? '';
@@ -33,6 +34,10 @@ export function routeMenuKeys(path: string, method: string, query: Record<string
     return construction[action] ? [construction[action]] : [];
   }
   if (root === 'payroll') {
+    if (action === 'portal') {
+      const portal: Record<string,string> = { employees:'payroll_employees', departments:'payroll_org', designations:'payroll_org', projects:'payroll_projects', tasks:'payroll_tasks', documents:'payroll_documents', location:'payroll_location', 'work-split':'payroll_tasks' };
+      return parts[3] === 'workspace' ? ['payroll_employees','payroll_org','payroll_projects','payroll_tasks','payroll_documents','payroll_location'] : [portal[parts[3]] ?? '__denied__'];
+    }
     const payroll: Record<string, string> = { settings: 'payroll_settings', employees: 'payroll_employees', runs: 'payroll_run', leave: 'payroll_leave', bills: 'payroll_bills', attendance: 'payroll_attendance' };
     if (action === 'workspace') return ['overview', 'payroll_employees', 'payroll_run', 'payroll_leave', 'payroll_bills', 'payroll_pf', 'payroll_attendance', 'payroll_settings'];
     return payroll[action] ? [payroll[action]] : [];
@@ -47,6 +52,7 @@ export function routeMenuKeys(path: string, method: string, query: Record<string
   return null;
 }
 export function personalAccessPath(path: string, method: string) {
+  if (payrollPersonalRoute(path, method)) return true;
   if (path === '/v1/app-guide/status' && method === 'GET' || path === '/v1/app-guide/ask' && method === 'POST') return true;
   return /^\/v1\/auth\/(?:me|logout|switch-project)$/.test(path)
     || /^\/v1\/shortcuts(?:\/(?:preferences|reset))?$/.test(path)

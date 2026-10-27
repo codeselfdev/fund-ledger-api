@@ -1,3 +1,4 @@
+import { record } from './portal.store.js';
 import { z } from 'zod';
 import { badRequest, conflict, forbidden, notFound } from '../../core/http/api-error.js';
 import { json } from '../billing/billing.policy.js';
@@ -15,6 +16,8 @@ export async function importEmployees(a: PayrollAuth, b: z.infer<typeof importSc
       let employeeId: string;
       if (existing) {
         employeeId = existing.id;
+        const profile = await record(tx, a, 'profile', existing.id, false);
+        if (profile && (row.basic !== existing.basic || row.medical !== existing.medical || row.transport !== existing.transport || row.pfMember !== existing.pfMember)) throw conflict('This employee uses effective-dated portal terms. Use the employee portal to change compensation rather than overwriting it through import.');
         await tx.payrollEmployee.update({ where: { id: existing.id }, data: { name: row.name, designation: row.designation, department: row.department, basic: row.basic, medical: row.medical, transport: row.transport, pfMember: row.pfMember, revision: { increment: 1 } } });
         ++updated;
       } else {

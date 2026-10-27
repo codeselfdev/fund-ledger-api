@@ -1,3 +1,4 @@
+import { portalRouter } from './portal.routes.js';
 import { filterPayrollWorkspace } from './payroll.menu-access.js';
 import { Router } from 'express';
 import type { z } from 'zod';
@@ -18,6 +19,7 @@ router.use(requireProject, asyncHandler(async (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
   await project(prisma, requireProjectContext(req)); next();
 }));
+router.use('/portal', portalRouter);
 router.get('/workspace', asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req), data = await workspace(auth, monthSchema.parse(req.query.month));
   if (!auth.menuPermissions || auth.builtinRoles?.some(role => ['owner', 'admin', 'accountant', 'approver', 'cashier', 'auditor'].includes(role))) return ok(res, data);
