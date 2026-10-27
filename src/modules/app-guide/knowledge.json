@@ -8527,7 +8527,6 @@
             ],
             "path": "Home → All tools → Expenses",
             "related": [
-              "recurring_expenses",
               "accounts",
               "ledger"
             ],
@@ -8545,7 +8544,6 @@
             ],
             "path": "Home → All tools → Expenses",
             "related": [
-              "recurring_expenses",
               "accounts",
               "ledger"
             ],
@@ -8631,12 +8629,7 @@
             ],
             "path": "Home → All tools → Roles",
             "related": [],
-            "group": "people",
-            "options": [
-              "Project type and role/menu permissions decide which tools and actions are available. A guide never grants access or shares another project’s records.",
-              "Revision checks can require a fresh review when a document changes. Duplicate-request protection helps prevent repeating the same saved operation; verify its result before retrying.",
-              "Private platform subscription-billing reviews and promotional notification controls belong to separately authorized platform administration. Project owner/admin access does not grant them; App Guide does not reveal private reviews, audiences or account details."
-            ]
+            "group": "people"
           },
           "bn": {
             "id": "roles",
@@ -8650,12 +8643,7 @@
             ],
             "path": "Home → All tools → Roles",
             "related": [],
-            "group": "people",
-            "options": [
-              "project-এর ধরন ও আপনার অনুমতি অনুযায়ী টুল ও বোতাম পাবেন। গাইড পড়লে নতুন অনুমতি বা অন্য project-এর তথ্য পাবেন না।",
-              "কাগজ বদলালে আবার দেখে নিশ্চিত করতে হতে পারে। একই কাজ দুবার হওয়া ঠেকানোর ব্যবস্থা আছে। আবার চাপার আগে আগের কাজ Save হয়েছে কি না দেখুন।",
-              "প্ল্যাটফর্মের ব্যক্তিগত বিলিং যাচাই ও প্রচারের কন্ট্রোল শুধু আলাদা অনুমতি থাকা কর্তৃপক্ষের জন্য। project-এর Owner / Admin হলেই সেগুলো পাবেন না। এই গাইডে ব্যক্তিগত যাচাই, প্রাপক তালিকা বা অ্যাকাউন্টের তথ্য দেখানো হয় না।"
-            ]
+            "group": "people"
           }
         },
         "notices": {
@@ -8788,677 +8776,653 @@
           "en": {
             "id": "payroll_employees",
             "title": "Employees",
-            "summary": "Employee profiles, salaries & leave balances",
-            "why": "Keep employee salary, joining date and eligibility details consistent.",
+            "summary": "Review employee profiles, employment terms and eligibility before preparing salaries.",
+            "why": "Review employee profiles, employment terms and eligibility before preparing salaries.",
             "steps": [
-              "Open Employees.",
-              "Review the employee profile, salary components, joining date, status and leave balances.",
-              "Owners/admins can use employee import and confirm probation completion through the existing controls."
+              "Open Employees, search by name and use the department filter; open the saved employee profile.",
+              "Review the actual joining date, employment type, salary components, leave and PF details. Authorized managers use the profile’s offered edit, promotion and document controls.",
+              "Owners/admins can confirm probation completion for an eligible employee. Review refreshed unpaid payroll; paid history must not be silently rewritten."
             ],
             "path": "Home → All tools → Employees",
             "related": [
-              "payroll_attendance",
-              "payroll_leave",
+              "payroll_import",
               "payroll_run",
-              "payroll_bills"
+              "payroll_org"
             ],
-            "group": "people"
+            "group": "people",
+            "options": [
+              "Permanent, contractual and part-time earnings follow the saved employment terms; completed hours affect hourly pay.",
+              "Employee portal details require the portal service. If it is unavailable, retry rather than treating missing records as empty.",
+              "An employee account links by its imported sign-in mobile. Ask the owner to correct the import if the profile is unlinked.",
+              "For a permanent employee, use profile → Promote employee; choose a higher designation in the linked department, salary within its band, effective date and reason. Mid-month earnings prorate by calendar days and paid runs stay locked. Request/upload the promotion letter in Documents after saving."
+            ]
           },
           "bn": {
             "id": "payroll_employees",
             "title": "Employees",
-            "summary": "কর্মীর যোগদানের দিন, বেতন ও ছুটির তথ্য এক জায়গায় রাখুন।",
-            "why": "কর্মীর যোগদানের দিন, বেতন ও ছুটির তথ্য এক জায়গায় রাখুন।",
+            "summary": "বেতন তৈরির আগে কর্মীর পরিচয়, চাকরির ধরন ও যোগ্যতা মিলিয়ে নিন।",
+            "why": "বেতন তৈরির আগে কর্মীর পরিচয়, চাকরির ধরন ও যোগ্যতা মিলিয়ে নিন।",
             "steps": [
-              "Employees খুলুন।",
-              "কর্মীর তথ্য, বেতনের অংশ, যোগদানের তারিখ ও ছুটির ব্যালেন্স দেখুন।",
-              "Owner / Admin কর্মীর তালিকা Import ও প্রবেশন শেষ করার বোতাম ব্যবহার করতে পারবেন।"
+              "Employees খুলে নাম খুঁজুন বা department বাছুন। সংরক্ষিত কর্মীর profile খুলুন।",
+              "আসল joining date, চাকরির ধরন, বেতনের অংশ, ছুটি ও PF দেখুন। অনুমতি থাকা manager দেখানো edit, promotion ও document বোতাম ব্যবহার করবেন।",
+              "Owner / Admin যোগ্য কর্মীর probation শেষ করতে পারবেন। অপরিশোধিত বেতন আবার দেখুন; পরিশোধিত ইতিহাস নীরবে বদলাবেন না।"
             ],
             "path": "Home → All tools → Employees",
             "related": [
-              "payroll_attendance",
-              "payroll_leave",
+              "payroll_import",
               "payroll_run",
-              "payroll_bills"
+              "payroll_org"
             ],
-            "group": "people"
+            "group": "people",
+            "options": [
+              "Permanent, contractual ও part-time বেতন সংরক্ষিত নিয়ম অনুযায়ী হয়। ঘণ্টাভিত্তিক বেতনে সম্পন্ন ঘণ্টা লাগে।",
+              "Employee portal সেবা না পেলে Retry করুন। তথ্য না পাওয়াকে খালি তালিকা ভাববেন না।",
+              "কর্মীর sign-in mobile দিয়ে profile মেলে। না মিললে Owner-কে import ঠিক করতে বলুন।",
+              "Permanent কর্মীর profile → Promote employee থেকে linked department-এর উঁচু designation, salary band, effective date ও কারণ দিন। মাঝমাসের আয় calendar day অনুযায়ী ভাগ হয়; paid run locked থাকে। Save-এর পরে Documents-এ promotion letter চাইতে বা upload করতে পারেন।"
+            ]
           }
         },
         "payroll_run": {
           "en": {
             "id": "payroll_run",
-            "title": "Payroll",
-            "summary": "Prepare, check, approve & disburse salaries",
-            "why": "Prepare, check and approve salaries before disbursing money.",
+            "title": "Payroll run",
+            "summary": "Follow Prepared → Checked → Approved → Paid and review each month before payment.",
+            "why": "Follow Prepared → Checked → Approved → Paid and review each month before payment.",
             "steps": [
-              "Open Payroll and select the salary month.",
-              "Authorized staff prepare the run; the required independent checker and approver review its saved rows.",
-              "Choose the actual source account for disbursement. Approval does not itself pay salaries."
+              "Open Payroll and select the salary month. An owner/admin prepares one run; employees joining after that month are excluded.",
+              "Review earnings, unpaid leave/attendance, employee PF, estimated tax, advance recovery and approved unpaid bills. An independent accountant checks; the authorized approver then approves.",
+              "An authorized payer chooses the actual source account and reviews the balance before disbursement. Confirm the saved Paid status and posting receipt; after a connection failure, refresh before retrying."
             ],
             "path": "Home → All tools → Payroll",
             "related": [
-              "payroll_employees",
               "payroll_attendance",
-              "payroll_leave",
-              "payroll_bills"
+              "payroll_bills",
+              "payroll_pf",
+              "accounts"
             ],
-            "group": "money"
+            "group": "people",
+            "options": [
+              "The checker differs from the preparer and final approver. Approval alone does not move money.",
+              "Members select a month to see only their own payslip. An unprepared month shows no payslip; an unpaid slip is expected pay.",
+              "Company PF is additional to employee PF. Tax shown here is a simplified estimate, not a statutory calculation.",
+              "Salary-affecting changes can return an unpaid run to Prepared. A bill reserved in a run cannot also be paid separately.",
+              "Payslip export/sending is not offered in this payroll screen. Do not assume a downloaded or sent payslip exists."
+            ]
           },
           "bn": {
             "id": "payroll_run",
-            "title": "Payroll",
-            "summary": "বেতন দেওয়ার আগে সবার হিসাব মিলিয়ে নিন।",
-            "why": "বেতন দেওয়ার আগে সবার হিসাব মিলিয়ে নিন।",
+            "title": "Payroll run",
+            "summary": "প্রতি মাসে Prepared → Checked → Approved → Paid ধাপ মিলিয়ে বেতন দিন।",
+            "why": "প্রতি মাসে Prepared → Checked → Approved → Paid ধাপ মিলিয়ে বেতন দিন।",
             "steps": [
-              "Payroll খুলে বেতনের মাস বাছুন।",
-              "অনুমতি থাকা কর্মী বেতন তৈরি করবেন। নির্ধারিত আলাদা ব্যক্তিরা যাচাই ও অনুমোদন করবেন।",
-              "বেতন দেওয়ার সময় যে অ্যাকাউন্ট থেকে টাকা যাবে সেটি বাছুন। অনুমোদন হলেই টাকা দেওয়া হয়ে যায় না।"
+              "Payroll খুলে বেতনের মাস বাছুন। Owner / Admin একবার run তৈরি করবেন। ওই মাসের পরে যোগ দেওয়া কর্মী এতে থাকবেন না।",
+              "আয়, unpaid ছুটি ও উপস্থিতি, PF, আনুমানিক tax, advance ও অনুমোদিত অপরিশোধিত বিল মিলিয়ে নিন। আলাদা accountant check করবেন; এরপর অনুমতি থাকা approver অনুমোদন করবেন।",
+              "অনুমতি থাকা payer আসল source account ও balance দেখে টাকা দেবেন। Saved Paid অবস্থা ও posting receipt দেখুন। সংযোগ বিচ্ছিন্ন হলে আবার দেওয়ার আগে Refresh করুন।"
             ],
             "path": "Home → All tools → Payroll",
             "related": [
-              "payroll_employees",
               "payroll_attendance",
-              "payroll_leave",
-              "payroll_bills"
+              "payroll_bills",
+              "payroll_pf",
+              "accounts"
             ],
-            "group": "money"
-          }
-        },
-        "payroll_leave": {
-          "en": {
-            "id": "payroll_leave",
-            "title": "Leave",
-            "summary": "Requests, approvals & leave allowances",
-            "why": "Keep leave requests and available allowances in one place.",
-            "steps": [
-              "Open Leave and select your own employee or the authorized employee record.",
-              "Choose the leave type, dates and working days; supply a doctor’s note when required.",
-              "Submit and track the actual decision. Reviewers cannot approve their own requests."
-            ],
-            "path": "Home → All tools → Leave",
-            "related": [
-              "payroll_employees",
-              "payroll_attendance",
-              "payroll_run",
-              "payroll_bills"
-            ],
-            "group": "people"
-          },
-          "bn": {
-            "id": "payroll_leave",
-            "title": "Leave",
-            "summary": "কে কবে ছুটি চান ও কত ছুটি বাকি আছে দেখুন।",
-            "why": "কে কবে ছুটি চান ও কত ছুটি বাকি আছে দেখুন।",
-            "steps": [
-              "Leave খুলে নিজের বা অনুমতি থাকা কর্মীর নাম বাছুন।",
-              "ছুটির ধরন, তারিখ ও কর্মদিবস দিন। দরকার হলে চিকিৎসকের কাগজ দিন।",
-              "Submit করে সিদ্ধান্ত দেখুন। নিজের ছুটি নিজে অনুমোদন করতে পারবেন না।"
-            ],
-            "path": "Home → All tools → Leave",
-            "related": [
-              "payroll_employees",
-              "payroll_attendance",
-              "payroll_run",
-              "payroll_bills"
-            ],
-            "group": "people"
-          }
-        },
-        "payroll_bills": {
-          "en": {
-            "id": "payroll_bills",
-            "title": "Employee bills",
-            "summary": "Receipts, checks, approvals & reimbursement",
-            "why": "Track employee reimbursement requests from receipt to payment.",
-            "steps": [
-              "Open Employee bills / Bills & receipts.",
-              "Enter the actual expense, category, date, amount and required receipt.",
-              "Track checking, approval and disbursement. A bill reserved in a payroll run must not also be paid separately."
-            ],
-            "path": "Home → All tools → Employee bills",
-            "related": [
-              "payroll_employees",
-              "payroll_attendance",
-              "payroll_leave",
-              "payroll_run"
-            ],
-            "group": "money"
-          },
-          "bn": {
-            "id": "payroll_bills",
-            "title": "Employee bills",
-            "summary": "কর্মী নিজের পকেট থেকে খরচ করলে ফেরত পাওয়ার বিল দিন।",
-            "why": "কর্মী নিজের পকেট থেকে খরচ করলে ফেরত পাওয়ার বিল দিন।",
-            "steps": [
-              "Employee bills / Bills & receipts খুলুন।",
-              "কী খরচ, কবে, কত টাকা ও রসিদ দিন।",
-              "যাচাই, অনুমোদন ও টাকা দেওয়ার অবস্থা দেখুন। Payroll-এ দেওয়ার জন্য রাখা বিল আবার আলাদা করে দেবেন না।"
-            ],
-            "path": "Home → All tools → Employee bills",
-            "related": [
-              "payroll_employees",
-              "payroll_attendance",
-              "payroll_leave",
-              "payroll_run"
-            ],
-            "group": "money"
-          }
-        },
-        "payroll_pf": {
-          "en": {
-            "id": "payroll_pf",
-            "title": "Provident fund",
-            "summary": "Contributions, vesting & employee balances",
-            "why": "Show recorded provident-fund contributions, eligibility and vested balances.",
-            "steps": [
-              "Open Provident fund and review the permitted employee balance.",
-              "Inspect employee/company contributions, profit and the applicable vesting/loan details.",
-              "Use existing request/review controls when available. A settings preview is not a posted PF balance."
-            ],
-            "path": "Home → All tools → Provident fund",
-            "related": [
-              "payroll_employees",
-              "payroll_attendance",
-              "payroll_leave",
-              "payroll_run"
-            ],
-            "group": "money"
-          },
-          "bn": {
-            "id": "payroll_pf",
-            "title": "Provident fund",
-            "summary": "কর্মী ও প্রতিষ্ঠান PF-এ কত জমা দিয়েছেন ও কত প্রাপ্য দেখুন।",
-            "why": "কর্মী ও প্রতিষ্ঠান PF-এ কত জমা দিয়েছেন ও কত প্রাপ্য দেখুন।",
-            "steps": [
-              "Provident fund খুলে আপনার দেখার অনুমতি থাকা হিসাব বাছুন।",
-              "নিজের জমা, প্রতিষ্ঠানের অংশ, লাভ ও প্রযোজ্য ঋণ দেখুন।",
-              "অ্যাপে সুযোগ থাকলে আবেদন করুন। শুধু সেটিংয়ের নমুনা দেখে PF-এ টাকা জমা হয়েছে ধরবেন না।"
-            ],
-            "path": "Home → All tools → Provident fund",
-            "related": [
-              "payroll_employees",
-              "payroll_attendance",
-              "payroll_leave",
-              "payroll_run"
-            ],
-            "group": "money"
-          }
-        },
-        "payroll_settings": {
-          "en": {
-            "id": "payroll_settings",
-            "title": "PF settings",
-            "summary": "Contribution rates, matching & approval rules",
-            "why": "Apply consistent provident-fund and approval rules.",
-            "steps": [
-              "An owner/admin opens PF settings.",
-              "Review contribution basis/rate, company match, eligibility, vesting and approval settings.",
-              "Save only the intended rules. Historical balances are not invented from today’s settings."
-            ],
-            "path": "Home → All tools → PF settings",
-            "related": [],
-            "group": "setup"
-          },
-          "bn": {
-            "id": "payroll_settings",
-            "title": "PF settings",
-            "summary": "PF-এ কত কাটা হবে ও প্রতিষ্ঠান কত দেবে—নিয়ম ঠিক করুন।",
-            "why": "PF-এ কত কাটা হবে ও প্রতিষ্ঠান কত দেবে—নিয়ম ঠিক করুন।",
-            "steps": [
-              "Owner / Admin হিসেবে PF settings খুলুন।",
-              "জমার হার, প্রতিষ্ঠানের অংশ, কারা যোগ্য ও অনুমোদনের নিয়ম দেখুন।",
-              "মিলিয়ে Save করুন। আজকের সেটিং থেকে পুরোনো জমার টাকা নিজে তৈরি হয় না।"
-            ],
-            "path": "Home → All tools → PF settings",
-            "related": [],
-            "group": "setup"
-          }
-        },
-        "payroll_import": {
-          "en": {
-            "id": "payroll_import",
-            "title": "Import employees",
-            "summary": "Map a sheet, fix rows & update employees",
-            "why": "Prepare employee records from a reviewed spreadsheet.",
-            "steps": [
-              "An owner/admin opens Import employees and checks the sample format.",
-              "Map/correct names, mobile numbers, joining dates and salary fields.",
-              "Review mobile matching before importing. Preserve actual joining dates when updating existing employees."
-            ],
-            "path": "Home → All tools → Import employees",
-            "related": [],
-            "group": "people"
-          },
-          "bn": {
-            "id": "payroll_import",
-            "title": "Import employees",
-            "summary": "Excel তালিকা থেকে কর্মীদের তথ্য আনুন।",
-            "why": "Excel তালিকা থেকে কর্মীদের তথ্য আনুন।",
-            "steps": [
-              "Owner / Admin হিসেবে Import employees খুলে নমুনা দেখুন।",
-              "নাম, মোবাইল, যোগদানের তারিখ ও বেতনের কলাম মিলিয়ে ভুল ঠিক করুন।",
-              "Import-এর আগে মোবাইল দিয়ে সদস্যের মিল দেখুন। আগের কর্মী আপডেট করলে আসল যোগদানের তারিখ রাখুন।"
-            ],
-            "path": "Home → All tools → Import employees",
-            "related": [],
-            "group": "people"
+            "group": "people",
+            "options": [
+              "Checker বেতন প্রস্তুতকারী ও final approver থেকে আলাদা হবেন। অনুমোদনেই টাকা যায় না।",
+              "Member নিজের মাসিক payslip দেখবেন। তৈরি না হলে payslip থাকবে না; টাকা না দিলে expected pay দেখাবে।",
+              "Company PF কর্মীর PF-এর অতিরিক্ত। Tax সরল অনুমান, আইনি tax হিসাব নয়।",
+              "বেতন বদলালে অপরিশোধিত run আবার Prepared হতে পারে। Run-এ রাখা বিল আলাদা করে দেবেন না।",
+              "এই পাতায় payslip export বা পাঠানোর সুবিধা নেই।"
+            ]
           }
         },
         "payroll_attendance": {
           "en": {
             "id": "payroll_attendance",
             "title": "Attendance",
-            "summary": "Check in, monthly attendance & HR corrections",
-            "why": "Keep actual attendance available for staff and salary review.",
+            "summary": "Record real attendance and review corrections before salary preparation.",
+            "why": "Record real attendance and review corrections before salary preparation.",
             "steps": [
-              "Open Attendance and choose the relevant day or month.",
-              "Members use their own check-in controls; authorized HR staff review/correct attendance through their offered actions.",
-              "Review the saved record. Attendance entry is separate from salary approval and payment."
+              "Open Attendance and select the day or month. Employees use their own check-in/check-out controls when available.",
+              "Follow the offered office/site and location requirements. Authorized HR staff review records and correct attendance using the screen’s controls.",
+              "Refresh the saved day and completed hours. Review recorded absences and half-days in unpaid payroll before checking the salary run."
             ],
             "path": "Home → All tools → Attendance",
             "related": [
-              "payroll_employees",
-              "payroll_leave",
               "payroll_run",
-              "payroll_bills"
+              "payroll_leave",
+              "payroll_location"
             ],
-            "group": "people"
+            "group": "people",
+            "options": [
+              "Attendance alone never approves or pays salary. Avoid counting approved unpaid leave twice as absence.",
+              "If location permission, office setup or employee linking is missing, resolve the screen’s message and retry; do not invent a check-in.",
+              "Historical month views and actual completed hours should be checked before payroll review."
+            ]
           },
           "bn": {
             "id": "payroll_attendance",
             "title": "Attendance",
-            "summary": "কে কোন দিন উপস্থিত ছিলেন তা রাখুন।",
-            "why": "কে কোন দিন উপস্থিত ছিলেন তা রাখুন।",
+            "summary": "আসল উপস্থিতি লিখুন এবং বেতন তৈরির আগে সংশোধন মিলিয়ে নিন।",
+            "why": "আসল উপস্থিতি লিখুন এবং বেতন তৈরির আগে সংশোধন মিলিয়ে নিন।",
             "steps": [
-              "Attendance খুলে দিন বা মাস বাছুন।",
-              "সদস্য নিজের Check-in করুন। অনুমতি থাকা HR কর্মী দেখানো বোতাম দিয়ে উপস্থিতি ঠিক করতে পারবেন।",
-              "Save করা উপস্থিতি দেখুন। উপস্থিতি দিলেই বেতন অনুমোদন বা পরিশোধ হয় না।"
+              "Attendance খুলে দিন বা মাস বাছুন। কর্মী নিজের Check-in / Check-out বোতাম ব্যবহার করবেন।",
+              "দেখানো office / site ও location শর্ত অনুসরণ করুন। অনুমতি থাকা HR সংরক্ষিত উপস্থিতি দেখবেন ও সংশোধন করবেন।",
+              "Refresh করে দিন ও সম্পন্ন ঘণ্টা দেখুন। বেতন check করার আগে absence ও half-day মিলিয়ে নিন।"
             ],
             "path": "Home → All tools → Attendance",
             "related": [
-              "payroll_employees",
-              "payroll_leave",
               "payroll_run",
-              "payroll_bills"
+              "payroll_leave",
+              "payroll_location"
             ],
-            "group": "people"
-          }
-        },
-        "recurring_expenses": {
-          "en": {
-            "id": "recurring_expenses",
-            "title": "Recurring expenses & bills",
-            "summary": "Prepare repeat bills and keep each period’s spending visible.",
-            "why": "Rent, salaries and other repeat costs should not be forgotten or entered twice.",
-            "steps": [
-              "Open the recurring-bills summary in Expenses, or use Repeat when adding an expense.",
-              "Choose the relevant bill preset, frequency, dates and amount behavior; review fixed automatic bills versus variable reminders.",
-              "Check the bill period and any expense already generated before recording or paying it again."
-            ],
-            "path": "Home → All tools → Expenses → Recurring bills",
-            "related": [
-              "expenses",
-              "accounts",
-              "ledger"
-            ],
-            "group": "money"
-          },
-          "bn": {
-            "id": "recurring_expenses",
-            "title": "Recurring expenses & bills",
-            "summary": "প্রতি মাসের ভাড়া বা বেতনের বিল ভুলে যাওয়া এড়ান।",
-            "why": "প্রতি মাসের ভাড়া বা বেতনের বিল ভুলে যাওয়া এড়ান।",
-            "steps": [
-              "Expenses-এর Recurring bills খুলুন। নতুন খরচের ফর্ম থেকেও Repeat দিতে পারবেন।",
-              "বিলের ধরন, কত দিন পরপর, তারিখ ও টাকার নিয়ম দিন। কোনটি নিজে তৈরি হবে আর কোনটি শুধু মনে করাবে দেখুন।",
-              "ওই মাসের খরচ আগে তৈরি বা দেওয়া হয়েছে কি না দেখে তারপর লিখুন।"
-            ],
-            "path": "Home → All tools → Expenses → Recurring bills",
-            "related": [
-              "expenses",
-              "accounts",
-              "ledger"
-            ],
-            "group": "money"
-          }
-        },
-        "business_setup": {
-          "en": {
-            "id": "business_setup",
-            "title": "Business setup, imports & tax",
-            "summary": "Configure customer, dealer and item fields, imports, search and tax defaults.",
-            "why": "Prepare the details your team needs without making every optional field part of the first transaction.",
-            "steps": [
-              "Open Business setup from the project’s profile/More menu.",
-              "Choose Custom fields, Search & filters, Excel / CSV import or Tax & VAT. Accounting also offers PDF template defaults.",
-              "Review and save the intended changes. Name/address/logo belong to the current project’s details editor."
-            ],
-            "path": "Profile / More → Business setup",
-            "related": [
-              "item_fields",
-              "customer_fields",
-              "dealer_fields",
-              "tax_pricing",
-              "pdf_template"
-            ],
-            "group": "setup"
-          },
-          "bn": {
-            "id": "business_setup",
-            "title": "Business setup, imports & tax",
-            "summary": "আপনার দোকান বা ব্যবসার দরকারমতো তথ্যের ঘর, খোঁজার নিয়ম ও VAT ঠিক করুন।",
-            "why": "আপনার দোকান বা ব্যবসার দরকারমতো তথ্যের ঘর, খোঁজার নিয়ম ও VAT ঠিক করুন।",
-            "steps": [
-              "Profile / More থেকে Business setup খুলুন।",
-              "বাড়তি তথ্যের জন্য Custom fields, সহজে খুঁজতে Search & filters, তালিকা আনতে Excel / CSV import বাছুন।",
-              "দাম ও VAT-এর নিয়ম Tax & VAT-এ পাবেন। Accounting-এর PDF template থেকে চালানের ডিজাইন ঠিক করুন।"
-            ],
-            "path": "Profile / More → Business setup",
-            "related": [
-              "item_fields",
-              "customer_fields",
-              "dealer_fields",
-              "tax_pricing",
-              "pdf_template"
-            ],
-            "group": "setup"
-          }
-        },
-        "project_details": {
-          "en": {
-            "id": "project_details",
-            "title": "Project name, address & logo",
-            "summary": "Review the identity used for this project’s records.",
-            "why": "A recognizable identity helps people distinguish documents from different projects.",
-            "steps": [
-              "Open the current project’s details from the project selector.",
-              "Use Edit project for its name/address, or the offered logo control for its image.",
-              "Review the selected project before saving. Fields, imports and tax defaults have their separate Business setup screen."
-            ],
-            "path": "Home → Current project → View details → Edit project",
-            "related": [
-              "business_setup",
-              "reports"
-            ],
-            "group": "setup"
-          },
-          "bn": {
-            "id": "project_details",
-            "title": "Project name, address & logo",
-            "summary": "গ্রাহক যেন ব্যবসার নাম, ঠিকানা ও লোগো ঠিকমতো চেনেন।",
-            "why": "গ্রাহক যেন ব্যবসার নাম, ঠিকানা ও লোগো ঠিকমতো চেনেন।",
-            "steps": [
-              "project বাছার জায়গা থেকে Current project → View details খুলুন।",
-              "নাম বা ঠিকানা বদলাতে Edit project চাপুন। লোগোর জন্য দেখানো বোতাম চাপুন।",
-              "ঠিক project-এ আছেন কি না দেখে Save করুন। Custom fields বা VAT বদলাতে Business setup খুলুন।"
-            ],
-            "path": "Home → Current project → View details → Edit project",
-            "related": [
-              "business_setup",
-              "reports"
-            ],
-            "group": "setup"
-          }
-        },
-        "item_fields": {
-          "en": {
-            "id": "item_fields",
-            "title": "Items · Custom fields",
-            "summary": "Add extra information for items: color, size or model.",
-            "why": "For example, save a product’s Color instead of putting every detail in its name.",
-            "steps": [
-              "Open Custom fields, select Items, then choose Add a field. Give it a clear Field name and a unique Field key.",
-              "Choose the value type: text, number, money, date or choices. For Single choice / Multiple choices, enter each choice on its own line. Turn on Required on forms only when every new or edited record needs that value.",
-              "Choose Include in keyword search, Available as a filter and Show in list as needed, then Save field. Fill the new field on the actual records. Archiving hides a field from new forms and search while keeping saved values."
-            ],
-            "path": "Profile / More → Business setup → Custom fields → Items",
-            "related": [
-              "item_search",
-              "inventory"
-            ],
-            "group": "setup"
-          },
-          "bn": {
-            "id": "item_fields",
-            "title": "Items · Custom fields",
-            "summary": "পণ্যের রং বা সাইজ আলাদা ঘরে রাখতে Custom fields ব্যবহার করুন।",
-            "why": "পণ্যের রং বা সাইজ আলাদা ঘরে রাখতে Custom fields ব্যবহার করুন।",
-            "steps": [
-              "Business setup → Custom fields → Items খুলুন। Add a field চাপুন। যেমন Field name-এ Color ও Field key-এ color দিন।",
-              "কী লিখবেন তা বাছুন: লেখা, সংখ্যা, টাকা, তারিখ বা তালিকা। তালিকা হলে প্রতিটি বিকল্প আলাদা লাইনে দিন। সবার জন্য তথ্যটি লাগলেই Required on forms চালু করুন।",
-              "দরকার হলে Search, Filter ও Show in list চালু করে Save field চাপুন। এরপর আসল রেকর্ডে এই ঘরের তথ্য লিখুন। Archive করলে ঘরটি লুকাবে, আগের তথ্য থাকবে।"
-            ],
-            "path": "Profile / More → Business setup → Custom fields → Items",
-            "related": [
-              "item_search",
-              "inventory"
-            ],
-            "group": "setup"
-          }
-        },
-        "item_search": {
-          "en": {
-            "id": "item_search",
-            "title": "Items · Search & filters",
-            "summary": "Choose which items details your team can search or filter.",
-            "why": "Find the right record with color, size or model, instead of scrolling through a long list.",
-            "steps": [
-              "Open Search & filters and select Items. Name is always searched; switch on the other built-in details you need.",
-              "Switch on eligible custom fields for keyword search. Contains finds text anywhere, Exact needs the whole value, and Starts with matches its beginning. For example, Contains “Red” can find “Dark Red”.",
-              "Under Filters & list details, choose the fields to filter or show below a record’s name. Save search settings, then try searching a saved record. Number/date fields use filters; adding a field does not fill its values automatically."
-            ],
-            "path": "Profile / More → Business setup → Search & filters → Items",
-            "related": [
-              "item_fields",
-              "inventory"
-            ],
-            "group": "setup"
-          },
-          "bn": {
-            "id": "item_search",
-            "title": "Items · Search & filters",
-            "summary": "পণ্যের রং বা সাইজ দিয়ে খুঁজলে বড় তালিকা ঘাঁটতে হবে না।",
-            "why": "পণ্যের রং বা সাইজ দিয়ে খুঁজলে বড় তালিকা ঘাঁটতে হবে না।",
-            "steps": [
-              "Business setup → Search & filters → Items খুলুন। কোন তথ্য লিখে খুঁজতে চান তা চালু করুন। নাম দিয়ে সব সময় খোঁজা যায়।",
-              "যেমন Color দিয়ে খুঁজতে সেটি চালু করুন। Contains মানে লেখার যেকোনো অংশ মেলা; Exact মানে পুরো লেখা মেলা; Starts with মানে শুরুর অংশ মেলা। Red লিখে চেষ্টা করতে পারেন।",
-              "Filters & list details-এ ফিল্টার ও তালিকায় দেখানোর তথ্য বাছুন। Save search settings চাপুন। আগে ওই তথ্য রেকর্ডে লিখে রাখুন; সেটিং চালু করলেই তথ্য ভরে যাবে না।"
-            ],
-            "path": "Profile / More → Business setup → Search & filters → Items",
-            "related": [
-              "item_fields",
-              "inventory"
-            ],
-            "group": "setup"
-          }
-        },
-        "customer_fields": {
-          "en": {
-            "id": "customer_fields",
-            "title": "Customers · Custom fields",
-            "summary": "Add extra information for customers: area, customer type or trade licence number.",
-            "why": "For example, save each customer’s Area so the team can find nearby customers.",
-            "steps": [
-              "Open Custom fields, select Customers, then choose Add a field. Give it a clear Field name and a unique Field key.",
-              "Choose the value type: text, number, money, date or choices. For Single choice / Multiple choices, enter each choice on its own line. Turn on Required on forms only when every new or edited record needs that value.",
-              "Choose Include in keyword search, Available as a filter and Show in list as needed, then Save field. Fill the new field on the actual records. Archiving hides a field from new forms and search while keeping saved values."
-            ],
-            "path": "Profile / More → Business setup → Custom fields → Customers",
-            "related": [
-              "customer_search",
-              "customers"
-            ],
-            "group": "setup"
-          },
-          "bn": {
-            "id": "customer_fields",
-            "title": "Customers · Custom fields",
-            "summary": "গ্রাহকের এলাকা বা ধরন আলাদা ঘরে রাখতে Custom fields ব্যবহার করুন।",
-            "why": "গ্রাহকের এলাকা বা ধরন আলাদা ঘরে রাখতে Custom fields ব্যবহার করুন।",
-            "steps": [
-              "Business setup → Custom fields → Customers খুলুন। Add a field চাপুন। যেমন Field name-এ Area ও Field key-এ area দিন।",
-              "কী লিখবেন তা বাছুন: লেখা, সংখ্যা, টাকা, তারিখ বা তালিকা। তালিকা হলে প্রতিটি বিকল্প আলাদা লাইনে দিন। সবার জন্য তথ্যটি লাগলেই Required on forms চালু করুন।",
-              "দরকার হলে Search, Filter ও Show in list চালু করে Save field চাপুন। এরপর আসল রেকর্ডে এই ঘরের তথ্য লিখুন। Archive করলে ঘরটি লুকাবে, আগের তথ্য থাকবে।"
-            ],
-            "path": "Profile / More → Business setup → Custom fields → Customers",
-            "related": [
-              "customer_search",
-              "customers"
-            ],
-            "group": "setup"
-          }
-        },
-        "customer_search": {
-          "en": {
-            "id": "customer_search",
-            "title": "Customers · Search & filters",
-            "summary": "Choose which customers details your team can search or filter.",
-            "why": "Find the right record with area, customer type or trade licence number, instead of scrolling through a long list.",
-            "steps": [
-              "Open Search & filters and select Customers. Name is always searched; switch on the other built-in details you need.",
-              "Switch on eligible custom fields for keyword search. Contains finds text anywhere, Exact needs the whole value, and Starts with matches its beginning. For example, Contains “Red” can find “Dark Red”.",
-              "Under Filters & list details, choose the fields to filter or show below a record’s name. Save search settings, then try searching a saved record. Number/date fields use filters; adding a field does not fill its values automatically."
-            ],
-            "path": "Profile / More → Business setup → Search & filters → Customers",
-            "related": [
-              "customer_fields",
-              "customers"
-            ],
-            "group": "setup"
-          },
-          "bn": {
-            "id": "customer_search",
-            "title": "Customers · Search & filters",
-            "summary": "গ্রাহকের এলাকা বা ধরন দিয়ে খুঁজলে বড় তালিকা ঘাঁটতে হবে না।",
-            "why": "গ্রাহকের এলাকা বা ধরন দিয়ে খুঁজলে বড় তালিকা ঘাঁটতে হবে না।",
-            "steps": [
-              "Business setup → Search & filters → Customers খুলুন। কোন তথ্য লিখে খুঁজতে চান তা চালু করুন। নাম দিয়ে সব সময় খোঁজা যায়।",
-              "যেমন Area দিয়ে খুঁজতে সেটি চালু করুন। Contains মানে লেখার যেকোনো অংশ মেলা; Exact মানে পুরো লেখা মেলা; Starts with মানে শুরুর অংশ মেলা। Mirpur লিখে চেষ্টা করতে পারেন।",
-              "Filters & list details-এ ফিল্টার ও তালিকায় দেখানোর তথ্য বাছুন। Save search settings চাপুন। আগে ওই তথ্য রেকর্ডে লিখে রাখুন; সেটিং চালু করলেই তথ্য ভরে যাবে না।"
-            ],
-            "path": "Profile / More → Business setup → Search & filters → Customers",
-            "related": [
-              "customer_fields",
-              "customers"
-            ],
-            "group": "setup"
-          }
-        },
-        "dealer_fields": {
-          "en": {
-            "id": "dealer_fields",
-            "title": "Dealers · Custom fields",
-            "summary": "Add extra information for dealers: supply area, brand or trade licence number.",
-            "why": "For example, save a dealer’s Supply area so the team can find the right supplier.",
-            "steps": [
-              "Open Custom fields, select Dealers, then choose Add a field. Give it a clear Field name and a unique Field key.",
-              "Choose the value type: text, number, money, date or choices. For Single choice / Multiple choices, enter each choice on its own line. Turn on Required on forms only when every new or edited record needs that value.",
-              "Choose Include in keyword search, Available as a filter and Show in list as needed, then Save field. Fill the new field on the actual records. Archiving hides a field from new forms and search while keeping saved values."
-            ],
-            "path": "Profile / More → Business setup → Custom fields → Dealers",
-            "related": [
-              "dealer_search",
-              "dealers"
-            ],
-            "group": "setup"
-          },
-          "bn": {
-            "id": "dealer_fields",
-            "title": "Dealers · Custom fields",
-            "summary": "সরবরাহকারীর এলাকা বা ব্র্যান্ড আলাদা ঘরে রাখতে Custom fields ব্যবহার করুন।",
-            "why": "সরবরাহকারীর এলাকা বা ব্র্যান্ড আলাদা ঘরে রাখতে Custom fields ব্যবহার করুন।",
-            "steps": [
-              "Business setup → Custom fields → Dealers খুলুন। Add a field চাপুন। যেমন Field name-এ Brand ও Field key-এ brand দিন।",
-              "কী লিখবেন তা বাছুন: লেখা, সংখ্যা, টাকা, তারিখ বা তালিকা। তালিকা হলে প্রতিটি বিকল্প আলাদা লাইনে দিন। সবার জন্য তথ্যটি লাগলেই Required on forms চালু করুন।",
-              "দরকার হলে Search, Filter ও Show in list চালু করে Save field চাপুন। এরপর আসল রেকর্ডে এই ঘরের তথ্য লিখুন। Archive করলে ঘরটি লুকাবে, আগের তথ্য থাকবে।"
-            ],
-            "path": "Profile / More → Business setup → Custom fields → Dealers",
-            "related": [
-              "dealer_search",
-              "dealers"
-            ],
-            "group": "setup"
-          }
-        },
-        "dealer_search": {
-          "en": {
-            "id": "dealer_search",
-            "title": "Dealers · Search & filters",
-            "summary": "Choose which dealers details your team can search or filter.",
-            "why": "Find the right record with supply area, brand or trade licence number, instead of scrolling through a long list.",
-            "steps": [
-              "Open Search & filters and select Dealers. Name is always searched; switch on the other built-in details you need.",
-              "Switch on eligible custom fields for keyword search. Contains finds text anywhere, Exact needs the whole value, and Starts with matches its beginning. For example, Contains “Red” can find “Dark Red”.",
-              "Under Filters & list details, choose the fields to filter or show below a record’s name. Save search settings, then try searching a saved record. Number/date fields use filters; adding a field does not fill its values automatically."
-            ],
-            "path": "Profile / More → Business setup → Search & filters → Dealers",
-            "related": [
-              "dealer_fields",
-              "dealers"
-            ],
-            "group": "setup"
-          },
-          "bn": {
-            "id": "dealer_search",
-            "title": "Dealers · Search & filters",
-            "summary": "সরবরাহকারীর এলাকা বা ব্র্যান্ড দিয়ে খুঁজলে বড় তালিকা ঘাঁটতে হবে না।",
-            "why": "সরবরাহকারীর এলাকা বা ব্র্যান্ড দিয়ে খুঁজলে বড় তালিকা ঘাঁটতে হবে না।",
-            "steps": [
-              "Business setup → Search & filters → Dealers খুলুন। কোন তথ্য লিখে খুঁজতে চান তা চালু করুন। নাম দিয়ে সব সময় খোঁজা যায়।",
-              "যেমন Brand দিয়ে খুঁজতে সেটি চালু করুন। Contains মানে লেখার যেকোনো অংশ মেলা; Exact মানে পুরো লেখা মেলা; Starts with মানে শুরুর অংশ মেলা। Walton লিখে চেষ্টা করতে পারেন।",
-              "Filters & list details-এ ফিল্টার ও তালিকায় দেখানোর তথ্য বাছুন। Save search settings চাপুন। আগে ওই তথ্য রেকর্ডে লিখে রাখুন; সেটিং চালু করলেই তথ্য ভরে যাবে না।"
-            ],
-            "path": "Profile / More → Business setup → Search & filters → Dealers",
-            "related": [
-              "dealer_fields",
-              "dealers"
-            ],
-            "group": "setup"
-          }
-        },
-        "tax_pricing": {
-          "en": {
-            "id": "tax_pricing",
-            "title": "Tax & VAT · Pricing defaults",
-            "summary": "Choose whether prices already include VAT, and set the defaults for new documents.",
-            "why": "For example, with a configured 5% rate, a VAT-exclusive price of 100 becomes 105; a VAT-inclusive price of 100 already contains the VAT.",
-            "steps": [
-              "Open Tax & VAT as an owner/admin. Add only the tax/withholding rates that apply to your business and select their document types. The app does not choose the correct legal rate for you.",
-              "Under Document defaults, choose the relevant document, rate, Prices include VAT or Prices exclude VAT, and One tax for all or Tax on each line. Review withholding separately.",
-              "Check the registration number, Show VAT breakdown on PDF and Staff can change document tax. Save tax setup, then check a new document’s total. Existing documents retain their saved rates and breakdown."
-            ],
-            "path": "Profile / More → Business setup → Tax & VAT",
-            "related": [
-              "pricing",
-              "pdf_template",
-              "business_setup"
-            ],
-            "group": "setup",
+            "group": "people",
             "options": [
-              "Configure VAT-inclusive or VAT-exclusive prices, document-level or individual-line rates, withholding and defaults for supported documents.",
-              "Saved documents retain historical tax snapshots. Changing today’s defaults does not silently recalculate an old document. Named delivery/service charges can be included in or excluded from the VAT base."
+              "উপস্থিতি দিলেই বেতন অনুমোদন বা পরিশোধ হয় না। একই unpaid ছুটি আবার absence ধরবেন না।",
+              "Location permission, office setup বা employee link না থাকলে দেখানো সমস্যা ঠিক করে আবার চেষ্টা করুন।",
+              "পুরোনো মাসের রেকর্ড ও আসল কাজের ঘণ্টা দেখে বেতন যাচাই করুন।"
+            ]
+          }
+        },
+        "payroll_leave": {
+          "en": {
+            "id": "payroll_leave",
+            "title": "Leave",
+            "summary": "Apply for leave, track decisions and distinguish available leave from pending reservations.",
+            "why": "Apply for leave, track decisions and distinguish available leave from pending reservations.",
+            "steps": [
+              "Open Leave. Employees choose Apply for leave for their linked profile; inactive or unlinked profiles cannot submit.",
+              "Choose the type, start date and working days; give a reason and a doctor’s note for more than two sick working days. Requests spanning years must be split.",
+              "Submit once and check All requests for pending, approved or rejected decisions. An authorized reviewer checks the dates and balance, then approves or rejects with a reason; self-approval is blocked."
+            ],
+            "path": "Home → All tools → Leave",
+            "related": [
+              "payroll_attendance",
+              "payroll_run"
+            ],
+            "group": "people",
+            "options": [
+              "App allowances: Annual 20, Sick 14, Casual 10 days. Friday is excluded. Pending requests reserve availability.",
+              "Unpaid leave uses gross ÷ 30 for each approved working day in its actual salary month.",
+              "Future hires can request leave starting on/after joining. Paid salary history is preserved; ask the payroll team about later adjustments."
             ]
           },
           "bn": {
-            "id": "tax_pricing",
-            "title": "Tax & VAT · Pricing defaults",
-            "summary": "দামের ভেতর VAT আছে, নাকি দামের সঙ্গে যোগ হবে—এখানে ঠিক করুন। যেমন ৫% হার সেট থাকলে VAT ছাড়া ১০০ টাকার দাম হবে ১০৫ টাকা।",
-            "why": "দামের ভেতর VAT আছে, নাকি দামের সঙ্গে যোগ হবে—এখানে ঠিক করুন। যেমন ৫% হার সেট থাকলে VAT ছাড়া ১০০ টাকার দাম হবে ১০৫ টাকা।",
+            "id": "payroll_leave",
+            "title": "Leave",
+            "summary": "ছুটির আবেদন, সিদ্ধান্ত ও pending আবেদনের জন্য রাখা দিন আলাদা করে দেখুন।",
+            "why": "ছুটির আবেদন, সিদ্ধান্ত ও pending আবেদনের জন্য রাখা দিন আলাদা করে দেখুন।",
             "steps": [
-              "Owner / Admin হিসেবে Business setup → Tax & VAT খুলুন। ব্যবসায় যে হার দরকার সেটিই যোগ করুন ও কোন নথিতে লাগবে বাছুন। সঠিক আইনগত হার অ্যাপ নিজে ঠিক করে দেয় না।",
-              "Document defaults-এ নথি ও হার বাছুন। Prices include VAT মানে দামের মধ্যেই VAT আছে। Prices exclude VAT মানে পরে VAT যোগ হবে। সব পণ্যে এক হার, নাকি প্রতিটি লাইনে আলাদা হার হবে বাছুন।",
-              "টাকা থেকে কর কাটা হলে Withholding দেখুন। PDF-এ VAT দেখাবেন কি না ও কর্মীরা বদলাতে পারবেন কি না ঠিক করে Save tax setup চাপুন। নতুন নথিতে মিলান; পুরোনো নথির হার বদলাবে না।"
+              "Leave খুলুন। কর্মী নিজের linked profile থেকে Apply for leave চাপবেন। Inactive বা unlinked profile নতুন আবেদন করতে পারবেন না।",
+              "ধরন, শুরুর দিন, কর্মদিবস ও কারণ দিন। দুই দিনের বেশি sick ছুটিতে চিকিৎসকের কাগজ দিন। দুই বছরে পড়লে আবেদন আলাদা করুন।",
+              "একবার Submit করে All requests-এ pending, approved বা rejected দেখুন। Reviewer তারিখ ও balance দেখে সিদ্ধান্ত দেবেন; নিজের আবেদন নিজে অনুমোদন করা যায় না।"
             ],
-            "path": "Profile / More → Business setup → Tax & VAT",
+            "path": "Home → All tools → Leave",
             "related": [
-              "pricing",
-              "pdf_template",
-              "business_setup"
+              "payroll_attendance",
+              "payroll_run"
+            ],
+            "group": "people",
+            "options": [
+              "অ্যাপের নিয়ম: Annual ২০, Sick ১৪, Casual ১০ দিন। শুক্রবার বাদ; pending আবেদন দিন সংরক্ষণ করে।",
+              "অনুমোদিত unpaid ছুটিতে সংশ্লিষ্ট মাসে প্রতি কর্মদিবসে gross ÷ ৩০ কাটা হয়।",
+              "ভবিষ্যতের কর্মী joining date থেকে ছুটি চাইতে পারবেন। পরিশোধিত মাসের বদল নিয়ে payroll দলের সঙ্গে কথা বলুন।"
+            ]
+          }
+        },
+        "payroll_bills": {
+          "en": {
+            "id": "payroll_bills",
+            "title": "Employee bills",
+            "summary": "Submit real receipts and follow checking, approval and payment without duplicate reimbursement.",
+            "why": "Submit real receipts and follow checking, approval and payment without duplicate reimbursement.",
+            "steps": [
+              "Open Employee bills / Bills & receipts. Use Submit a bill receipt for yourself or Add employee bill when authorized to act for an employee.",
+              "Select the actual category, date, amount and receipt. Review any monthly-limit warning before submitting; dates must be between joining and today.",
+              "Open Receipt & approval history and filter by status. Follow the configured accountant-check/approval flow; an authorized payer disburses an approved, unreserved bill from a real account."
+            ],
+            "path": "Home → All tools → Bills & receipts",
+            "related": [
+              "payroll_run",
+              "accounts",
+              "ledger"
+            ],
+            "group": "people",
+            "options": [
+              "Monthly warnings: Conveyance ৳3,000, Medical ৳5,000, Mobile ৳500, Food ৳1,000; Travel/Other have no category limit. A warning does not reduce the amount.",
+              "Bills reserved in payroll must be paid through that run. Already paid bills cannot be paid again.",
+              "Reviewers cannot approve their own bills. Rejection requires a reason. A saved receipt or approval is not proof of payment."
+            ]
+          },
+          "bn": {
+            "id": "payroll_bills",
+            "title": "Employee bills",
+            "summary": "আসল রসিদ দিয়ে বিল দিন এবং একই খরচ দুবার ফেরত দেবেন না।",
+            "why": "আসল রসিদ দিয়ে বিল দিন এবং একই খরচ দুবার ফেরত দেবেন না।",
+            "steps": [
+              "Employee bills / Bills & receipts খুলুন। নিজের জন্য Submit a bill receipt, অনুমতি থাকলে অন্য কর্মীর জন্য Add employee bill চাপুন।",
+              "আসল category, date, amount ও receipt দিন। মাসিক সীমার সতর্কতা দেখুন। তারিখ joining date থেকে আজকের মধ্যে হতে হবে।",
+              "Receipt & approval history ও status দেখুন। নির্ধারিত check ও approval শেষে অনুমতি থাকা payer আসল account থেকে approved, unreserved বিল দেবেন।"
+            ],
+            "path": "Home → All tools → Bills & receipts",
+            "related": [
+              "payroll_run",
+              "accounts",
+              "ledger"
+            ],
+            "group": "people",
+            "options": [
+              "মাসিক সতর্কতার সীমা: Conveyance ৳৩,০০০, Medical ৳৫,০০০, Mobile ৳৫০০, Food ৳১,০০০; Travel / Other-এর সীমা নেই। সতর্কতায় টাকা নিজে কমে না।",
+              "Payroll-এ রাখা বিল ওই run দিয়েই দিন। পরিশোধিত বিল আবার দেবেন না।",
+              "নিজের বিল নিজে অনুমোদন করা যায় না। Reject করলে কারণ দিন। রসিদ বা approval মানেই payment নয়।"
+            ]
+          }
+        },
+        "payroll_pf": {
+          "en": {
+            "id": "payroll_pf",
+            "title": "Provident fund",
+            "summary": "Understand recorded employee/company contributions, credited profit and the vested payout.",
+            "why": "Understand recorded employee/company contributions, credited profit and the vested payout.",
+            "steps": [
+              "Open Provident fund. Members review only their own balance; staff review only employees available to their role.",
+              "Compare own contributions, company contributions, credited profit, outstanding loan and the displayed vested company percentage. Payout can differ from the total balance.",
+              "Check joining date and eligibility with the payroll team if something is missing. Contributions post with salary disbursement; a settings example does not create a historical balance."
+            ],
+            "path": "Home → All tools → Provident fund",
+            "related": [
+              "payroll_settings",
+              "payroll_run",
+              "payroll_employees"
+            ],
+            "group": "people",
+            "options": [
+              "Graded company vesting: 0% under 3 years, 50% from 3 to under 5, 100% from 5. Alternatives are a 3-year cliff or immediate vesting.",
+              "Own contributions and credited profit remain in the payout; outstanding PF loans reduce it. Existing recorded balances remain visible even if membership is now disabled.",
+              "Loan/withdrawal preferences can be saved, but PF loan issuance, repayment, withdrawal processing and automatic annual profit credits are not available in these screens. Contact the owner; this guide cannot process them.",
+              "Do not reconstruct historical contributions using today’s salary, rate or forecast. These are app rules, not a legal entitlement calculation."
+            ]
+          },
+          "bn": {
+            "id": "payroll_pf",
+            "title": "Provident fund",
+            "summary": "কর্মী ও প্রতিষ্ঠানের আসল জমা, জমা হওয়া লাভ এবং vested প্রাপ্য বুঝুন।",
+            "why": "কর্মী ও প্রতিষ্ঠানের আসল জমা, জমা হওয়া লাভ এবং vested প্রাপ্য বুঝুন।",
+            "steps": [
+              "Provident fund খুলুন। Member শুধু নিজের balance, staff অনুমতি থাকা কর্মীর হিসাব দেখবেন।",
+              "নিজের জমা, company জমা, credited profit, outstanding loan ও vested percentage মিলিয়ে নিন। মোট balance আর payout আলাদা হতে পারে।",
+              "তথ্য না মিললে joining date ও eligibility payroll দলকে দেখান। বেতন পরিশোধে contribution জমা হয়; settings-এর উদাহরণ পুরোনো balance তৈরি করে না।"
+            ],
+            "path": "Home → All tools → Provident fund",
+            "related": [
+              "payroll_settings",
+              "payroll_run",
+              "payroll_employees"
+            ],
+            "group": "people",
+            "options": [
+              "Graded company vesting: ৩ বছরের আগে ০%, ৩ থেকে ৫ বছরের আগে ৫০%, ৫ বছর থেকে ১০০%। বিকল্প ৩ বছরের cliff বা immediate।",
+              "নিজের জমা ও credited profit প্রাপ্যে থাকে; outstanding PF loan বাদ যায়। এখন membership বন্ধ হলেও পুরোনো জমা দেখা যায়।",
+              "Loan / withdrawal preference Save হয়; এই পাতায় ঋণ দেওয়া, কিস্তি ফেরত, withdrawal processing বা automatic annual profit credit নেই। Owner-এর সঙ্গে কথা বলুন।",
+              "আজকের বেতন, rate বা preview দিয়ে পুরোনো জমা তৈরি করবেন না। এটি অ্যাপের নিয়ম, আইনি প্রাপ্যের হিসাব নয়।"
+            ]
+          }
+        },
+        "payroll_settings": {
+          "en": {
+            "id": "payroll_settings",
+            "title": "PF settings",
+            "summary": "Owners/admins configure PF contributions, eligibility, vesting and approval preferences.",
+            "why": "Owners/admins configure PF contributions, eligibility, vesting and approval preferences.",
+            "steps": [
+              "Open PF settings as an owner/admin. Choose employee rate (5%, 7.5% or 10%), basic/gross basis and equal/half/off company match.",
+              "Choose eligibility from joining, after probation or after one year; review vesting, profit estimate, loan preferences and bill/withdrawal approval settings.",
+              "Review the illustration, then Save settings or Discard changes. Recheck affected unpaid runs; settings never fabricate historical contributions or pay a withdrawal."
+            ],
+            "path": "Home → All tools → PF settings",
+            "related": [
+              "payroll_pf",
+              "payroll_import",
+              "payroll_run"
             ],
             "group": "setup",
             "options": [
-              "দামে VAT থাকবে, নাকি পরে যোগ হবে বাছুন। পুরো চালানে এক হার বা প্রতিটি লাইনে আলাদা হার ও উৎসে কর সেট করতে পারবেন।",
-              "পুরোনো চালানে সেই সময়ের VAT হিসাব থাকে। আজ সেটিং বদলালেই সেটি নতুন করে বদলে যায় না। ডেলিভারি বা সার্ভিস চার্জে VAT হবে কি না আলাদা করে দেখুন।"
+              "Loan preferences include on/off, 50/80/100% of own share and 12/24/36 months. Saving these does not issue a loan.",
+              "The five-year payout is illustrative with constant salary and estimated profit. Actual PF comes from posted transactions.",
+              "For a stale revision or connection error, refresh and compare the saved settings before retrying."
+            ]
+          },
+          "bn": {
+            "id": "payroll_settings",
+            "title": "PF settings",
+            "summary": "Owner / Admin PF-এর জমা, যোগ্যতা, vesting ও approval preference ঠিক করবেন।",
+            "why": "Owner / Admin PF-এর জমা, যোগ্যতা, vesting ও approval preference ঠিক করবেন।",
+            "steps": [
+              "Owner / Admin হিসেবে PF settings খুলুন। Rate ৫%, ৭.৫% বা ১০%, basis basic / gross এবং company match equal / half / off বাছুন।",
+              "Joining, probation শেষে বা এক বছর পরে eligibility বাছুন। Vesting, লাভের অনুমান, loan preference ও bill / withdrawal approval দেখুন।",
+              "উদাহরণ দেখে Save settings বা Discard changes চাপুন। অপরিশোধিত run আবার দেখুন। Settings পুরোনো জমা বা withdrawal payment তৈরি করে না।"
+            ],
+            "path": "Home → All tools → PF settings",
+            "related": [
+              "payroll_pf",
+              "payroll_import",
+              "payroll_run"
+            ],
+            "group": "setup",
+            "options": [
+              "Loan preference-এ on / off, নিজের জমার ৫০/৮০/১০০% এবং ১২/২৪/৩৬ মাস আছে। Save করলেই ঋণ হয় না।",
+              "পাঁচ বছরের payout স্থির বেতন ও আনুমানিক লাভের উদাহরণ। আসল PF posted transaction থেকে আসে।",
+              "Revision বা connection সমস্যা হলে Refresh করে saved settings মিলিয়ে আবার চেষ্টা করুন।"
+            ]
+          }
+        },
+        "payroll_import": {
+          "en": {
+            "id": "payroll_import",
+            "title": "Import employees",
+            "summary": "Import reviewed employees by mobile while preserving actual joining dates.",
+            "why": "Import reviewed employees by mobile while preserving actual joining dates.",
+            "steps": [
+              "An owner/admin opens Import employees and downloads/checks the sample columns. Sample rows are examples, not live employees.",
+              "Map employee names, sign-in mobiles, joining dates and salary fields. Correct missing salaries, invalid mobiles and duplicate matches in the preview.",
+              "Review additions and updates, then import once. Existing employees match by normalized mobile; preserve original joining dates and refresh Employees afterward."
+            ],
+            "path": "Home → All tools → Import employees",
+            "related": [
+              "payroll_employees",
+              "payroll_settings"
+            ],
+            "group": "setup",
+            "options": [
+              "A matching sign-in mobile links self-service to the employee profile.",
+              "Future joining dates affect inclusion in salary runs. New employees start in probation until an authorized confirmation.",
+              "Import does not create historical salary payments or PF balances. After an uncertain response, refresh before importing again."
+            ]
+          },
+          "bn": {
+            "id": "payroll_import",
+            "title": "Import employees",
+            "summary": "Mobile মিলিয়ে কর্মী import করুন এবং আসল joining date রাখুন।",
+            "why": "Mobile মিলিয়ে কর্মী import করুন এবং আসল joining date রাখুন।",
+            "steps": [
+              "Owner / Admin Import employees খুলে sample column দেখুন। Sample কর্মী উদাহরণ, আসল employee নয়।",
+              "নাম, sign-in mobile, joining date ও বেতনের ঘর মেলান। Missing salary, ভুল mobile ও duplicate preview-তে ঠিক করুন।",
+              "নতুন ও update হওয়া কর্মী দেখে একবার Import করুন। Normalized mobile দিয়ে পুরোনো কর্মী মেলে। আসল joining date রেখে Employees Refresh করুন।"
+            ],
+            "path": "Home → All tools → Import employees",
+            "related": [
+              "payroll_employees",
+              "payroll_settings"
+            ],
+            "group": "setup",
+            "options": [
+              "Sign-in mobile মেলালে কর্মী নিজের profile পান।",
+              "ভবিষ্যতের joining date বেতনে অন্তর্ভুক্তি বদলায়। নতুন কর্মী probation-এ শুরু করেন।",
+              "Import পুরোনো salary payment বা PF balance তৈরি করে না। অনিশ্চিত ফল হলে আগে Refresh করুন।"
+            ]
+          }
+        },
+        "payroll_projects": {
+          "en": {
+            "id": "payroll_projects",
+            "title": "Office projects",
+            "summary": "Review office/site assignments, dates and teams.",
+            "why": "Review office/site assignments, dates and teams.",
+            "steps": [
+              "Open Office projects and select the saved project. Authorized managers use the offered assignment controls; review dates and team membership before saving.",
+              "Check that the selected project and employee are correct. Members can see only their own permitted records.",
+              "If the employee profile is unlinked or the portal service is unavailable, follow the screen’s message and retry. Do not create duplicate records to bypass missing access."
+            ],
+            "path": "Home → All tools → Office projects",
+            "related": [
+              "payroll_employees",
+              "payroll_attendance"
+            ],
+            "group": "people",
+            "options": [
+              "Location collection follows the available shift and permission controls. Use only access offered to your role.",
+              "This guide does not change records, share a location, approve requests or make payments."
+            ]
+          },
+          "bn": {
+            "id": "payroll_projects",
+            "title": "Office projects",
+            "summary": "অফিস ও site-এর কাজ, তারিখ এবং team দেখুন।",
+            "why": "অফিস ও site-এর কাজ, তারিখ এবং team দেখুন।",
+            "steps": [
+              "Office projects খুলে আপনার জন্য থাকা তথ্য দেখুন। অনুমতি থাকলে দেখানো edit বা progress বোতাম ব্যবহার করুন।",
+              "সঠিক project ও employee বাছা আছে কি না দেখুন। Member শুধু নিজের অনুমতি থাকা তথ্য পাবেন।",
+              "Employee link বা portal service না পেলে দেখানো নির্দেশ মেনে Retry করুন। অনুমতি এড়াতে duplicate record তৈরি করবেন না।"
+            ],
+            "path": "Home → All tools → Office projects",
+            "related": [
+              "payroll_employees",
+              "payroll_attendance"
+            ],
+            "group": "people",
+            "options": [
+              "Location-এর ক্ষেত্রে দেখানো shift ও permission নিয়ম অনুসরণ করুন।",
+              "এই গাইড কোনো record বদলায়, location পাঠায়, অনুমোদন বা payment করে না।"
+            ]
+          }
+        },
+        "payroll_org": {
+          "en": {
+            "id": "payroll_org",
+            "title": "Org structure",
+            "summary": "Review departments, designations and the reporting structure.",
+            "why": "Review departments, designations and the reporting structure.",
+            "steps": [
+              "Open Org structure and select a department to review its head and designation ladder.",
+              "An authorized manager creates a department with name/code, head and parent; then adds a designation with title, grade (1–20), salary band, reports-to and allowed employment types.",
+              "Review the saved ladder. A promotion needs a higher eligible designation in the employee’s linked department; use Employees → profile for the actual promotion. Organization changes do not themselves change or pay salary."
+            ],
+            "path": "Home → All tools → Org structure",
+            "related": [
+              "payroll_employees",
+              "payroll_attendance"
+            ],
+            "group": "setup",
+            "options": [
+              "Location collection follows the available shift and permission controls. Use only access offered to your role.",
+              "This guide does not change records, share a location, approve requests or make payments."
+            ]
+          },
+          "bn": {
+            "id": "payroll_org",
+            "title": "Org structure",
+            "summary": "Department, designation ও reporting structure দেখুন।",
+            "why": "Department, designation ও reporting structure দেখুন।",
+            "steps": [
+              "Org structure খুলে department বাছুন। Head ও designation ladder দেখুন।",
+              "অনুমতি থাকা manager নাম, code, head ও parent দিয়ে department তৈরি করবেন। তারপর title, grade (১–২০), salary band, reports-to ও চাকরির ধরন দিয়ে designation যোগ করবেন।",
+              "Saved ladder দেখুন। Promotion-এর জন্য কর্মীর linked department-এ যোগ্য উঁচু designation লাগবে। Employees-এর profile থেকে আসল promotion করুন। Organization বদলালেই বেতন বদল বা payment হয় না।"
+            ],
+            "path": "Home → All tools → Org structure",
+            "related": [
+              "payroll_employees",
+              "payroll_attendance"
+            ],
+            "group": "setup",
+            "options": [
+              "Location-এর ক্ষেত্রে দেখানো shift ও permission নিয়ম অনুসরণ করুন।",
+              "এই গাইড কোনো record বদলায়, location পাঠায়, অনুমোদন বা payment করে না।"
+            ]
+          }
+        },
+        "payroll_location": {
+          "en": {
+            "id": "payroll_location",
+            "title": "Live location",
+            "summary": "Review authorized shift-location sharing for active employee assignments.",
+            "why": "Review authorized shift-location sharing for active employee assignments.",
+            "steps": [
+              "An owner/admin opens Live location and chooses All, In office, Project sites, Outside or Not tracking.",
+              "Select an employee to review the map, update time, accuracy and today’s location activity. Sharing requires employee consent and a checked-in shift.",
+              "Treat paused, off-shift and stale statuses as shown. Stale updates are removed from the map; a missing GPS update does not mark someone absent. This guide cannot enable tracking or supply missing coordinates."
+            ],
+            "path": "Home → All tools → Live location",
+            "related": [
+              "payroll_employees",
+              "payroll_attendance"
+            ],
+            "group": "people",
+            "options": [
+              "Location collection follows the available shift and permission controls. Use only access offered to your role.",
+              "This guide does not change records, share a location, approve requests or make payments."
+            ]
+          },
+          "bn": {
+            "id": "payroll_location",
+            "title": "Live location",
+            "summary": "অনুমতি থাকা active shift-এর location দেখুন।",
+            "why": "অনুমতি থাকা active shift-এর location দেখুন।",
+            "steps": [
+              "Owner / Admin Live location খুলে All, In office, Project sites, Outside বা Not tracking বাছবেন।",
+              "কর্মী বেছে map, update time, accuracy ও আজকের activity দেখুন। Sharing-এর জন্য কর্মীর সম্মতি ও checked-in shift লাগে।",
+              "Paused, off-shift বা stale অবস্থা যেমন আছে তেমন পড়ুন। পুরোনো update map থেকে সরে যায়; GPS না পেলেই absent হয় না। গাইড tracking চালু বা হারানো location তৈরি করে না।"
+            ],
+            "path": "Home → All tools → Live location",
+            "related": [
+              "payroll_employees",
+              "payroll_attendance"
+            ],
+            "group": "people",
+            "options": [
+              "Location-এর ক্ষেত্রে দেখানো shift ও permission নিয়ম অনুসরণ করুন।",
+              "এই গাইড কোনো record বদলায়, location পাঠায়, অনুমোদন বা payment করে না।"
+            ]
+          }
+        },
+        "payroll_tasks": {
+          "en": {
+            "id": "payroll_tasks",
+            "title": "My tasks",
+            "summary": "Track your own assigned tasks and saved progress.",
+            "why": "Track your own assigned tasks and saved progress.",
+            "steps": [
+              "Open My tasks and choose Open, Late or Done to review existing tasks before adding another.",
+              "Use + New task, choose an assigned project, enter a title of at least three characters and a due date, select status and Save task. If no project is offered, ask the owner to check your active assignment.",
+              "Open an existing task to change its status and review the saved result. Allocated time is an estimate from confirmed daily splits and check-in hours, divided among tasks open that day; completing a task does not approve or pay salary."
+            ],
+            "path": "Home → All tools → My tasks",
+            "related": [
+              "payroll_employees",
+              "payroll_attendance"
+            ],
+            "group": "people",
+            "options": [
+              "Location collection follows the available shift and permission controls. Use only access offered to your role.",
+              "This guide does not change records, share a location, approve requests or make payments."
+            ]
+          },
+          "bn": {
+            "id": "payroll_tasks",
+            "title": "My tasks",
+            "summary": "নিজের assigned task ও সংরক্ষিত অগ্রগতি দেখুন।",
+            "why": "নিজের assigned task ও সংরক্ষিত অগ্রগতি দেখুন।",
+            "steps": [
+              "My tasks খুলে Open, Late বা Done-এ আগের task দেখুন।",
+              "+ New task দিয়ে assigned project, অন্তত ৩ অক্ষরের নাম, due date ও status দিয়ে Save task চাপুন। Project না পেলে Owner-কে active assignment দেখতে বলুন।",
+              "আগের task খুলে status বদলে saved ফল দেখুন। সময় daily split ও check-in hours থেকে ওই দিনের open task-এ ভাগ হয়। Task শেষ মানেই বেতন অনুমোদন বা পরিশোধ নয়।"
+            ],
+            "path": "Home → All tools → My tasks",
+            "related": [
+              "payroll_employees",
+              "payroll_attendance"
+            ],
+            "group": "people",
+            "options": [
+              "Location-এর ক্ষেত্রে দেখানো shift ও permission নিয়ম অনুসরণ করুন।",
+              "এই গাইড কোনো record বদলায়, location পাঠায়, অনুমোদন বা payment করে না।"
+            ]
+          }
+        },
+        "payroll_work": {
+          "en": {
+            "id": "payroll_work",
+            "title": "Today’s work",
+            "summary": "Review your own work scheduled for today.",
+            "why": "Review your own work scheduled for today.",
+            "steps": [
+              "Open Today’s work and review the planned project percentages and today’s check-in status.",
+              "Check in before confirming. Choose Continue for the planned split, or I’m doing something different to edit whole-number percentages totaling exactly 100%.",
+              "Confirm today’s split and review Confirmed. Use the task list below for real progress. An active assignment and an open check-in without checkout are required; a split never approves or pays salary."
+            ],
+            "path": "Home → All tools → Today’s work",
+            "related": [
+              "payroll_employees",
+              "payroll_attendance"
+            ],
+            "group": "people",
+            "options": [
+              "Location collection follows the available shift and permission controls. Use only access offered to your role.",
+              "This guide does not change records, share a location, approve requests or make payments."
+            ]
+          },
+          "bn": {
+            "id": "payroll_work",
+            "title": "Today’s work",
+            "summary": "আজকের নিজের কাজের তালিকা দেখুন।",
+            "why": "আজকের নিজের কাজের তালিকা দেখুন।",
+            "steps": [
+              "Today’s work খুলে planned project percentage ও আজকের check-in দেখুন।",
+              "আগে Check-in করুন। Planned split রাখতে Continue, বদলাতে I’m doing something different চাপুন। পূর্ণসংখ্যার percentage মিলিয়ে মোট ১০০% করুন।",
+              "Confirm করে Confirmed দেখুন। Active assignment ও checkout না হওয়া check-in লাগবে। নিচের task-এ আসল অগ্রগতি রাখুন; split বেতন অনুমোদন বা পরিশোধ করে না।"
+            ],
+            "path": "Home → All tools → Today’s work",
+            "related": [
+              "payroll_employees",
+              "payroll_attendance"
+            ],
+            "group": "people",
+            "options": [
+              "Location-এর ক্ষেত্রে দেখানো shift ও permission নিয়ম অনুসরণ করুন।",
+              "এই গাইড কোনো record বদলায়, location পাঠায়, অনুমোদন বা payment করে না।"
+            ]
+          }
+        },
+        "payroll_profile": {
+          "en": {
+            "id": "payroll_profile",
+            "title": "My profile",
+            "summary": "Review your own employee details, documents and employment history.",
+            "why": "Review your own employee details, documents and employment history.",
+            "steps": [
+              "Open My profile for your linked employee. Use its tabs to review employment, assigned projects, salary month and documents.",
+              "In Documents, open a requested item and use Upload image or PDF or Replace document. Open the saved file and use Acknowledge receipt when offered; verification is a manager’s separate action.",
+              "Check the saved document status and your selected month’s payslip. Ask the owner about restricted profile or employment corrections. An unlinked profile must be matched through the sign-in mobile; acknowledgement records receipt, not a legal electronic signature."
+            ],
+            "path": "Home → All tools → My profile",
+            "related": [
+              "payroll_employees",
+              "payroll_attendance"
+            ],
+            "group": "people",
+            "options": [
+              "Location collection follows the available shift and permission controls. Use only access offered to your role.",
+              "This guide does not change records, share a location, approve requests or make payments."
+            ]
+          },
+          "bn": {
+            "id": "payroll_profile",
+            "title": "My profile",
+            "summary": "নিজের পরিচয়, document ও চাকরির ইতিহাস দেখুন।",
+            "why": "নিজের পরিচয়, document ও চাকরির ইতিহাস দেখুন।",
+            "steps": [
+              "Linked employee-এর My profile খুলুন। Tab দিয়ে employment, assigned project, salary month ও document দেখুন।",
+              "Documents-এ চাওয়া document খুলে Upload image or PDF বা Replace document দিন। Saved file খুলে সুযোগ থাকলে Acknowledge receipt চাপুন। Manager আলাদা করে Verify করবেন।",
+              "Saved document status ও মাসিক payslip দেখুন। Restricted পরিচয় বা চাকরির বদল Owner-কে বলুন। Sign-in mobile দিয়ে profile মেলে। Acknowledgement মানে পাওয়ার স্বীকৃতি, আইনি electronic signature নয়।"
+            ],
+            "path": "Home → All tools → My profile",
+            "related": [
+              "payroll_employees",
+              "payroll_attendance"
+            ],
+            "group": "people",
+            "options": [
+              "Location-এর ক্ষেত্রে দেখানো shift ও permission নিয়ম অনুসরণ করুন।",
+              "এই গাইড কোনো record বদলায়, location পাঠায়, অনুমোদন বা payment করে না।"
             ]
           }
         }
@@ -9478,22 +9442,15 @@
           "ledger",
           "payroll_employees",
           "payroll_run",
+          "payroll_attendance",
           "payroll_leave",
           "payroll_bills",
           "payroll_pf",
           "payroll_settings",
           "payroll_import",
-          "payroll_attendance",
-          "recurring_expenses",
-          "business_setup",
-          "project_details",
-          "item_fields",
-          "item_search",
-          "customer_fields",
-          "customer_search",
-          "dealer_fields",
-          "dealer_search",
-          "tax_pricing"
+          "payroll_projects",
+          "payroll_org",
+          "payroll_location"
         ],
         "admin": [
           "overview",
@@ -9509,22 +9466,15 @@
           "ledger",
           "payroll_employees",
           "payroll_run",
+          "payroll_attendance",
           "payroll_leave",
           "payroll_bills",
           "payroll_pf",
           "payroll_settings",
           "payroll_import",
-          "payroll_attendance",
-          "recurring_expenses",
-          "business_setup",
-          "project_details",
-          "item_fields",
-          "item_search",
-          "customer_fields",
-          "customer_search",
-          "dealer_fields",
-          "dealer_search",
-          "tax_pricing"
+          "payroll_projects",
+          "payroll_org",
+          "payroll_location"
         ],
         "accountant": [
           "overview",
@@ -9537,11 +9487,10 @@
           "ledger",
           "payroll_employees",
           "payroll_run",
+          "payroll_attendance",
           "payroll_leave",
           "payroll_bills",
-          "payroll_pf",
-          "payroll_attendance",
-          "recurring_expenses"
+          "payroll_pf"
         ],
         "cashier": [
           "overview",
@@ -9552,11 +9501,10 @@
           "ledger",
           "payroll_employees",
           "payroll_run",
+          "payroll_attendance",
           "payroll_leave",
           "payroll_bills",
-          "payroll_pf",
-          "payroll_attendance",
-          "recurring_expenses"
+          "payroll_pf"
         ],
         "approver": [
           "overview",
@@ -9567,10 +9515,10 @@
           "ledger",
           "payroll_employees",
           "payroll_run",
+          "payroll_attendance",
           "payroll_leave",
           "payroll_bills",
-          "payroll_pf",
-          "payroll_attendance"
+          "payroll_pf"
         ],
         "auditor": [
           "overview",
@@ -9582,22 +9530,246 @@
           "ledger",
           "payroll_employees",
           "payroll_run",
+          "payroll_attendance",
           "payroll_leave",
           "payroll_bills",
           "payroll_pf",
-          "payroll_attendance"
+          "payroll_projects",
+          "payroll_org"
         ],
         "member": [
           "overview",
           "all_tools",
           "payroll_run",
+          "payroll_attendance",
           "payroll_leave",
           "payroll_bills",
           "payroll_pf",
-          "payroll_attendance"
+          "payroll_tasks",
+          "payroll_work",
+          "payroll_profile"
         ]
       },
-      "access": {},
+      "access": {
+        "payroll_employees": {
+          "menu": "payroll_employees",
+          "roles": [
+            "owner",
+            "admin",
+            "accountant",
+            "cashier",
+            "approver",
+            "auditor"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin"
+          ],
+          "builtinOnly": false,
+          "viewOnly": false
+        },
+        "payroll_run": {
+          "menu": "payroll_run",
+          "roles": [
+            "owner",
+            "admin",
+            "accountant",
+            "cashier",
+            "approver",
+            "auditor",
+            "member"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin",
+            "accountant",
+            "cashier",
+            "approver"
+          ],
+          "builtinOnly": false,
+          "viewOnly": false
+        },
+        "payroll_attendance": {
+          "menu": "payroll_attendance",
+          "roles": [
+            "owner",
+            "admin",
+            "accountant",
+            "cashier",
+            "approver",
+            "auditor",
+            "member"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin",
+            "accountant",
+            "member"
+          ],
+          "builtinOnly": false,
+          "viewOnly": false
+        },
+        "payroll_leave": {
+          "menu": "payroll_leave",
+          "roles": [
+            "owner",
+            "admin",
+            "accountant",
+            "cashier",
+            "approver",
+            "auditor",
+            "member"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin",
+            "approver",
+            "member"
+          ],
+          "builtinOnly": false,
+          "viewOnly": false
+        },
+        "payroll_bills": {
+          "menu": "payroll_bills",
+          "roles": [
+            "owner",
+            "admin",
+            "accountant",
+            "cashier",
+            "approver",
+            "auditor",
+            "member"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin",
+            "accountant",
+            "cashier",
+            "approver",
+            "member"
+          ],
+          "builtinOnly": false,
+          "viewOnly": false
+        },
+        "payroll_pf": {
+          "menu": "payroll_pf",
+          "roles": [
+            "owner",
+            "admin",
+            "accountant",
+            "cashier",
+            "approver",
+            "auditor",
+            "member"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin"
+          ],
+          "builtinOnly": false,
+          "viewOnly": true
+        },
+        "payroll_settings": {
+          "menu": "payroll_settings",
+          "roles": [
+            "owner",
+            "admin"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin"
+          ],
+          "builtinOnly": true,
+          "viewOnly": false
+        },
+        "payroll_import": {
+          "menu": "payroll_employees",
+          "roles": [
+            "owner",
+            "admin"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin"
+          ],
+          "builtinOnly": true,
+          "viewOnly": false
+        },
+        "payroll_projects": {
+          "menu": "payroll_projects",
+          "roles": [
+            "owner",
+            "admin",
+            "auditor"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin"
+          ],
+          "builtinOnly": false,
+          "viewOnly": false
+        },
+        "payroll_org": {
+          "menu": "payroll_org",
+          "roles": [
+            "owner",
+            "admin",
+            "auditor"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin"
+          ],
+          "builtinOnly": false,
+          "viewOnly": false
+        },
+        "payroll_location": {
+          "menu": "payroll_location",
+          "roles": [
+            "owner",
+            "admin"
+          ],
+          "writeRoles": [
+            "owner",
+            "admin"
+          ],
+          "builtinOnly": true,
+          "viewOnly": false
+        },
+        "payroll_tasks": {
+          "menu": "payroll_tasks",
+          "roles": [
+            "member"
+          ],
+          "writeRoles": [
+            "member"
+          ],
+          "builtinOnly": false,
+          "viewOnly": false
+        },
+        "payroll_work": {
+          "menu": "payroll_tasks",
+          "roles": [
+            "member"
+          ],
+          "writeRoles": [
+            "member"
+          ],
+          "builtinOnly": false,
+          "viewOnly": false
+        },
+        "payroll_profile": {
+          "menu": "payroll_profile",
+          "roles": [
+            "member"
+          ],
+          "writeRoles": [
+            "member"
+          ],
+          "builtinOnly": false,
+          "viewOnly": false
+        }
+      },
       "readOnly": {}
     },
     "institute": {

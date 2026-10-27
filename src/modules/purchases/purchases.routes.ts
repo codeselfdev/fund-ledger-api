@@ -157,6 +157,7 @@ router.post("/:id/receive", requireProject, requireRoles("accountant", "admin"),
     include: { lines: true }
   });
   if (!before) throw notFound("Purchase not found");
+  if (before.constructionManaged)throw badRequest('Use checked deliveries in Site controls for this purchase.');
   if (before.status !== "ordered") throw badRequest("Purchase is not awaiting receipt");
 
   const resolvedAccountId = body.account_id ?? before.accountId;
@@ -173,6 +174,7 @@ router.post("/:id/receive", requireProject, requireRoles("accountant", "admin"),
     if (linkedBill) throw badRequest("Receive this purchase through its Construction supplier bill; payments are recorded separately");
     const current = await tx.purchase.findFirst({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId, status: "ordered" } });
     if (!current) throw badRequest("Purchase is not awaiting receipt");
+    if(current.constructionManaged)throw badRequest('Use checked deliveries in Site controls for this purchase.');
     const debit = await tx.account.updateMany({ where: { id: account.id, tenantId: auth.tenantId, projectId: auth.projectId, balance: { gte: before.totalAmount } }, data: { balance: { decrement: before.totalAmount } } });
     if (!debit.count) throw badRequest("Source account has insufficient balance");
     const trackStock = await stockEnabled(tx, auth);
@@ -190,7 +192,7 @@ router.post("/:id/receive", requireProject, requireRoles("accountant", "admin"),
     });
 
     if (trackStock) for (const line of [...before.lines].sort((a, b) => a.itemId.localeCompare(b.itemId))) {
-      await changeStock(tx, auth, { itemId: line.itemId, delta: line.quantity, locationId: location!.id, type: 'purchase_received', referenceType: 'purchase', referenceId: id });
+      await changeStock(tx, auth, { itemId: line.itemId, delta: line.quantity, unitCost:line.unitCost, locationId: location!.id, type: 'purchase_received', referenceType: 'purchase', referenceId: id });
     }
 
     const updatedAccount = await tx.account.findFirstOrThrow({ where: { id: account.id, tenantId: auth.tenantId, projectId: auth.projectId } });
@@ -253,6 +255,8 @@ router.post("/:id/cancel", requireProject, requireRoles("accountant", "admin"), 
   const purchase = await financialTransaction(async (tx) => {
     const linkedBill = await tx.constructionSupplierBill.findFirst({ where: { tenantId: auth.tenantId, projectId: auth.projectId, purchaseId: id, status: { in: ["pending", "approved"] } } });
     if (linkedBill) throw badRequest("A Construction supplier bill is attached; reject it before cancelling an unreceived purchase");
+    const current=await tx.purchase.findFirst({where:{id,tenantId:auth.tenantId,projectId:auth.projectId,status:'ordered'}});if(!current)throw badRequest('Purchase is not awaiting receipt.');
+    if(current.constructionManaged&&(await tx.constructionDelivery.findFirst({where:{tenantId:auth.tenantId,projectId:auth.projectId,purchaseId:id,status:{in:['pending','approved']}}})||await tx.constructionPurchaseInvoice.findFirst({where:{tenantId:auth.tenantId,projectId:auth.projectId,purchaseId:id,status:{in:['pending','approved']}}})))throw badRequest('Resolve delivery challans and supplier invoices before cancelling this controlled order.');
     const changed = await tx.purchase.updateMany({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId, status: "ordered" }, data: { status: "cancelled", cancelledById: auth.userId } });
     if (!changed.count) throw badRequest("Only purchases awaiting receipt can be cancelled");
     return tx.purchase.findFirstOrThrow({ where: { id, tenantId: auth.tenantId, projectId: auth.projectId } });

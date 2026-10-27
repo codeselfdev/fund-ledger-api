@@ -115,3 +115,38 @@ test('Construction phase plans use budget access and cannot be changed through a
  await enforceMenuAccess(req('/v1/construction/phases/assignees','GET',{construction_budgets:rw}));
  await assert.rejects(enforceMenuAccess(req('/v1/construction/phases/p','PUT',{construction_approvals:rw})),/not allowed/);
 });
+
+test('Construction structure lookup is available to site users while structure editing stays with Budgets',async()=>{
+ await enforceMenuAccess(req('/v1/construction/structure','GET',{construction_site_log:read}));
+ await enforceMenuAccess(req('/v1/construction/structure','GET',{construction_boq:read}));
+ await assert.rejects(enforceMenuAccess(req('/v1/construction/tasks','POST',{construction_site_log:rw})),/not allowed/);
+ await assert.rejects(enforceMenuAccess(req('/v1/construction/locations/location','PUT',{construction_budgets:read})),/not allowed/);
+ await enforceMenuAccess(req('/v1/construction/work-packages','POST',{construction_budgets:rw}));
+ await assert.rejects(enforceMenuAccess(req('/v1/construction/structure','GET',{construction_payments:rw})),/not allowed/);
+});
+
+
+test('site control decisions need their own menu and evidence is readable with site control access',async()=>{
+ const original=prisma.project.findFirst,upload=prisma.upload.findFirst;prisma.project.findFirst=async()=>({projectType:'construction'});prisma.upload.findFirst=async()=>({purpose:'construction_site'});
+ try {
+  await enforceMenuAccess(req('/v1/construction/control','GET',{construction_control:read}));
+  await assert.rejects(enforceMenuAccess(req('/v1/construction/control/versions/id/decision','POST',{construction_approvals:rw})),/not allowed/);
+  await assert.rejects(enforceMenuAccess(req('/v1/construction/control/measurements/id/decision','POST',{construction_control:read})),/not allowed/);
+  await enforceMenuAccess(req('/v1/construction/control/versions/id/decision','POST',{construction_control:rw}));
+  await enforceMenuAccess(req('/v1/uploads/file/view','GET',{construction_control:read}));
+ }finally{prisma.project.findFirst=original;prisma.upload.findFirst=upload;}
+});
+
+
+test('contractor work and measured bills keep source-menu writes, inbox reviews, payments and evidence access separate',async()=>{
+ const original=prisma.project.findFirst;prisma.project.findFirst=async()=>({projectType:'construction'});try{
+  await enforceMenuAccess(req('/v1/construction/contracts/options','GET',{construction_contractors:read}));
+  await enforceMenuAccess(req('/v1/construction/running-bills/options','GET',{construction_running_bills:read}));
+  await assert.rejects(enforceMenuAccess(req('/v1/construction/contracts/measured','POST',{construction_contractors:read})),/not allowed/);
+  await enforceMenuAccess(req('/v1/construction/contracts/measured','POST',{construction_contractors:rw}));
+  await assert.rejects(enforceMenuAccess(req('/v1/construction/running-bills/measured','POST',{construction_contractors:rw})),/not allowed/);
+  await enforceMenuAccess(req('/v1/construction/contracts/c/decision','POST',{construction_approvals:rw}));
+  await assert.rejects(enforceMenuAccess(req('/v1/construction/contracts/measured','POST',{construction_approvals:rw})),/not allowed/);
+  await assert.rejects(enforceMenuAccess(req('/v1/construction/payments','POST',{construction_contractors:rw,construction_running_bills:rw})),/not allowed/);
+ }finally{prisma.project.findFirst=original;}
+});

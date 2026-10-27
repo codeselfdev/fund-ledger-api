@@ -1,3 +1,6 @@
+import {verifyMeasuredBill,measuredTotals} from './construction-contractor.engine.js';
+import {evidence} from './construction.workflow.shared.js';
+import { capitalizeSupplierBill } from './construction.valuation.js';
 import { changeStock, stockEnabled, stockLocation } from '../inventory/stock.service.js';
 import { postTax } from '../business-setup/service.js';
 import { Prisma } from '@prisma/client';
@@ -25,13 +28,16 @@ export async function boq(tx: Tx, a: ConstructionScope, id: string, costHeadId?:
         throw notFound('BOQ item not found for this cost head');
     return row;
 }
-export async function decide(a: ConstructionScope, kind: 'budget' | 'running_bill' | 'supplier_bill' | 'labor' | 'change_order', id: string, decision: z.infer<typeof decisionSchema>['decision']) {
-    return financialTransaction(async (tx) => {
+type DecisionKind='budget'|'running_bill'|'supplier_bill'|'labor'|'change_order';
+export async function decide(a:ConstructionScope,kind:DecisionKind,id:string,decision:z.infer<typeof decisionSchema>['decision']) {return financialTransaction(tx=>decideInTransaction(tx,a,kind,id,decision));}
+export async function decideInTransaction(tx:Tx,a:ConstructionScope,kind:DecisionKind,id:string,decision:z.infer<typeof decisionSchema>['decision'],scopeChangeId?:string) {
         if (kind === 'labor' && await tx.constructionSiteLog.findFirst({ where: { ...scope(a), status: 'pending', laborIds: { has: id } } })) throw conflict('Review these wages through their daily site log');
         const where = { id, ...scope(a) };
         const row = kind === 'budget' ? await tx.constructionCostHead.findFirst({ where }) : kind === 'running_bill' ? await tx.constructionRunningBill.findFirst({ where }) : kind === 'supplier_bill' ? await tx.constructionSupplierBill.findFirst({ where }) : kind === 'labor' ? await tx.constructionLaborEntry.findFirst({ where }) : await tx.constructionChangeOrder.findFirst({ where });
         if (!row)
             throw notFound('Approval request not found');
+        if('scopeChangeId' in row&&row.scopeChangeId&&row.scopeChangeId!==scopeChangeId)throw conflict('Review this financial change through its coordinated scope change.');
+        if('procurementInvoiceId' in row&&row.procurementInvoiceId)throw conflict('Review this supplier invoice through line-level purchase matching.');
         const status = decision === 'approve' ? 'approved' : 'rejected';
         if (row.status !== 'pending') {
             if (row.status === status)
@@ -48,10 +54,12 @@ export async function decide(a: ConstructionScope, kind: 'budget' | 'running_bil
                     throw notFound('Active contract not found');
                 if (contract.certifiedAmount !== bill.previousCertified)
                     throw conflict('Another bill was certified; submit a fresh cumulative running bill');
-                const totals = runningBill(contract, bill.cumulativeCertified, bill.advanceRecovery);
+                const measurement=contract.billingMode==='item_rate'?verifyMeasuredBill(contract,bill):null;
+                if(measurement)await evidence(tx,a,bill.evidenceFileIds);
+                const totals = measurement?measuredTotals(contract,bill.cumulativeCertified,bill.advanceRecovery):runningBill(contract, bill.cumulativeCertified, bill.advanceRecovery);
                 if (totals.retention !== bill.retention || totals.netPayable - bill.wastageDeduction !== bill.netPayable)
                     throw conflict('Contract changed since this bill was requested');
-                await tx.constructionContract.update({ where: { id: contract.id }, data: { certifiedAmount: bill.cumulativeCertified, retentionHeld: { increment: bill.retention }, advanceRecovered: { increment: bill.advanceRecovery } } });
+                await tx.constructionContract.update({ where: { id: contract.id }, data: { ...(measurement?{certifiedQuantities:json(measurement.next)}:{}),certifiedAmount: bill.cumulativeCertified, retentionHeld: { increment: bill.retention }, advanceRecovered: { increment: bill.advanceRecovery } } });
             }
             else if (kind === 'change_order') {
                 const change = row as Prisma.ConstructionChangeOrderGetPayload<{}>;
@@ -63,6 +71,7 @@ export async function decide(a: ConstructionScope, kind: 'budget' | 'running_bil
                     const old = await tx.constructionContract.findFirst({ where: { id: change.contractId!, ...scope(a), status: 'active' } });
                     if (!old)
                         throw notFound('Active contract not found');
+                    if(old.billingMode==='item_rate')throw conflict('Use a supplementary work agreement for additional measured scope.');
                     const amount = checkedMoney(old.revisedAmount + change.contractChange);
                     if (amount < Math.max(old.certifiedAmount, old.advancePaid))
                         throw conflict('Revised contract cannot be below certified work or advances');
@@ -75,11 +84,11 @@ export async function decide(a: ConstructionScope, kind: 'budget' | 'running_bil
                 }).costHeadId);
         }
         if (kind === 'running_bill' && decision === 'reject') await tx.constructionMaterialEntry.updateMany({ where: { ...scope(a), chargeBillId: id }, data: { chargeBillId: null } });
+        if(kind==='supplier_bill'&&decision==='approve')await capitalizeSupplierBill(tx,a,row as Prisma.ConstructionSupplierBillGetPayload<{}>);
         const data = { status, decidedById: a.userId, ...(kind === 'budget' ? {} : { decidedAt: new Date() }) };
         const updated = kind === 'budget' ? await tx.constructionCostHead.update({ where: { id }, data }) : kind === 'running_bill' ? await tx.constructionRunningBill.update({ where: { id }, data }) : kind === 'supplier_bill' ? await tx.constructionSupplierBill.update({ where: { id }, data }) : kind === 'labor' ? await tx.constructionLaborEntry.update({ where: { id }, data }) : await tx.constructionChangeOrder.update({ where: { id }, data });
         await audit(tx, a, `${kind}.${status}`, `construction_${kind}`, id, updated);
         return updated;
-    });
 }
 export async function pay(a: ConstructionScope, b: z.infer<typeof paymentSchema>) {
     return financialTransaction(async (tx) => {
@@ -98,7 +107,8 @@ export async function pay(a: ConstructionScope, b: z.infer<typeof paymentSchema>
             if (!c)
                 throw notFound('Contract not found');
             if (b.kind === 'advance') {
-                if (c.status !== 'active' || b.amount > c.revisedAmount - c.certifiedAmount - (c.advancePaid - c.advanceRecovered))
+                const futureRetention=c.billingMode==='item_rate'?Math.round(c.revisedAmount*c.retentionBps/10000)-c.retentionHeld:0;
+                if (c.status !== 'active' || b.amount > c.revisedAmount - c.certifiedAmount - futureRetention - (c.advancePaid - c.advanceRecovered))
                     throw conflict('Advance exceeds the active contract balance');
                 await tx.constructionContract.update({ where: { id: c.id }, data: { advancePaid: { increment: b.amount } } });
             }
@@ -151,12 +161,16 @@ export async function moveMaterialInTransaction(tx: Tx, a: ConstructionScope, b:
         const item = await tx.inventoryItem.findFirst({ where: { id: b.item_id, ...scope(a), isActive: true } });
         if (!item)
             throw notFound('Material inventory item not found');
-        if (b.boq_id)
-            await boq(tx, a, b.boq_id);
+        let costHeadId=b.cost_head_id??null,stockLocationId=b.stock_location_id;
+        if(b.boq_id){const line=await boq(tx,a,b.boq_id);if(costHeadId&&costHeadId!==line.costHeadId)throw badRequest('Material BOQ and cost head must match');costHeadId=line.costHeadId;}
+        if(costHeadId)await head(tx,a,costHeadId);
         if (b.kind === 'return') {
             const source = await tx.constructionMaterialEntry.findFirst({ where: { id: b.source_id, ...scope(a), itemId: item.id, kind: 'consume' } });
             if (!source || b.quantity > source.quantity - source.returnedQuantity || source.boqId !== (b.boq_id ?? null))
                 throw conflict('Return exceeds the source consumption or uses a different BOQ item');
+            if(costHeadId&&source.costHeadId&&costHeadId!==source.costHeadId)throw badRequest('Return must use its original cost head');
+            if(stockLocationId&&source.stockLocationId&&stockLocationId!==source.stockLocationId)throw badRequest('Return must use its original store');
+            costHeadId=source.costHeadId??costHeadId;stockLocationId=source.stockLocationId??stockLocationId;
             if (atDate(b.entry_date) < source.entryDate)
                 throw badRequest('Return date cannot precede consumption');
             await tx.constructionMaterialEntry.update({ where: { id: source.id }, data: { returnedQuantity: { increment: b.quantity } } });
@@ -167,10 +181,11 @@ export async function moveMaterialInTransaction(tx: Tx, a: ConstructionScope, b:
         if (!await stockEnabled(tx, a)) throw badRequest('Enable stock management before recording material stock movements');
         const change = b.kind === 'return' ? b.quantity : -b.quantity;
         if (b.charge_contract_id && (b.kind !== 'waste' || !await tx.constructionContract.findFirst({ where: { id: b.charge_contract_id, ...scope(a), status: 'active' } }))) throw badRequest('Chargeable wastage requires an active contract in this project');
-        const row = await tx.constructionMaterialEntry.create({ data: { ...scope(a), itemId: item.id, boqId: b.boq_id, kind: b.kind, quantity: b.quantity, unitRate: item.costPrice, chargeContractId: b.charge_contract_id, entryDate: atDate(b.entry_date), reason: b.reason, sourceId: b.source_id, requestKey: b.request_key, requestHash: hash(b), createdById: a.userId } });
-        await changeStock(tx, a, { itemId: item.id, delta: change, type: change > 0 ? 'adjustment_increase' : 'adjustment_decrease', referenceType: `construction_${b.kind}`, referenceId: row.id, reason: b.reason, restoring: b.kind === 'return' });
-        await audit(tx, a, 'material.recorded', 'construction_material_entry', row.id, row);
-        return row;
+        const row = await tx.constructionMaterialEntry.create({ data: { ...scope(a), costHeadId, stockLocationId:stockLocationId??null, itemId: item.id, boqId: b.boq_id, kind: b.kind, quantity: b.quantity, unitRate: item.costPrice, chargeContractId: b.charge_contract_id, entryDate: atDate(b.entry_date), reason: b.reason, sourceId: b.source_id, requestKey: b.request_key, requestHash: hash(b), createdById: a.userId } });
+        const stock=await changeStock(tx, a, { itemId: item.id, delta: change, locationId:stockLocationId,costHeadId,sourceReferenceId:b.kind==='return'?b.source_id:undefined,type: change > 0 ? 'adjustment_increase' : 'adjustment_decrease', referenceType: `construction_${b.kind}`, referenceId: row.id, reason: b.reason, restoring: b.kind === 'return' });
+        const saved=stock.valuation?await tx.constructionMaterialEntry.update({where:{id:row.id},data:{valuationValueMicro:stock.valuation.valueMicro,stockLocationId:stock.locationId}}):row;
+        await audit(tx, a, 'material.recorded', 'construction_material_entry', row.id, saved);
+        return saved;
 }
 export async function receiveSupplierPurchase(tx: Tx, a: ConstructionScope, billId: string) {
     const bill = await tx.constructionSupplierBill.findFirst({ where: { id: billId, ...scope(a), status: 'approved' } });
@@ -189,7 +204,7 @@ export async function receiveSupplierPurchase(tx: Tx, a: ConstructionScope, bill
             throw notFound('Purchase material not found');
         checkedMoney(item.quantity + line.quantity);
         await tx.inventoryItem.update({ where: { id: item.id }, data: { costPrice: line.unitCost } });
-        if (trackStock) await changeStock(tx, a, { itemId: item.id, delta: line.quantity, locationId: location!.id, type: 'purchase_received', referenceType: 'construction_supplier_bill', referenceId: bill.id });
+        if (trackStock) await changeStock(tx, a, { itemId: item.id, delta: line.quantity, unitCost:line.unitCost, locationId: location!.id, type: 'purchase_received', referenceType: 'construction_supplier_bill', referenceId: bill.id });
     }
     await postTax(tx, a, 'purchase', purchase.id, purchase.taxSnapshot, 'input');
     await tx.purchase.update({ where: { id: purchase.id }, data: { stockTracked: trackStock, stockLocationId: location?.id ?? purchase.stockLocationId, status: 'received', accountId: null, receivedById: a.userId, receivedAt: new Date() } });

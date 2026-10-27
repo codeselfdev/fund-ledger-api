@@ -1,4 +1,5 @@
 export const menuAccessCatalog = [
+  {"key":"construction_control","label":"Site planning & control","group":"money","project_types":["construction"]},
   {
     "key": "income",
     "label": "Income",

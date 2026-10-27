@@ -120,7 +120,7 @@ router.post("/items", requireProject, requireRoles("accountant", "admin"), valid
     if (existing) throw conflict("An item with this SKU already exists");
   }
 
-  const item = await prisma.$transaction(async tx => { await lockSetup(tx, auth); const attributes = await attributesFor(tx, auth, 'item', body.attributes, undefined); const row = await tx.inventoryItem.create({
+  const item = await financialTransaction(async tx => { await lockSetup(tx, auth); const attributes = await attributesFor(tx, auth, 'item', body.attributes, undefined); const row = await tx.inventoryItem.create({
     data: {
       attributes,
       tenantId: auth.tenantId,

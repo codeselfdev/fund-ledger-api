@@ -1,3 +1,4 @@
+import {recordStockValue} from '../construction/construction.valuation.js';
 import type { Prisma, StockMovementType } from '@prisma/client';
 import { badRequest, conflict, forbidden, notFound } from '../../core/http/api-error.js';
 type Db = Prisma.TransactionClient;
@@ -30,7 +31,7 @@ export async function locationStocks(db: Db, auth: StockScope, items: { id: stri
     return [item.id, balances];
   }));
 }
-export async function changeStock(db: Db, auth: StockScope, input: { itemId: string; delta: number; locationId?: string | null; type: StockMovementType; referenceType: string; referenceId?: string; reason?: string; restoring?: boolean }) {
+export async function changeStock(db: Db, auth: StockScope, input: { itemId: string; delta: number; locationId?: string | null; type: StockMovementType; referenceType: string; referenceId?: string; reason?: string; restoring?: boolean; unitCost?:number; costHeadId?:string|null; sourceReferenceId?:string; sourceReferenceType?:string }) {
   const location = await stockLocation(db, auth, input.locationId, input.restoring);
   const item = await db.inventoryItem.findFirst({ where: { id: input.itemId, ...scope(auth) } });
   if (!item) throw notFound('Inventory item not found');
@@ -44,11 +45,13 @@ export async function changeStock(db: Db, auth: StockScope, input: { itemId: str
   if (!changed.count) throw conflict(`Insufficient stock for ${item.name}`);
   const updated = await db.inventoryItem.findFirstOrThrow({ where: { id: item.id, ...scope(auth) } });
   const movement = await db.stockMovement.create({ data: { ...scope(auth), itemId: item.id, locationId: location.id, type: input.type, quantity: input.delta, quantityAfter: updated.quantity, referenceType: input.referenceType, referenceId: input.referenceId, reason: input.reason, createdById: auth.userId } });
-  return { item: updated, movement, locationId: location.id };
+  const valuation=await recordStockValue(db,auth,movement,input);
+  return { item: updated, movement, locationId: location.id,valuation };
 }
 export async function openingStock(db: Db, auth: StockScope, item: { id: string; quantity: number }, locationId?: string | null) {
   if (!item.quantity) return;
   if (!await stockEnabled(db, auth)) throw badRequest('Enable stock management before setting opening quantities');
   const location = await stockLocation(db, auth, locationId);
-  await db.stockMovement.create({ data: { ...scope(auth), itemId: item.id, locationId: location.id, type: 'adjustment_increase', quantity: item.quantity, quantityAfter: item.quantity, referenceType: 'opening_stock', referenceId: item.id, reason: 'Opening stock', createdById: auth.userId } });
+  const movement=await db.stockMovement.create({ data: { ...scope(auth), itemId: item.id, locationId: location.id, type: 'adjustment_increase', quantity: item.quantity, quantityAfter: item.quantity, referenceType: 'opening_stock', referenceId: item.id, reason: 'Opening stock', createdById: auth.userId } });
+  await recordStockValue(db,auth,movement,{});
 }

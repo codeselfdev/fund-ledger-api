@@ -107,3 +107,23 @@ test('Fund/Share knowledge covers personal and staff workflows without elevating
  assert.match(owner.find(a=>a.id==='schedules').options.join(' '),/equal amount per active member, not per share/);
  assert.match(owner.find(a=>a.id==='recurring').options.join(' '),/3 shares × 500 per share = 1,500/);
 });
+
+
+test('Payroll/PF knowledge follows staff, self-service and custom access without offering unimplemented PF actions',()=>{
+ const owner=policy.authorizedArticles('payroll_pf',['owner'],undefined,'en');
+ for(const id of ['payroll_employees','payroll_attendance','payroll_run','payroll_leave','payroll_bills','payroll_pf','payroll_settings','payroll_import','payroll_org','payroll_projects','payroll_location'])assert.ok(owner.some(a=>a.id===id),id);
+ assert.match(owner.find(a=>a.id==='payroll_run').steps.join(' '),/independent accountant/);
+ const member=policy.authorizedArticles('payroll_pf',['member'],undefined,'bn');
+ for(const id of ['payroll_work','payroll_tasks','payroll_profile','payroll_run','payroll_pf'])assert.ok(member.some(a=>a.id===id),id);
+ assert.ok(!member.some(a=>['payroll_settings','payroll_import','payroll_employees','payroll_location','business_setup'].includes(a.id)));
+ const pf=policy.authorizedArticles('payroll_pf',['member'],undefined,'en').find(a=>a.id==='payroll_pf');
+ assert.match(pf.steps.join(' '),/own balance/);assert.match(pf.options.join(' '),/not available in these screens/);
+ for(const write of [false,true]){
+  const custom=policy.authorizedArticles('payroll_pf',[],{payroll_employees:{read:true,write},payroll_tasks:{read:true,write}},'en');
+  assert.ok(custom.some(a=>a.id==='payroll_employees'));assert.ok(custom.some(a=>a.id==='payroll_tasks'));
+  assert.ok(!custom.some(a=>['payroll_import','payroll_settings','payroll_location'].includes(a.id)));
+  if(!write)assert.match(custom.find(a=>a.id==='payroll_employees').steps.join(' '),/viewing steps/);
+ }
+ assert.throws(()=>policy.validatePlan({kind:'guide',topic_ids:['payroll_settings']},member));
+ assert.deepEqual(policy.validatePlan({kind:'guide',topic_ids:['payroll_pf','payroll_run']},owner).topic_ids,['payroll_pf','payroll_run']);
+});

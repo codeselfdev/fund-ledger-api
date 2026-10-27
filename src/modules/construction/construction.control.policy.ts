@@ -1,0 +1,18 @@
+import {z} from 'zod';
+import {dateSchema,pastDateSchema,id,money,requestKey} from '../billing/billing.policy.js';
+const positive=z.number().positive().max(100000000).refine(n=>Math.abs(n*1000-Math.round(n*1000))<0.00001,'Use at most three decimal places');
+export const calendarSchema=z.object({weekdays:z.array(z.number().int().min(0).max(6)).min(1).max(7).refine(a=>new Set(a).size===a.length,'Do not repeat weekdays'),holidays:z.array(dateSchema).max(500)}).strict();
+export const controlConfig=z.object({procurement:z.boolean().default(false),receipt_checks:z.boolean().default(false),scope_changes:z.boolean().default(false),scheduling:z.boolean(),progress:z.boolean(),advanced_boq:z.boolean(),calendar:calendarSchema}).strict();
+export const defaultConfig={procurement:false,receipt_checks:false,scope_changes:false,scheduling:false,progress:false,advanced_boq:false,calendar:{weekdays:[0,1,2,3,4,5,6],holidays:[]}};
+export const settingsSchema=z.object({revision:z.number().int().nonnegative(),config:controlConfig}).strict();
+export const scheduleTaskSchema=z.object({task_id:id,duration:z.number().int().min(1).max(3650),not_before:dateSchema.optional(),delay_reason:z.string().trim().max(1000).optional(),dependencies:z.array(z.object({task_id:id,type:z.enum(['FS','SS','FF','SF']),lag:z.number().int().min(-365).max(365)}).strict()).max(50)}).strict();
+const versionBase={base_id:id.nullable(),note:z.string().trim().min(3).max(2000),request_key:requestKey};
+export const scheduleSchema=z.object({...versionBase,anchor:dateSchema,tasks:z.array(scheduleTaskSchema).min(1).max(300)}).strict();
+export const resourceSchema=z.object({kind:z.enum(['material','labor']),item_id:id.optional(),name:z.string().trim().min(1).max(150),unit:z.string().trim().min(1).max(30),quantity_per_unit:z.number().positive().max(1000000).refine(n=>Math.abs(n*1e6-Math.round(n*1e6))<0.001,'Use six decimal places'),rate:money}).strict();
+export const controlBoqLine=z.object({id:id,cost_head_id:id,task_id:id.optional(),name:z.string().trim().min(2).max(150),unit:z.string().trim().min(1).max(30),quantity:positive,rate:money,rate_mode:z.enum(['manual','recipe']),resources:z.array(resourceSchema).max(100)}).strict();
+export const boqVersionSchema=z.object({...versionBase,lines:z.array(controlBoqLine).min(1).max(500)}).strict();
+export const importSchema=z.object({rows:z.array(z.record(z.unknown())).min(1).max(500)}).strict();
+export const decisionSchema=z.object({decision:z.enum(['approve','reject']),note:z.string().trim().min(3).max(2000)}).strict();
+export const measureSchema=z.object({boq_id:id,task_id:id.optional(),quantity:positive,measurement_date:pastDateSchema,evidence_file_ids:z.array(id).max(20),note:z.string().trim().min(3).max(2000),reverses_id:id.optional(),request_key:requestKey}).strict();
+export const completionSchema=z.object({phase_id:id.optional(),task_id:id.optional(),measurement_date:pastDateSchema,evidence_file_ids:z.array(id).max(20),note:z.string().trim().min(3).max(2000),request_key:requestKey}).strict().refine(v=>!!v.phase_id!==!!v.task_id,'Choose a phase or a task');
+export const activationSchema=z.object({method:z.enum(['weighted_average','fifo']),revision:z.number().int().nonnegative(),request_key:requestKey,preview_hash:z.string().length(64),opening:z.array(z.object({item_id:id,location_id:id,quantity:z.number().int().positive(),unit_cost:money,cost_head_id:id.nullable()}).strict()).max(1000)}).strict();

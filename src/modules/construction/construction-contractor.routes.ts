@@ -1,0 +1,17 @@
+import {Router} from 'express';
+import {requireProjectContext} from '../../core/security/auth.context.js';
+import {requireRoles} from '../../core/security/auth.middleware.js';
+import {asyncHandler} from '../../core/http/async-handler.js';
+import {ok,created} from '../../core/http/response.js';
+import {validateBody} from '../../core/validation/validate.js';
+import {financialTransaction,scope} from './construction.service.js';
+import {decisionSchema} from './construction.policy.js';
+import {measuredContractSchema,measuredBillSchema} from './construction-contractor.engine.js';
+import {submitWorkContract,decideWorkContract,submitMeasuredBill} from './construction-contractor.service.js';
+const router=Router(),write=requireRoles('accountant');
+router.get('/contracts/options',asyncHandler(async(req,res)=>{const a=requireProjectContext(req);return ok(res,await financialTransaction(async tx=>({heads:await tx.constructionCostHead.findMany({where:{...scope(a),status:'approved'},select:{id:true,name:true,phase:true,workContextLabel:true},orderBy:{name:'asc'}})})));}));
+router.get('/running-bills/options',asyncHandler(async(req,res)=>{const a=requireProjectContext(req);return ok(res,await financialTransaction(async tx=>({contracts:await tx.constructionContract.findMany({where:scope(a),include:{contractor:true,costHead:true},orderBy:{createdAt:'desc'}})})));}));
+router.post('/contracts/measured',write,validateBody(measuredContractSchema),asyncHandler(async(req,res)=>created(res,await financialTransaction(tx=>submitWorkContract(tx,requireProjectContext(req),req.body),15000))));
+router.post('/contracts/:id/decision',requireRoles('approver'),validateBody(decisionSchema),asyncHandler(async(req,res)=>ok(res,await financialTransaction(tx=>decideWorkContract(tx,requireProjectContext(req),req.params.id,req.body.decision)))));
+router.post('/running-bills/measured',write,validateBody(measuredBillSchema),asyncHandler(async(req,res)=>created(res,await financialTransaction(tx=>submitMeasuredBill(tx,requireProjectContext(req),req.body),15000))));
+export {router as contractorWorkRouter};

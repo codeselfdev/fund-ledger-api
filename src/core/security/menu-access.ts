@@ -15,4 +15,4 @@ export function mergePermissions(roles: readonly { permissions: unknown }[]): Me
 }
 export const menuGrant = (permissions: MenuPermissions, keys: readonly string[], write: boolean) => keys.some(key => permissions[key]?.[write ? 'write' : 'read'] === true);
 
-export const menuReadDependencies: Record<string, string[]> = { construction_approvals: ['construction_budgets', 'construction_running_bills', 'construction_suppliers', 'construction_labor', 'construction_changes', 'construction_site_log'] };
+export const menuReadDependencies: Record<string, string[]> = { construction_approvals: ['construction_contractors', 'construction_budgets', 'construction_running_bills', 'construction_suppliers', 'construction_labor', 'construction_changes', 'construction_site_log'] };

@@ -238,6 +238,22 @@ enum DepositApprovalRoute {
 }
 
 model Project {
+  constructionRequisitions ConstructionRequisition[]
+  constructionSupplierQuotes ConstructionSupplierQuote[]
+  constructionProcurementAwards ConstructionProcurementAward[]
+  constructionDeliveries ConstructionDelivery[]
+  constructionPurchaseInvoices ConstructionPurchaseInvoice[]
+  constructionScopeChanges ConstructionScopeChange[]
+  constructionValuationMethod String @default("expense") @map("construction_valuation_method")
+  constructionControlSetting ConstructionControlSetting?
+  constructionControlVersions ConstructionControlVersion[]
+  constructionMeasurements ConstructionMeasurement[]
+  constructionValuationLayers ConstructionValuationLayer[]
+  constructionValuationEntries ConstructionValuationEntry[]
+  constructionReclassifications ConstructionReclassification[]
+  constructionLocations ConstructionWorkLocation[]
+  constructionWorkPackages ConstructionWorkPackage[]
+  constructionTasks ConstructionTask[]
   constructionPhases ConstructionPhase[]
   instituteNotificationDeliveryRecords InstituteNotificationDelivery[]
   instituteWriteReceiptRecords InstituteWriteReceipt[]
@@ -948,6 +964,9 @@ model StockMovement {
 }
 
 model Purchase {
+  constructionManaged Boolean @default(false) @map("construction_managed")
+  constructionCostHeadId String? @map("construction_cost_head_id")
+  constructionRequiredBy DateTime? @db.Date @map("construction_required_by")
   stockLocationId String? @map("stock_location_id")
   stockLocation InventoryLocation? @relation(fields: [stockLocationId], references: [id], onDelete: Restrict)
   stockTracked Boolean @default(false) @map("stock_tracked")
@@ -1760,6 +1779,7 @@ model BillingMessage {
 
 
 model ConstructionPhase {
+  workPackages ConstructionWorkPackage[]
   id String @id @default(cuid())
   tenantId String @map("tenant_id")
   projectId String @map("project_id")
@@ -1786,6 +1806,14 @@ model ConstructionPhase {
 }
 
 model ConstructionCostHead {
+  workScopeKey String @default("") @map("work_scope_key")
+  workPackageId String? @map("work_package_id")
+  taskId String? @map("task_id")
+  locationId String? @map("location_id")
+  workContextLabel String? @map("work_context_label")
+  workPackage ConstructionWorkPackage? @relation(fields: [workPackageId], references: [id], onDelete: Restrict)
+  task ConstructionTask? @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  location ConstructionWorkLocation? @relation(fields: [locationId], references: [id], onDelete: Restrict)
   phaseId String? @map("phase_id")
   phaseRecord ConstructionPhase? @relation(fields: [phaseId], references: [id], onDelete: Restrict)
   id String @id @default(cuid())
@@ -1809,7 +1837,7 @@ model ConstructionCostHead {
   supplierBills ConstructionSupplierBill[]
   laborEntries ConstructionLaborEntry[]
   changes ConstructionChangeOrder[]
-  @@unique([projectId, name, phase])
+  @@unique([projectId, name, phase, workScopeKey])
   @@index([tenantId, projectId, status])
   @@map("construction_cost_heads")
 }
@@ -1875,6 +1903,13 @@ model ConstructionContractor {
 }
 
 model ConstructionContract {
+  billingMode String @default("lump_sum") @map("billing_mode")
+  workTerms Json? @map("work_terms")
+  workItems Json? @map("work_items")
+  certifiedQuantities Json? @map("certified_quantities")
+  agreementFileIds String[] @default([]) @map("agreement_file_ids")
+  decidedById String? @map("decided_by_id")
+  decidedAt DateTime? @map("decided_at")
   id String @id @default(cuid())
   tenantId String @map("tenant_id")
   projectId String @map("project_id")
@@ -1907,6 +1942,8 @@ model ConstructionContract {
 }
 
 model ConstructionRunningBill {
+  measurementLines Json? @map("measurement_lines")
+  evidenceFileIds String[] @default([]) @map("evidence_file_ids")
   id String @id @default(cuid())
   tenantId String @map("tenant_id")
   projectId String @map("project_id")
@@ -1938,6 +1975,7 @@ model ConstructionRunningBill {
 }
 
 model ConstructionSupplierBill {
+  procurementInvoiceId String? @unique @map("procurement_invoice_id")
   id String @id @default(cuid())
   tenantId String @map("tenant_id")
   projectId String @map("project_id")
@@ -1998,6 +2036,9 @@ model ConstructionLaborEntry {
 }
 
 model ConstructionMaterialEntry {
+  costHeadId String? @map("cost_head_id")
+  stockLocationId String? @map("stock_location_id")
+  valuationValueMicro Decimal? @db.Decimal(30,0) @map("valuation_value_micro")
   id String @id @default(cuid())
   tenantId String @map("tenant_id")
   projectId String @map("project_id")
@@ -2053,6 +2094,7 @@ model ConstructionPayment {
 }
 
 model ConstructionChangeOrder {
+  scopeChangeId String? @unique @map("scope_change_id")
   id String @id @default(cuid())
   tenantId String @map("tenant_id")
   projectId String @map("project_id")
@@ -3587,4 +3629,349 @@ model InstituteNotificationDelivery {
   @@unique([projectId, userId, dedupeKey, channel])
   @@index([tenantId, projectId])
   @@map("institute_notification_deliveries")
+}
+
+model ConstructionWorkLocation {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  parentId String? @map("parent_id")
+  parentKey String @default("") @map("parent_key")
+  kind String
+  name String
+  isActive Boolean @default(true) @map("is_active")
+  revision Int @default(1)
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  parent ConstructionWorkLocation? @relation("ConstructionLocationTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children ConstructionWorkLocation[] @relation("ConstructionLocationTree")
+  workPackages ConstructionWorkPackage[]
+  costHeads ConstructionCostHead[]
+  @@unique([projectId, parentKey, kind, name], map: "construction_work_locations_scope_name_key")
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, isActive])
+  @@map("construction_work_locations")
+}
+model ConstructionWorkPackage {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  phaseId String @map("phase_id")
+  locationId String? @map("location_id")
+  name String
+  description String @default("")
+  isActive Boolean @default(true) @map("is_active")
+  revision Int @default(1)
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  phase ConstructionPhase @relation(fields: [phaseId], references: [id], onDelete: Restrict)
+  location ConstructionWorkLocation? @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  tasks ConstructionTask[]
+  costHeads ConstructionCostHead[]
+  @@unique([phaseId, name])
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, isActive])
+  @@map("construction_work_packages")
+}
+model ConstructionTask {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  workPackageId String @map("work_package_id")
+  name String
+  description String @default("")
+  isActive Boolean @default(true) @map("is_active")
+  revision Int @default(1)
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  workPackage ConstructionWorkPackage @relation(fields: [workPackageId], references: [id], onDelete: Restrict)
+  costHeads ConstructionCostHead[]
+  @@unique([workPackageId, name])
+  @@unique([projectId, requestKey])
+  @@index([tenantId, projectId, isActive])
+  @@map("construction_tasks")
+}
+
+model ConstructionControlSetting {
+  valuationActivation Json? @map("valuation_activation")
+  projectId String @id @map("project_id")
+  tenantId String @map("tenant_id")
+  revision Int @default(1)
+  config Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+  project Project @relation(fields:[projectId],references:[id],onDelete:Restrict)
+  @@index([tenantId,projectId])
+  @@map("construction_control_settings")
+}
+model ConstructionControlVersion {
+  scopeChangeId String? @map("scope_change_id")
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  kind String
+  revision Int
+  baseId String? @map("base_id")
+  status String @default("pending")
+  payload Json
+  note String
+  createdById String @map("created_by_id")
+  decidedById String? @map("decided_by_id")
+  decisionNote String? @map("decision_note")
+  decidedAt DateTime? @map("decided_at")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields:[projectId],references:[id],onDelete:Restrict)
+  @@unique([projectId,kind,revision])
+  @@unique([projectId,requestKey])
+  @@index([tenantId,projectId,kind,status])
+  @@map("construction_control_versions")
+}
+model ConstructionMeasurement {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  kind String @default("measurement")
+  boqId String? @map("boq_id")
+  phaseId String? @map("phase_id")
+  taskId String? @map("task_id")
+  baseId String @map("base_id")
+  quantity Decimal @db.Decimal(18,3)
+  measurementDate DateTime @db.Date @map("measurement_date")
+  evidence Json
+  note String
+  reversesId String? @map("reverses_id")
+  status String @default("pending")
+  createdById String @map("created_by_id")
+  decidedById String? @map("decided_by_id")
+  decisionNote String? @map("decision_note")
+  decidedAt DateTime? @map("decided_at")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields:[projectId],references:[id],onDelete:Restrict)
+  @@unique([projectId,requestKey])
+  @@index([tenantId,projectId,status])
+  @@map("construction_measurements")
+}
+model ConstructionValuationLayer {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  itemId String @map("item_id")
+  locationId String @map("location_id")
+  remainingQuantity Int @map("remaining_quantity")
+  valueMicro Decimal @db.Decimal(30,0) @map("value_micro")
+  sortAt DateTime @default(now()) @map("sort_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields:[projectId],references:[id],onDelete:Restrict)
+  @@index([tenantId,projectId,itemId,locationId])
+  @@map("construction_valuation_layers")
+}
+model ConstructionValuationEntry {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  movementId String? @unique @map("movement_id")
+  itemId String @map("item_id")
+  locationId String @map("location_id")
+  costHeadId String? @map("cost_head_id")
+  kind String
+  quantity Int
+  valueMicro Decimal @db.Decimal(30,0) @map("value_micro")
+  sourceEntryId String? @map("source_entry_id")
+  referenceType String @map("reference_type")
+  referenceId String? @map("reference_id")
+  allocations Json
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields:[projectId],references:[id],onDelete:Restrict)
+  @@index([tenantId,projectId,itemId,locationId])
+  @@index([tenantId,projectId,costHeadId])
+  @@map("construction_valuation_entries")
+}
+model ConstructionReclassification {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  sourceType String @map("source_type")
+  sourceId String @map("source_id")
+  costHeadId String? @map("cost_head_id")
+  valueMicro Decimal @db.Decimal(30,0) @map("value_micro")
+  createdById String @map("created_by_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields:[projectId],references:[id],onDelete:Restrict)
+  @@unique([projectId,sourceType,sourceId])
+  @@index([tenantId,projectId,costHeadId])
+  @@map("construction_reclassifications")
+}
+
+model ConstructionRequisition {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  costHeadId String @map("cost_head_id")
+  title String
+  requiredBy DateTime @db.Date @map("required_by")
+  urgency String
+  lines Json
+  note String
+  evidence Json
+  approverId String @map("approver_id")
+  status String @default("pending")
+  decidedById String? @map("decided_by_id")
+  decidedAt DateTime? @map("decided_at")
+  decisionNote String? @map("decision_note")
+  createdById String @map("created_by_id")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields:[projectId],references:[id],onDelete:Restrict)
+  @@unique([projectId,requestKey])
+  @@index([tenantId,projectId])
+  @@map("construction_requisitions")
+}
+
+model ConstructionSupplierQuote {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  requisitionId String @map("requisition_id")
+  vendorId String @map("vendor_id")
+  number String
+  lines Json
+  charges Int
+  total Int
+  deliveryDate DateTime @db.Date @map("delivery_date")
+  validUntil DateTime @db.Date @map("valid_until")
+  terms String
+  evidence Json
+  createdById String @map("created_by_id")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields:[projectId],references:[id],onDelete:Restrict)
+  @@unique([projectId,requestKey])
+  @@index([tenantId,projectId])
+  @@unique([projectId, requisitionId, vendorId, number])
+  @@map("construction_supplier_quotes")
+}
+
+model ConstructionProcurementAward {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  requisitionId String @map("requisition_id")
+  quoteId String @map("quote_id")
+  purchaseId String? @unique @map("purchase_id")
+  locationId String? @map("location_id")
+  note String
+  approverId String @map("approver_id")
+  status String @default("pending")
+  decidedById String? @map("decided_by_id")
+  decidedAt DateTime? @map("decided_at")
+  decisionNote String? @map("decision_note")
+  createdById String @map("created_by_id")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields:[projectId],references:[id],onDelete:Restrict)
+  @@unique([projectId,requestKey])
+  @@index([tenantId,projectId])
+  @@map("construction_procurement_awards")
+}
+
+model ConstructionDelivery {
+  revision Int @default(1)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  purchaseId String @map("purchase_id")
+  challanNumber String @map("challan_number")
+  deliveryDate DateTime @db.Date @map("delivery_date")
+  locationId String @map("location_id")
+  lines Json
+  checkedLines Json?
+  evidence Json
+  note String
+  approverId String @map("approver_id")
+  status String @default("pending")
+  decidedById String? @map("decided_by_id")
+  decidedAt DateTime? @map("decided_at")
+  decisionNote String? @map("decision_note")
+  createdById String @map("created_by_id")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields:[projectId],references:[id],onDelete:Restrict)
+  @@unique([projectId,requestKey])
+  @@index([tenantId,projectId])
+  @@unique([projectId, purchaseId, challanNumber, revision],map:"construction_delivery_revision_key")
+  @@map("construction_deliveries")
+}
+
+model ConstructionPurchaseInvoice {
+  revision Int @default(1)
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  purchaseId String @map("purchase_id")
+  supplierBillId String? @unique @map("supplier_bill_id")
+  number String
+  invoiceDate DateTime @db.Date @map("invoice_date")
+  lines Json
+  charges Int
+  amount Int
+  evidence Json
+  note String
+  approverId String @map("approver_id")
+  status String @default("pending")
+  decidedById String? @map("decided_by_id")
+  decidedAt DateTime? @map("decided_at")
+  decisionNote String? @map("decision_note")
+  createdById String @map("created_by_id")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields:[projectId],references:[id],onDelete:Restrict)
+  @@unique([projectId,requestKey])
+  @@index([tenantId,projectId])
+  @@unique([projectId,purchaseId,number,revision],map:"construction_invoice_revision_key")
+  @@map("construction_purchase_invoices")
+}
+
+model ConstructionScopeChange {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  costHeadId String @map("cost_head_id")
+  title String
+  payload Json
+  evidence Json
+  note String
+  approverId String @map("approver_id")
+  status String @default("pending")
+  decidedById String? @map("decided_by_id")
+  decidedAt DateTime? @map("decided_at")
+  decisionNote String? @map("decision_note")
+  createdById String @map("created_by_id")
+  requestKey String @map("request_key")
+  requestHash String @map("request_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields:[projectId],references:[id],onDelete:Restrict)
+  @@unique([projectId,requestKey])
+  @@index([tenantId,projectId])
+  @@map("construction_scope_changes")
 }

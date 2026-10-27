@@ -1,3 +1,4 @@
+import { moneyFromMicro } from './construction.control.engine.js';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../core/prisma/client.js';
@@ -9,6 +10,7 @@ import { ok, created } from '../../core/http/response.js';
 import { validateBody } from '../../core/validation/validate.js';
 import { atDate, hash, json, today } from '../billing/billing.policy.js';
 import { siteSaveSchema, siteContentSchema, wasteLimitSchema, decisionSchema, dateSchema, estimated } from './construction.policy.js';
+import { validateSiteWorkContext, contextInput } from './construction.structure.service.js';
 import { scope, financialTransaction, head, boq, audit, moveMaterialInTransaction } from './construction.service.js';
 
 const router = Router(), write = requireRoles('accountant');
@@ -38,7 +40,8 @@ router.put('/site-logs', write, validateBody(siteSaveSchema), asyncHandler(async
    const file = await tx.upload.findFirst({ where: { id, ...scope(a), deletedAt: null } });
    if (!file || !file.mimeType.startsWith('image/')) throw notFound('Project photo not found');
   }
-  const data = { content: json(b.content), createdById: a.userId, version: b.version + 1 };
+  const context = await validateSiteWorkContext(tx,a,b.content);
+  const data = { content: json({...b.content,...contextInput(context),context_label:context.label||undefined}), createdById: a.userId, version: b.version + 1 };
   const row = old ? await tx.constructionSiteLog.update({ where: { id: old.id }, data }) : await tx.constructionSiteLog.create({ data: { ...scope(a), workDate: atDate(b.work_date), ...data } });
   await audit(tx, a, 'site_log.saved', 'construction_site_log', row.id, row);
   return row;
@@ -55,6 +58,7 @@ router.post('/site-logs/:id/submit', write, validateBody(z.object({ version: z.n
   if (log.version !== req.body.version) throw conflict('This log changed. Reload it before submitting.');
   if (log.workDate > atDate(today())) throw badRequest('Cannot submit a future day');
   const content = siteContentSchema.parse(log.content), laborIds: string[] = [], materialIds: string[] = [];
+  await validateSiteWorkContext(tx,a,content);
   if (!content.labor.length && !content.materials.length && !content.expense_ids.length && !content.note && !content.photo_ids.length) throw badRequest('Add site activity before submitting');
   for (const [i, l] of content.labor.entries()) {
    await head(tx, a, l.cost_head_id);
@@ -105,7 +109,7 @@ router.get('/wastage', asyncHandler(async (req, res) => {
   for (const e of entries) {
    const row = materials.get(e.itemId) ?? { itemId: e.itemId, name: e.item.name, unit: e.item.unit, used: 0, wasted: 0, value: 0, allowanceBps: limits.find(l => l.itemId === e.itemId)?.allowanceBps ?? null, excess: 0, percent: 0, over: false };
    if (e.kind === 'consume') row.used += e.quantity - e.returnedQuantity;
-   if (e.kind === 'waste') { row.wasted += e.quantity; row.value += e.quantity * (e.unitRate ?? e.item.costPrice); }
+   if (e.kind === 'waste') { row.wasted += e.quantity; row.value += (e.valuationValueMicro!==null&&e.valuationValueMicro!==undefined?Math.abs(moneyFromMicro(BigInt(String(e.valuationValueMicro)))):e.quantity * (e.unitRate ?? e.item.costPrice)); }
    materials.set(e.itemId, row);
   }
   for (const row of materials.values()) {
@@ -114,7 +118,7 @@ router.get('/wastage', asyncHandler(async (req, res) => {
    row.excess = row.allowanceBps === null ? 0 : Math.round(Math.max(0, row.wasted - row.used * row.allowanceBps / 10000) * (row.wasted ? row.value / row.wasted : 0));
   }
   const wasted = entries.filter(e => e.kind === 'waste');
-  return { materials: [...materials.values()], entries: wasted.map(e => ({ ...e, value: e.quantity * (e.unitRate ?? e.item.costPrice) })), total: [...materials.values()].reduce((n,m) => n + m.value, 0), excess: [...materials.values()].reduce((n,m) => n + m.excess, 0), chargeable: wasted.filter(e => e.chargeContractId && !e.chargeBillId).reduce((n,e) => n + e.quantity * (e.unitRate ?? e.item.costPrice), 0) };
+  return { materials: [...materials.values()], entries: wasted.map(e => ({ ...e, value: (e.valuationValueMicro!==null&&e.valuationValueMicro!==undefined?Math.abs(moneyFromMicro(BigInt(String(e.valuationValueMicro)))):e.quantity * (e.unitRate ?? e.item.costPrice)) })), total: [...materials.values()].reduce((n,m) => n + m.value, 0), excess: [...materials.values()].reduce((n,m) => n + m.excess, 0), chargeable: wasted.filter(e => e.chargeContractId && !e.chargeBillId).reduce((n,e) => n + (e.valuationValueMicro!==null&&e.valuationValueMicro!==undefined?Math.abs(moneyFromMicro(BigInt(String(e.valuationValueMicro)))):e.quantity * (e.unitRate ?? e.item.costPrice)), 0) };
  });
  return ok(res, result);
 }));

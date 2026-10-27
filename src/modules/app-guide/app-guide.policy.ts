@@ -14,7 +14,7 @@ type PublicProject = { articles: Record<string,Record<Language,Article>>; roles:
 export const publicKnowledge = knowledge.projects as Record<string,PublicProject>;
 export const guideConfigured = () => process.env.APP_GUIDE_AI_ENABLED !== 'false' && !!process.env.OPENAI_API_KEY?.trim() && !!(process.env.APP_GUIDE_AI_MODEL || process.env.OPENAI_CHAT_MODEL)?.trim();
 const settings = new Set(['business_setup','project_details','tax_pricing','pdf_template','pdf_item_details','item_fields','customer_fields','dealer_fields','item_search','customer_search','dealer_search']);
-const guideAccess = (id:string) => (id.startsWith('institute_')?publicKnowledge.institute:publicKnowledge.fund_shares)?.access?.[id];
+const guideAccess = (id:string) => (id.startsWith('institute_')?publicKnowledge.institute:id.startsWith('payroll_')?publicKnowledge.payroll_pf:publicKnowledge.fund_shares)?.access?.[id];
 export function articleMenu(id: string) {
   if (guideAccess(id)) return guideAccess(id)!.menu;
   if (settings.has(id)) return 'business_setup';

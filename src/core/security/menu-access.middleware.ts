@@ -25,7 +25,7 @@ export async function enforceMenuAccess(req: Request) {
   if (project?.projectType === 'construction' && keys?.includes('inventory')) keys = ['construction_materials'];
   if (project?.projectType === 'construction' && keys?.some(key => ['purchases', 'dealers'].includes(key))) keys = ['construction_suppliers'];
   if (project?.projectType === 'construction' && keys?.some(key => ['members', 'schedules', 'recurring', 'deposits'].includes(key))) keys.push('construction_funding');
-  if (project?.projectType === 'construction' && write && /\/decision$/.test(path) && path.startsWith('/v1/construction/')) keys?.push('construction_approvals');
+  if (project?.projectType === 'construction' && write && /\/decision$/.test(path) && path.startsWith('/v1/construction/') && !path.startsWith('/v1/construction/control/')) keys?.push('construction_approvals');
   if (path === '/v1/billing/subscribers' && write) {
     const required = ['customers', 'billing_units', 'billing_subscriptions', ...(req.body?.start === 'this_month' ? ['billing_invoices'] : [])];
     if (required.every(key => a.menuPermissions![key]?.write)) keys = ['customers'];

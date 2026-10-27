@@ -1,3 +1,4 @@
+import {valuationMethod} from '../construction/construction.valuation.js';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../core/prisma/client.js';
@@ -24,6 +25,7 @@ router.get('/settings', asyncHandler(async (req, res) => {
 router.patch('/settings', admin, asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req), body = z.object({ stock_management_enabled: z.boolean() }).strict().parse(req.body);
   await financialTransaction(async db => {
+    if(!body.stock_management_enabled&&await valuationMethod(db,auth)!=='expense')throw conflict('Material valuation requires stock tracking.');
     await db.project.update({ where: { id: auth.projectId, tenantId: auth.tenantId }, data: { stockManagementEnabled: body.stock_management_enabled } });
     await db.activity.create({ data: { ...scope(auth), actorUserId: auth.userId, action: 'inventory.settings.updated', entityType: 'project', entityId: auth.projectId, after: body } });
   });

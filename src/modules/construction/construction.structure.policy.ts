@@ -1,0 +1,10 @@
+import { z } from 'zod';
+import { id, requestKey } from '../billing/billing.policy.js';
+export const locationKinds = ['building', 'block', 'floor', 'zone'] as const;
+export const contextFields = { work_package_id: id.optional(), task_id: id.optional(), location_id: id.optional() };
+const name = z.string().trim().min(2).max(150);
+const description = z.string().trim().max(2000).default('');
+export const locationCreate = z.object({name, kind: z.enum(locationKinds), parent_id: id.nullable(), request_key: requestKey}).strict();
+export const packageCreate = z.object({name, description, phase_id: id, location_id: id.nullable(), request_key: requestKey}).strict();
+export const taskCreate = z.object({name, description, work_package_id: id, request_key: requestKey}).strict();
+export const structureUpdate = z.object({name, description, is_active: z.boolean(), revision: z.number().int().positive()}).strict();

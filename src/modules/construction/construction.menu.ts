@@ -1,6 +1,7 @@
 import type { Role } from '@prisma/client';
 export const constructionMenuKeys = ['construction_overview', 'construction_setup', 'construction_budgets', 'construction_boq', 'construction_contractors', 'construction_suppliers', 'construction_materials', 'construction_labor', 'construction_running_bills', 'construction_funding', 'construction_changes', 'construction_reports'] as const;
 const definitions = [
+    ['construction_control','Site planning & control','/v1/construction/control'],
     ['construction_overview', 'Construction Financial Overview', '/v1/construction/overview'],
     ['construction_setup', 'Building & Site Setup', '/v1/construction/configuration'],
     ['construction_budgets', 'Budget Estimation', '/v1/construction/cost-heads'],
