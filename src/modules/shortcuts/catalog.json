@@ -1178,6 +1178,53 @@
       ]
     },
     {
+      "key": "payroll_projects",
+      "group": "people",
+      "label": "Office projects",
+      "description": "Office & site projects, teams and assignments",
+      "icon": "M3 7h18v13H3z M8 7V4h8v3 M3 13h18",
+      "keywords": "project site team assignment allocation",
+      "roles": [
+        "owner",
+        "admin",
+        "auditor"
+      ],
+      "project_types": [
+        "payroll_pf"
+      ]
+    },
+    {
+      "key": "payroll_org",
+      "group": "people",
+      "label": "Org structure",
+      "description": "Departments, designations & reporting lines",
+      "icon": "M9 3h6v5H9z M3 16h6v5H3z M15 16h6v5h-6z M12 8v4 M6 16v-4h12v4",
+      "keywords": "department designation grade hierarchy reporting",
+      "roles": [
+        "owner",
+        "admin",
+        "auditor"
+      ],
+      "project_types": [
+        "payroll_pf"
+      ]
+    },
+    {
+      "key": "payroll_location",
+      "group": "people",
+      "label": "Live location",
+      "description": "Shift location of employees who agreed to share",
+      "icon": "M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z M12 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4",
+      "keywords": "map gps field site tracking",
+      "roles": [
+        "owner",
+        "admin"
+      ],
+      "project_types": [
+        "payroll_pf"
+      ]
+    },
+    {
       "key": "payroll_run",
       "group": "money",
       "label": "Payroll",

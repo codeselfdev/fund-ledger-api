@@ -8,16 +8,30 @@ export const attendanceSettingsSchema = z.object({
   latitude: z.number().finite().min(-90).max(90).nullable(), longitude: z.number().finite().min(-180).max(180).nullable(),
   radiusM: z.number().int().min(25).max(5000),
   holidays: z.array(z.object({ date: dateSchema, name: z.string().trim().min(1).max(120) }).strict()).max(100),
+  /** Weekly days off, 0 = Sunday … 6 = Saturday. Bangladesh default: Friday. */
+  weekendDays: z.array(z.number().int().min(0).max(6)).max(6).default([5]),
+  /** Paid leave days per calendar year. Unpaid leave has no allowance. */
+  leaveAllowance: z.object({ Annual: z.number().int().min(0).max(366), Sick: z.number().int().min(0).max(366), Casual: z.number().int().min(0).max(366) }).strict().default({ Annual: 20, Sick: 14, Casual: 10 }),
   revision: z.number().int().nonnegative()
 }).strict().refine(s => s.shiftStart < s.shiftEnd && s.lateAfter >= s.shiftStart && s.lateAfter < s.shiftEnd, 'Use a same-day shift with the late threshold between start and end')
 .refine(s => (s.latitude === null) === (s.longitude === null), 'Set both office coordinates')
 .refine(s => !s.gpsRequired || s.latitude !== null, 'Set the office location before requiring GPS')
-.refine(s => new Set(s.holidays.map(h => h.date)).size === s.holidays.length, 'Choose each holiday date once');
+.refine(s => new Set(s.holidays.map(h => h.date)).size === s.holidays.length, 'Choose each holiday date once')
+.refine(s => new Set(s.weekendDays).size === s.weekendDays.length, 'Choose each weekend day once');
 export type AttendanceSettings = z.infer<typeof attendanceSettingsSchema>;
 // GPS check-in remains unavailable until the owner configures an office.
-export const DEFAULT_ATTENDANCE: AttendanceSettings = { shiftStart: '09:00', shiftEnd: '18:00', lateAfter: '09:15', gpsRequired: true, officeName: 'Office', latitude: null, longitude: null, radiusM: 150, holidays: [], revision: 0 };
+export const DEFAULT_ATTENDANCE: AttendanceSettings = { shiftStart: '09:00', shiftEnd: '18:00', lateAfter: '09:15', gpsRequired: true, officeName: 'Office', latitude: null, longitude: null, radiusM: 150, holidays: [], weekendDays: [5], leaveAllowance: { Annual: 20, Sick: 14, Casual: 10 }, revision: 0 };
 export const attendanceStatusSchema = z.enum(['present', 'late', 'half_day', 'absent']);
-export const attendanceMarkSchema = z.object({ employee_id: id, date: dateSchema, status: attendanceStatusSchema, reason: z.string().trim().min(3).max(1000), revision: z.number().int().nonnegative().nullable(), request_key: requestKey }).strict();
+/** HR records a day; `outside` covers employees who worked away from the office (client visit, field work) and could not check in by GPS. */
+export const attendanceMarkSchema = z.object({ employee_id: id, date: dateSchema, status: attendanceStatusSchema, reason: z.string().trim().min(3).max(1000), revision: z.number().int().nonnegative().nullable(),
+  outside: z.boolean().optional(), place: z.string().trim().max(160).optional(), check_in: clock.optional(), check_out: clock.optional(), request_key: requestKey }).strict()
+  .refine(b => !b.outside || b.status !== 'absent', 'An absent day cannot be recorded as outside work')
+  .refine(b => !b.outside || !!b.place, 'Say where the employee worked')
+  .refine(b => !b.check_out || !!b.check_in, 'Add the check-in time before the check-out time')
+  .refine(b => !b.check_in || !b.check_out || b.check_in < b.check_out, 'Check-out must be after check-in')
+  .refine(b => b.status !== 'absent' || !b.check_in, 'An absent day has no check-in time');
+/** A Dhaka wall-clock time on a given date. */
+export const dhakaAt = (date: string, time: string) => new Date(`${date}T${time}:00+06:00`);
 export const attendancePunchSchema = z.object({ action: z.enum(['in', 'out']), location: z.object({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180), accuracy: z.number().finite().min(0).max(5000), captured_at: z.string().datetime(), mocked: z.boolean().optional() }).strict().optional(), request_key: requestKey }).strict();
 export function officeDistance(latitude: number, longitude: number, officeLat: number, officeLon: number) {
   const rad = (n: number) => n * Math.PI / 180;
@@ -25,11 +39,11 @@ export function officeDistance(latitude: number, longitude: number, officeLat: n
   return Math.round(6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a))));
 }
 export function dhakaClock(at = new Date()) { return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(at); }
-export function isDayOff(date: string, settings: Pick<AttendanceSettings, 'holidays'>) { return new Date(`${date}T00:00:00Z`).getUTCDay() === 5 || settings.holidays.some(h => h.date === date); }
+export function isDayOff(date: string, settings: Pick<AttendanceSettings, 'holidays'> & { weekendDays?: number[] }) { return (settings.weekendDays ?? [5]).includes(new Date(`${date}T00:00:00Z`).getUTCDay()) || settings.holidays.some(h => h.date === date); }
 /** Explicit records only. Leave wins, and a date is never charged twice. */
-export function unpaidAttendance(month: string, joined: string, leaves: { type: string; status: string; workingDates: string[] }[], records: { date: Date; status: string }[], holidays: { date: string }[] = []) {
+export function unpaidAttendance(month: string, joined: string, leaves: { type: string; status: string; workingDates: string[] }[], records: { date: Date; status: string }[], holidays: { date: string }[] = [], weekendDays: number[] = [5]) {
   const day = (d: Date) => d.toISOString().slice(0, 10);
-  const valid = (d: string) => d.startsWith(month + '-') && d >= joined && !isDayOff(d, { holidays: holidays.map(h => ({ ...h, name: '' })) });
+  const valid = (d: string) => d.startsWith(month + '-') && d >= joined && !isDayOff(d, { holidays: holidays.map(h => ({ ...h, name: '' })), weekendDays });
   const approved = leaves.filter(l => l.status === 'approved');
   const leaveDates = new Set(approved.flatMap(l => l.workingDates));
   const unpaid = new Set(approved.filter(l => l.type === 'Unpaid').flatMap(l => l.workingDates).filter(valid));

@@ -43,10 +43,10 @@ export interface PayrollRow {
   unpaidDays: number; attendanceUnpaidDays: number; leaveUnpaidDays: number; unpaidDeduction: number; pf: number; companyPF: number; tax: number; advance: number; bills: number; billIds: string[]; net: number;
 }
 export interface Posting { id: string; accountId: string; accountName: string; amount: number; paidAt: string; ledgerTransactionIds: string[]; expenseId: string }
-export function workingDates(start: string, count: number) {
+export function workingDates(start: string, count: number, weekendDays: number[] = [5]) {
   const date = atDate(start), dates: string[] = [];
   while (dates.length < count) {
-    if (date.getUTCDay() !== 5) dates.push(day(date));
+    if (!weekendDays.includes(date.getUTCDay())) dates.push(day(date));
     date.setUTCDate(date.getUTCDate() + 1);
   }
   return dates;
@@ -58,10 +58,10 @@ export function completedYears(start: string, end: string) {
 }
 export function vested(years: number, rule: PFSettings['vesting']) { return rule === 'immediate' ? 100 : rule === 'cliff' ? years >= 3 ? 100 : 0 : years >= 5 ? 100 : years >= 3 ? 50 : 0; }
 export function monthEnd(month: string) { const [year, m] = month.split('-').map(Number); return day(new Date(Date.UTC(year, m, 0))); }
-export function leaveLeft(leaves: Pick<PayrollLeave, 'type' | 'status' | 'days' | 'startDate'>[], year: string, pending = false) {
-  return Object.fromEntries(Object.entries(ALLOWANCE).map(([type, limit]) => [type, Math.max(0, limit - leaves.filter(l => l.type === type && (l.status === 'approved' || pending && l.status === 'pending') && day(l.startDate).startsWith(year)).reduce((sum, l) => sum + l.days, 0))])) as Record<keyof typeof ALLOWANCE, number>;
+export function leaveLeft(leaves: Pick<PayrollLeave, 'type' | 'status' | 'days' | 'startDate'>[], year: string, pending = false, allowance: Record<keyof typeof ALLOWANCE, number> = ALLOWANCE) {
+  return Object.fromEntries(Object.entries(allowance).map(([type, limit]) => [type, Math.max(0, limit - leaves.filter(l => l.type === type && (l.status === 'approved' || pending && l.status === 'pending') && day(l.startDate).startsWith(year)).reduce((sum, l) => sum + l.days, 0))])) as Record<keyof typeof ALLOWANCE, number>;
 }
-export function salaryRow(employee: PayrollEmployee, month: string, config: PFSettings, leaves: Pick<PayrollLeave, 'type' | 'status' | 'workingDates'>[], bills: { id: string; amount: number }[], attendance: { date: Date; status: string; checkIn?: Date | null; checkOut?: Date | null }[] = [], holidays: { date: string }[] = [], profile?: EmployeeProfile): PayrollRow {
+export function salaryRow(employee: PayrollEmployee, month: string, config: PFSettings, leaves: Pick<PayrollLeave, 'type' | 'status' | 'workingDates'>[], bills: { id: string; amount: number }[], attendance: { date: Date; status: string; checkIn?: Date | null; checkOut?: Date | null }[] = [], holidays: { date: string }[] = [], profile?: EmployeeProfile, weekendDays: number[] = [5]): PayrollRow {
   const pay = profile ? monthlyEmployment(day(employee.joiningDate), profile, month, attendance) : { basic: employee.basic, medical: employee.medical, transport: employee.transport, houseRent: Math.round(employee.basic * .5), pfMember: employee.pfMember, employmentType: 'permanent', payableHours: 0, hourlyRate: 0 };
   const houseRent = checkedMoney(pay.houseRent);
   const gross = checkedMoney(pay.basic + houseRent + pay.medical + pay.transport);
@@ -69,7 +69,7 @@ export function salaryRow(employee: PayrollEmployee, month: string, config: PFSe
   const eligible = pay.pfMember && (config.eligibility === 'joining' || config.eligibility === 'one_year' && completedYears(joined, end) >= 1 || config.eligibility === 'probation' && employee.probationCompletedOn !== null && day(employee.probationCompletedOn) <= end);
   const own = eligible ? checkedMoney(Math.round((config.basis === 'basic' ? pay.basic : gross) * config.rate / 100)) : 0;
   const companyPF = checkedMoney(Math.round(own * (config.match === 'equal' ? 1 : config.match === 'half' ? .5 : 0)));
-  const unpaid = unpaidAttendance(month, joined, leaves, attendance, holidays), unpaidDays = pay.employmentType === 'part_time' ? 0 : unpaid.total;
+  const unpaid = unpaidAttendance(month, joined, leaves, attendance, holidays, weekendDays), unpaidDays = pay.employmentType === 'part_time' ? 0 : unpaid.total;
   const unpaidDeduction = checkedMoney(Math.min(gross, Math.round(gross / 30 * unpaidDays)));
   const annual = gross * 12, taxable = annual - Math.min(annual / 3, 450000);
   const tax = checkedMoney(Math.max(0, Math.round((taxable - 350000) * .05 / 12 / 10) * 10));

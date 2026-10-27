@@ -32,3 +32,17 @@ test('employees cannot verify their own documents, acknowledge another employeeâ
 test('explicit task grants do not reveal HR profiles or live locations',async()=>{
  harness();const custom={...member,userId:'unlinked',roles:['auditor'],builtinRoles:[],menuPermissions:{payroll_tasks:{read:true,write:true}}};const data=await service.portalWorkspace(custom);assert.equal(data.tasks.length,2);assert.deepEqual(data.profiles,[]);assert.deepEqual(data.locations,[]);assert.deepEqual(data.documents,[]);assert.equal(data.canViewLocations,false);
 });
+
+test('the mounted payroll router serves the portal workspace and rejects unauthenticated or wrong-project requests',async()=>{
+ const h=harness();prisma.project.findFirst=h.tx.project.findFirst;
+ const {default:express}=await import('express');const {once}=await import('node:events');
+ const {payrollRouter}=await import('../dist/modules/payroll/payroll.routes.js');
+ const {errorHandler}=await import('../dist/core/http/error-handler.js');
+ const app=express();app.use(express.json());app.use((req,_res,next)=>{if(req.headers['x-test-user']==='member')req.auth=member;next();});app.use('/v1/payroll',payrollRouter);app.use(errorHandler);
+ const server=app.listen(0,'127.0.0.1');await once(server,'listening');const address=`http://127.0.0.1:${server.address().port}`;
+ try{
+  const missing=await fetch(`${address}/v1/payroll/portal/workspace`);assert.ok([401,403].includes(missing.status));
+  const response=await fetch(`${address}/v1/payroll/portal/workspace`,{headers:{'x-test-user':'member'}});assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');const body=await response.json();assert.equal(body.ok,true);assert.deepEqual(body.data.profiles.map(profile=>profile.employeeId),['me']);assert.deepEqual(body.data.tasks.map(task=>task.id),['mine']);
+  prisma.project.findFirst=async()=>({id:'project',projectType:'fund_shares'});const wrong=await fetch(`${address}/v1/payroll/portal/workspace`,{headers:{'x-test-user':'member'}});assert.equal(wrong.status,403);
+ }finally{await new Promise(resolve=>server.close(resolve));}
+});

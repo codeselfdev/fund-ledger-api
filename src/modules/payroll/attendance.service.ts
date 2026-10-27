@@ -7,7 +7,7 @@ import { financialTransaction } from '../accounting/transaction.js';
 import { json } from '../billing/billing.policy.js';
 import { day, atDate, today } from './payroll.policy.js';
 import { attendanceConfig, scope, access, allowed, ownEmployee, employee, project, mutate, revision, history, audit, rebuild, type Tx, type PayrollAuth } from './payroll.service.js';
-import { officeDistance, dhakaClock, isDayOff, type AttendanceSettings, type attendanceMarkSchema, type attendancePunchSchema } from './attendance.policy.js';
+import { officeDistance, dhakaClock, dhakaAt, isDayOff, type AttendanceSettings, type attendanceMarkSchema, type attendancePunchSchema } from './attendance.policy.js';
 export function mapAttendance(row: PayrollAttendance) { return { id: row.id, employeeId: row.employeeId, date: day(row.date), status: row.status, checkIn: row.checkIn?.toISOString() ?? null, checkOut: row.checkOut?.toISOString() ?? null, source: row.source, officeVerified: row.officeVerified, revision: row.revision, history: row.history }; }
 async function unpaidMonth(tx: Tx, a: PayrollAuth, date: string) {
   const paid = await tx.payrollRun.findFirst({ where: { ...scope(a), month: date.slice(0, 7), status: 'paid' } });
@@ -28,10 +28,16 @@ export async function markAttendance(a: PayrollAuth, b: z.infer<typeof attendanc
     const old = await tx.payrollAttendance.findFirst({ where: { ...scope(a), employeeId: person.id, date: atDate(b.date) } });
     if (old) { if (b.revision === null) throw conflict('Attendance was recorded. Refresh before correcting it.'); revision(old.revision, b.revision); }
     else if (b.revision !== null) throw conflict('Attendance changed. Refresh before correcting it.');
-    const value = { status: b.status, source: 'manual', history: json(await history(tx, a, `Marked ${b.status}`, old?.history, b.reason)) };
+    if (b.check_in && b.date === today() && dhakaAt(b.date, b.check_in) > new Date()) throw badRequest('Check-in time cannot be in the future');
+    if (b.check_out && dhakaAt(b.date, b.check_out) > new Date()) throw badRequest('Check-out time cannot be in the future');
+    const times = b.status === 'absent' ? { checkIn: null, checkOut: null } : b.check_in ? { checkIn: dhakaAt(b.date, b.check_in), checkOut: b.check_out ? dhakaAt(b.date, b.check_out) : null } : {};
+    const action = b.outside ? `Marked ${b.status} · worked outside at ${b.place}` : `Marked ${b.status}`;
+    const note = [b.reason, b.check_in ? `In ${b.check_in}${b.check_out ? ` · out ${b.check_out}` : ''}` : ''].filter(Boolean).join(' · ');
+    // Outside work is HR-recorded and never counts as an office-verified GPS check-in.
+    const value = { status: b.status, source: b.outside ? 'outside' : 'manual', officeVerified: false, ...times, history: json(await history(tx, a, action, old?.history, note)) };
     const row = old ? await tx.payrollAttendance.update({ where: { id: old.id }, data: { ...value, revision: { increment: 1 } } }) : await tx.payrollAttendance.create({ data: { ...scope(a), employeeId: person.id, date: atDate(b.date), ...value } });
     await rebuild(tx, a, 'Reprepared after attendance correction');
-    await audit(tx, a, 'attendance.corrected', 'payroll_attendance', row.id, { employeeId: person.id, date: b.date, before: old?.status ?? null, status: row.status, reason: b.reason });
+    await audit(tx, a, 'attendance.corrected', 'payroll_attendance', row.id, { employeeId: person.id, date: b.date, before: old?.status ?? null, status: row.status, reason: b.reason, outside: b.outside ?? false, place: b.place ?? null, check_in: b.check_in ?? null, check_out: b.check_out ?? null });
     return mapAttendance(row);
   });
 }
@@ -75,8 +81,8 @@ export async function saveAttendanceSettings(a: PayrollAuth, b: AttendanceSettin
     if (months.length && await tx.payrollRun.findFirst({ where: { ...scope(a), status: 'paid', month: { in: months } } })) throw conflict('A holiday change affects a paid salary month. Record a payroll adjustment before changing it.');
     const value = { ...b, revision: b.revision + 1 };
     await tx.payrollAttendanceConfiguration.upsert({ where: { projectId: a.projectId }, create: { ...scope(a), settings: json(value), revision: value.revision }, update: { settings: json(value), revision: value.revision } });
-    await rebuild(tx, a, 'Reprepared after attendance holidays changed');
-    await audit(tx, a, 'attendance.settings_saved', 'project', a.projectId, { shiftStart: b.shiftStart, shiftEnd: b.shiftEnd, lateAfter: b.lateAfter, gpsRequired: b.gpsRequired, officeName: b.officeName, radiusM: b.radiusM, holidays: b.holidays });
+    await rebuild(tx, a, 'Reprepared after attendance calendar changed');
+    await audit(tx, a, 'attendance.settings_saved', 'project', a.projectId, { shiftStart: b.shiftStart, shiftEnd: b.shiftEnd, lateAfter: b.lateAfter, gpsRequired: b.gpsRequired, officeName: b.officeName, radiusM: b.radiusM, holidays: b.holidays, weekendDays: b.weekendDays, leaveAllowance: b.leaveAllowance });
     return value;
   }, 30000);
 }

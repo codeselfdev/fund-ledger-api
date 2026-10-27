@@ -11,6 +11,9 @@ import { prisma } from '../../core/prisma/client.js';
 import { workspace, project } from './payroll.service.js';
 import { monthSchema, settingsSchema, importSchema, prepareSchema, runDecisionSchema, disburseSchema, leaveSchema, leaveDecisionSchema, billSchema, decisionSchema, employeeSchema } from './payroll.policy.js';
 import { saveSettings, importEmployees, prepare, transition, disburseRun, employeeStatus } from './payroll.actions.js';
+import { importOpening, importRun, importHistory } from './payroll.imports.js';
+import { openingSchema, runImportSchema, historyImportSchema } from './payroll.imports.policy.js';
+import { attendanceRequestSchema, attendanceRequestDecisionSchema, requestAttendance, decideAttendanceRequest } from './attendance.requests.js';
 import { submitLeave, decideLeave, submitBill, decideBill, disburseBill } from './payroll.requests.js';
 import { attendanceSettingsSchema, attendanceMarkSchema, attendancePunchSchema } from './attendance.policy.js';
 import { markAttendance, punchAttendance, saveAttendanceSettings } from './attendance.service.js';
@@ -27,6 +30,9 @@ router.get('/workspace', asyncHandler(async (req, res) => {
 }));
 router.put('/settings', validateBody(settingsSchema), asyncHandler(async (req, res) => ok(res, await saveSettings(requireProjectContext(req), settingsSchema.parse(req.body)))));
 router.post('/employees/import', validateBody(importSchema), asyncHandler(async (req, res) => created(res, await importEmployees(requireProjectContext(req), req.body as z.infer<typeof importSchema>))));
+router.post('/import/opening', validateBody(openingSchema), asyncHandler(async (req, res) => created(res, await importOpening(requireProjectContext(req), openingSchema.parse(req.body)))));
+router.post('/import/run', validateBody(runImportSchema), asyncHandler(async (req, res) => created(res, await importRun(requireProjectContext(req), runImportSchema.parse(req.body)))));
+router.post('/import/history', validateBody(historyImportSchema), asyncHandler(async (req, res) => created(res, await importHistory(requireProjectContext(req), historyImportSchema.parse(req.body)))));
 router.patch('/employees/:id/status', validateBody(employeeSchema), asyncHandler(async (req, res) => ok(res, await employeeStatus(requireProjectContext(req), req.params.id, employeeSchema.parse(req.body)))));
 router.post('/runs', validateBody(prepareSchema), asyncHandler(async (req, res) => created(res, await prepare(requireProjectContext(req), prepareSchema.parse(req.body)))));
 for (const action of ['check', 'approve'] as const) router.post(`/runs/:id/${action}`, validateBody(runDecisionSchema), asyncHandler(async (req, res) => ok(res, await transition(requireProjectContext(req), req.params.id, action, runDecisionSchema.parse(req.body)))));
@@ -38,5 +44,7 @@ for (const action of ['check', 'approve', 'reject'] as const) router.post(`/bill
 router.post('/bills/:id/disburse', validateBody(disburseSchema), asyncHandler(async (req, res) => ok(res, await disburseBill(requireProjectContext(req), req.params.id, disburseSchema.parse(req.body)))));
 router.put('/attendance/settings', validateBody(attendanceSettingsSchema), asyncHandler(async (req, res) => ok(res, await saveAttendanceSettings(requireProjectContext(req), attendanceSettingsSchema.parse(req.body)))));
 router.post('/attendance/mark', validateBody(attendanceMarkSchema), asyncHandler(async (req, res) => ok(res, await markAttendance(requireProjectContext(req), attendanceMarkSchema.parse(req.body)))));
+router.post('/attendance/requests', validateBody(attendanceRequestSchema), asyncHandler(async (req, res) => created(res, await requestAttendance(requireProjectContext(req), attendanceRequestSchema.parse(req.body)))));
+router.post('/attendance/requests/:id/decision', validateBody(attendanceRequestDecisionSchema), asyncHandler(async (req, res) => ok(res, await decideAttendanceRequest(requireProjectContext(req), req.params.id, attendanceRequestDecisionSchema.parse(req.body)))));
 router.post('/attendance/punch', validateBody(attendancePunchSchema), asyncHandler(async (req, res) => ok(res, await punchAttendance(requireProjectContext(req), attendancePunchSchema.parse(req.body)))));
 export { router as payrollRouter };

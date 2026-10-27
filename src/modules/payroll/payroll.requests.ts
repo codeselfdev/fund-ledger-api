@@ -2,21 +2,21 @@ import { z } from 'zod';
 import { badRequest, conflict, forbidden, notFound } from '../../core/http/api-error.js';
 import { json } from '../billing/billing.policy.js';
 import { leaveSchema, leaveDecisionSchema, billSchema, decisionSchema, disburseSchema, workingDates, leaveLeft, day, atDate, today, type ALLOWANCE } from './payroll.policy.js';
-import { access, allowed, mutate, employee, attachment, scope, audit, history, rebuild, config, revision, postPayment, type PayrollAuth, type Tx } from './payroll.service.js';
+import { attendanceConfig, access, allowed, mutate, employee, attachment, scope, audit, history, rebuild, config, revision, postPayment, type PayrollAuth, type Tx } from './payroll.service.js';
 
 async function leaveAvailability(tx: Tx, a: PayrollAuth, input: { employeeId: string; type: string; dates: string[]; days: number; excludeId?: string }) {
   const others = await tx.payrollLeave.findMany({ where: { ...scope(a), employeeId: input.employeeId, status: { in: ['pending', 'approved'] }, ...(input.excludeId ? { id: { not: input.excludeId } } : {}) } });
   const dates = new Set(input.dates);
   if (others.some(l => l.workingDates.some(d => dates.has(d)))) throw conflict('An approved or pending leave request overlaps these working days');
   if (input.type !== 'Unpaid') {
-    const left = leaveLeft(others, input.dates[0].slice(0, 4), true);
+    const left = leaveLeft(others, input.dates[0].slice(0, 4), true, (await attendanceConfig(tx, a)).leaveAllowance);
     if (input.days > left[input.type as keyof typeof ALLOWANCE]) throw conflict('There is not enough leave left, including pending requests');
   }
 }
 export async function submitLeave(a: PayrollAuth, b: z.infer<typeof leaveSchema>) {
   allowed(access(a).member, 'Employees need a member role to apply for their own leave');
   return mutate(a, 'leave.submit', b, async tx => {
-    const row = await employee(tx, a, b.employee_id, true), dates = workingDates(b.start_date, b.days);
+    const row = await employee(tx, a, b.employee_id, true), dates = workingDates(b.start_date, b.days, (await attendanceConfig(tx, a)).weekendDays);
     if (b.start_date < today() || dates[0] < day(row.joiningDate)) throw badRequest('Leave must start on or after today and the joining date');
     if (dates.some(d => d.slice(0, 4) !== b.start_date.slice(0, 4))) throw badRequest('Submit separate leave requests for each calendar year');
     if (b.type === 'Sick' && b.days > 2 && !b.note_file_id) throw badRequest('A doctor’s note is required for more than two sick days');

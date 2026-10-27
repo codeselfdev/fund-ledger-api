@@ -280,6 +280,7 @@ model Project {
   instituteGroupRecords InstituteGroup[]
   payrollAttendanceConfiguration PayrollAttendanceConfiguration?
   payrollAttendances PayrollAttendance[]
+  payrollAttendanceRequests PayrollAttendanceRequest[]
   payrollConfiguration PayrollConfiguration?
   payrollEmployees PayrollEmployee[]
   payrollRuns PayrollRun[]
@@ -2911,6 +2912,7 @@ model PayrollEmployee {
   updatedAt DateTime @updatedAt @map("updated_at")
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   attendance PayrollAttendance[]
+  attendanceRequests PayrollAttendanceRequest[]
   leaves PayrollLeave[]
   bills PayrollBill[]
   pfEntries PayrollPFEntry[]
@@ -3004,14 +3006,17 @@ model PayrollPFEntry {
   tenantId String @map("tenant_id")
   projectId String @map("project_id")
   employeeId String @map("employee_id")
-  runId String @map("run_id")
+  /// Null for opening balances imported when an organization moves its existing payroll in.
+  runId String? @map("run_id")
+  /// run (disbursed salary) | opening (imported starting balance) | history (imported paid month)
+  source String @default("run")
   own Int
   company Int
   profit Int @default(0)
   createdAt DateTime @default(now()) @map("created_at")
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   employee PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
-  run PayrollRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+  run PayrollRun? @relation(fields: [runId], references: [id], onDelete: Restrict)
   @@unique([runId, employeeId])
   @@index([tenantId, projectId, employeeId])
   @@map("payroll_pf_entries")
@@ -3064,6 +3069,32 @@ model PayrollAttendance {
   @@unique([projectId, employeeId, date])
   @@index([tenantId, projectId, date])
   @@map("payroll_attendances")
+}
+
+/// An employee's check-in/out sent for HR approval when their GPS did not match an office or assigned site.
+/// Only the distance to the nearest check-in area is kept, never coordinates.
+model PayrollAttendanceRequest {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  employeeId String @map("employee_id")
+  date DateTime @db.Date
+  action String
+  requestedAt DateTime @map("requested_at")
+  reason String
+  distanceM Int? @map("distance_m")
+  accuracyM Int? @map("accuracy_m")
+  status String @default("pending")
+  decisionNote String? @map("decision_note")
+  createdById String @map("created_by_id")
+  decidedById String? @map("decided_by_id")
+  decidedAt DateTime? @map("decided_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  employee PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  @@index([tenantId, projectId, status])
+  @@index([projectId, employeeId, date])
+  @@map("payroll_attendance_requests")
 }
 
 // Public guide selections only; never retain prompts or business snapshots.
