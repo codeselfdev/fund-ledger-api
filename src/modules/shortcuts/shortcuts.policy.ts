@@ -11,7 +11,7 @@ export function availableCatalog(projectType: string, roles: readonly string[]) 
         project_roles?: Record<string, string[]>;
     }) => t.project_types.includes(projectType) && (t.project_roles?.[projectType] ?? t.roles).some(role => roles.includes(role));
     const tools = catalog.tools.filter(allowed);
-    const order = projectType === 'payroll_pf' ? (roles.every(r => r === 'member') ? ['payroll_apply_leave', 'payroll_add_bill'] : ['payroll_add_bill', 'add_income', 'add_expense', 'add_notice']) : projectType === 'accounting' ? ['add_customer', 'add_sale', 'add_income', 'add_expense', 'add_notice'] : projectType === 'billing' ? ['add_customer', 'add_invoice', 'add_collection', 'add_expense', 'add_income', 'add_notice'] : ['add_member', 'add_income', 'add_expense', 'add_notice'];
+    const order = projectType === 'payroll_pf' ? (roles.every(r => r === 'member' || r === 'employee') ? ['payroll_apply_leave', 'payroll_add_bill'] : ['payroll_add_bill', 'add_income', 'add_expense', 'add_notice']) : projectType === 'accounting' ? ['add_customer', 'add_sale', 'add_income', 'add_expense', 'add_notice'] : projectType === 'billing' ? ['add_customer', 'add_invoice', 'add_collection', 'add_expense', 'add_income', 'add_notice'] : ['add_member', 'add_income', 'add_expense', 'add_notice'];
     const quick_add = order.flatMap(key => catalog.quick_add.filter(t => t.key === key && allowed(t))).slice(0, 4);
     return { tools, quick_add, groups: catalog.groups.filter(g => tools.some(t => t.group === g.key)) };
 }
@@ -32,7 +32,7 @@ export function defaultPins(projectType: string, roles: readonly string[], porta
     let keys: unknown = !manage && roles.includes('accountant') && Array.isArray(raw?.accountant_shortcuts) ? raw.accountant_shortcuts : defaults[projectType] ?? defaults.fund_shares;
     // Payroll has dedicated defaults; legacy fund portal settings do not apply.
     if (projectType === 'payroll_pf') keys = defaults.payroll_pf;
-    if (roles.every(r => r === 'member'))
+    if (roles.every(r => r === 'member' || r === 'employee'))
         keys = projectType === 'payroll_pf' ? ['payroll_attendance', 'payroll_run', 'payroll_leave', 'payroll_bills', 'payroll_pf'] : Array.isArray(raw?.member_shortcuts) ? raw.member_shortcuts : ['members', 'income', 'expenses', 'ledger'];
     const aliases: Record<string, string> = { fixed_assets: 'assets', commerce: projectType === 'accounting' ? 'inventory' : 'commerce' };
     return [...new Set((keys as unknown[]).filter((v): v is string => typeof v === 'string').map(k => aliases[k] ?? k))].filter(k => available.has(k)).slice(0, MAX_PINS);

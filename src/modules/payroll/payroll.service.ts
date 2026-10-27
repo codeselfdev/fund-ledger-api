@@ -16,7 +16,7 @@ export interface PayrollAuth { tenantId: string; projectId: string; userId: stri
 export const scope = (a: PayrollAuth) => ({ tenantId: a.tenantId, projectId: a.projectId });
 export function access(a: PayrollAuth) {
   const manage = a.roles.some(r => r === 'owner' || r === 'admin');
-  return { manage, check: a.roles.includes('accountant'), approve: manage || a.roles.includes('approver'), pay: manage || a.roles.some(r => r === 'accountant' || r === 'cashier'), staff: a.roles.some(r => ['owner', 'admin', 'accountant', 'approver', 'cashier', 'auditor'].includes(r)), member: a.roles.includes('member') };
+  return { manage, check: a.roles.includes('accountant'), approve: manage || a.roles.includes('approver'), pay: manage || a.roles.some(r => r === 'accountant' || r === 'cashier'), staff: a.roles.some(r => ['owner', 'admin', 'accountant', 'approver', 'cashier', 'auditor'].includes(r)), member: a.roles.includes('member') || a.roles.includes('employee') };
 }
 /** Custom-only personal routes must not inherit a synthetic auditor's team access. */
 export function workspaceAccess(a: PayrollAuth & { builtinRoles?: readonly string[]; menuPermissions?: Record<string, {read:boolean;write:boolean}> }) {

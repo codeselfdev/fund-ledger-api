@@ -1,6 +1,6 @@
 import type { Role } from "@prisma/client";
 
-const priority: Role[] = ["owner", "admin", "accountant", "approver", "auditor", "cashier", "teacher", "member"];
+const priority: Role[] = ["owner", "admin", "accountant", "approver", "auditor", "cashier", "teacher", "employee", "member"];
 
 export function effectiveProjectRoles(roles: Role[]): Role[] {
   const result = Array.from(new Set(roles));

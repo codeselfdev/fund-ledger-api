@@ -87,7 +87,9 @@ export async function createPortalEmployee(a:Auth,b:z.infer<typeof employeeCreat
   });
 }
 export async function updateProfile(a:Auth,id:string,b:z.infer<typeof profileSchema>) {
-  manage(a); return mutate(a,`portal.profile:${id}`,b,async tx=>{
+  manage(a); return mutate(a,`portal.profile:${id}`,b,tx=>persistEmployeeProfile(tx,a,id,b));
+}
+export async function persistEmployeeProfile(tx:Tx,a:Auth,id:string,b:z.infer<typeof profileSchema>) {
     const e=await employee(tx,a,id),old=await profile(tx,a,e);revision(e.revision,b.employeeRevision);revision(old.r?.revision??0,b.revision);await jobReferences(tx,a,b,id);
     // Department/designation changes go through promotion so effective pay history stays coherent.
     if(old.value.designationId&&b.designationId!==old.value.designationId||old.value.departmentId&&b.departmentId!==old.value.departmentId) throw badRequest('Use Promote for a designation change; existing department history is retained');
@@ -97,7 +99,6 @@ export async function updateProfile(a:Auth,id:string,b:z.infer<typeof profileSch
     const linkedDesignation=b.designationId?(await record<Designation>(tx,a,'designation',b.designationId))?.data:null;
     const value={...old.value,...fields,grade:old.value.designationId?old.value.grade:linkedDesignation?.grade??old.value.grade,history:await history(tx,a,'Profile updated',old.value.history)};
     await saveRecord(tx,a,'profile',id,value,id,old.r?.revision??null);await audit(tx,a,'profile.updated','payroll_employee',id,{fields:Object.keys(fields)});return {id};
-  });
 }
 export async function promoteEmployee(a:Auth,id:string,b:z.infer<typeof promotionSchema>) {
   manage(a);return mutate(a,`portal.promote:${id}`,b,async tx=>{

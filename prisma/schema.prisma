@@ -14,6 +14,7 @@ enum TenantPlan {
 }
 
 enum Role {
+  employee
   teacher
   owner
   admin

@@ -46,3 +46,19 @@ test('the mounted payroll router serves the portal workspace and rejects unauthe
   prisma.project.findFirst=async()=>({id:'project',projectType:'fund_shares'});const wrong=await fetch(`${address}/v1/payroll/portal/workspace`,{headers:{'x-test-user':'member'}});assert.equal(wrong.status,403);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
+
+test('employee role sees only their assigned projects and can check in and out with verified GPS',async()=>{
+ const h=harness(),employee={...member,roles:['employee'],builtinRoles:['employee']};
+ const portal=await service.portalWorkspace(employee);assert.deepEqual(portal.profiles.map(p=>p.employeeId),['me']);assert.deepEqual(portal.projects.map(p=>p.id),['office']);assert.deepEqual(portal.projects[0].team,[{employeeId:'me',percent:50}]);
+ const {punchAttendance}=await import('../dist/modules/payroll/attendance.service.js');const {DEFAULT_ATTENDANCE}=await import('../dist/modules/payroll/attendance.policy.js');
+ let punch=null;h.tx.payrollAttendanceConfiguration.findFirst=async()=>({revision:0,settings:{...DEFAULT_ATTENDANCE,latitude:23.8,longitude:90.4,weekendDays:[]}});
+ h.tx.payrollRun={findFirst:async()=>null,findMany:async()=>[]};h.tx.payrollLeave={findFirst:async()=>null};
+ h.tx.payrollAttendance.findFirst=async()=>punch;
+ h.tx.payrollAttendance.create=async({data})=>(punch={id:'punch',revision:0,checkOut:null,...data});
+ h.tx.payrollAttendance.update=async({data})=>(punch={...punch,...data,revision:punch.revision+1});
+ const location=()=>({latitude:23.8,longitude:90.4,accuracy:10,captured_at:new Date().toISOString()});
+ await assert.rejects(punchAttendance(employee,{action:'in',location:{...location(),latitude:24},request_key:'outside'}),e=>e.statusCode===409);
+ const saved=await punchAttendance(employee,{action:'in',location:location(),request_key:'check-in'});assert.equal(saved.employeeId,'me');assert.equal(saved.officeVerified,true);assert.ok(saved.checkIn);assert.equal(saved.checkOut,null);assert.ok(!JSON.stringify(saved).includes('latitude'));
+ const ended=await punchAttendance(employee,{action:'out',location:location(),request_key:'check-out'});assert.equal(ended.employeeId,'me');assert.ok(ended.checkOut);
+ await assert.rejects(punchAttendance(employee,{action:'out',location:location(),request_key:'duplicate'}),e=>e.statusCode===409);
+});

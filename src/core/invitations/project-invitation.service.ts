@@ -129,6 +129,9 @@ export async function sendProjectInvitationEmail(input: ProjectInvitationEmailIn
       : "You can request a fresh OTP code from the app when signing in with your phone."
     : "Sign in with the Google account associated with this invitation.";
 
+  const portalDescription = input.role === "employee"
+    ? "After signing in, open your project to check in and out, view your assigned work, payslips, leave, bills and provident fund."
+    : "After signing in, you can view the project, shares, dues, and payment activity.";
   const googleText = input.email
     ? `Google: continue with the Google account for ${input.email}.`
     : "Google: continue with the Gmail or Google account shared with the project admin.";
@@ -148,7 +151,7 @@ export async function sendProjectInvitationEmail(input: ProjectInvitationEmailIn
       ...(input.mobile ? [`Phone OTP: use ${input.mobile} and enter the OTP code sent during sign-in.`] : []),
       otpLine,
       "",
-      "After signing in, you can view the project, shares, dues, and payment activity."
+      portalDescription
     ].join("\n"),
     html: `
       <p>Hi ${safeName},</p>
@@ -161,7 +164,7 @@ export async function sendProjectInvitationEmail(input: ProjectInvitationEmailIn
         ${safeMobile ? `<li>Phone OTP: use <strong>${safeMobile}</strong> and enter the OTP code sent during sign-in.</li>` : ""}
       </ul>
       <p>${escapeHtml(otpLine)}</p>
-      <p>After signing in, you can view the project, shares, dues, and payment activity.</p>
+      <p>${escapeHtml(portalDescription)}</p>
     `
   });
 }
