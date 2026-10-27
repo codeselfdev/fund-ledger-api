@@ -14,6 +14,7 @@ type NotificationInput = {
   roles?: Role[];
   memberIds?: string[];
   userIds?: string[];
+  push?: { androidChannelId?: string; sound?: string; highPriority?: boolean };
 };
 
 export async function getRoleEmails(tenantId: string, projectId: string, roles: Role[]): Promise<string[]> {
@@ -88,6 +89,7 @@ export async function notifyProjectMembers(input: NotificationInput) {
       tokens: usersWithToken.map((user) => user.deviceId ?? "").filter((token) => token.length > 0),
       title: input.title,
       body: input.body,
+      ...input.push,
       data: {
         type: input.type,
         tenant_id: input.tenantId,

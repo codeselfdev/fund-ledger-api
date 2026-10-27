@@ -7,8 +7,9 @@ import { day, atDate, today, mobile, monthEnd } from './payroll.policy.js';
 import { officeDistance, dhakaClock, isDayOff } from './attendance.policy.js';
 import { access, allowed, scope, project, employee, ownEmployee, mutate, revision, audit, history, rebuild, attendanceConfig, type PayrollAuth, type Tx } from './payroll.service.js';
 import { records, record, saveRecord, mapped, type PortalRecord } from './portal.store.js';
-import { defaultTerms, effectiveEmployment, allocationIssue, type employeeCreateSchema, type profileSchema, type promotionSchema, type departmentSchema, type designationSchema, type officeProjectSchema, type taskCreateSchema, type taskStatusSchema, type splitSchema, type documentSchema, type documentActionSchema, type locationConsentSchema, type locationSchema } from './portal.policy.js';
-import type { EmployeeProfile, Department, Designation, OfficeProject, EmployeeTask, WorkSplit, EmployeeDocument, EmployeeLocation, EmployeePortalSnapshot } from './portal.types.js';
+import { defaultTerms, effectiveEmployment, allocationIssue, type employeeCreateSchema, type profileSchema, type promotionSchema, type departmentSchema, type designationSchema, type officeProjectSchema, type taskCreateSchema, type taskStatusSchema, type splitSchema, type documentSchema, type documentActionSchema, type locationConsentSchema, type locationSchema, type locationRequestSchema, type locationRequestAnswerSchema } from './portal.policy.js';
+import { notifyProjectMembers } from '../../core/notifications/notification.service.js';
+import type { EmployeeProfile, Department, Designation, OfficeProject, EmployeeTask, WorkSplit, EmployeeDocument, EmployeeLocation, EmployeePortalSnapshot, LocationRequest } from './portal.types.js';
 type Auth = PayrollAuth & { builtinRoles?: readonly string[]; menuPermissions?: Record<string,{read:boolean;write:boolean}> };
 export function portalGrant(a: Auth, key: string, write = false) {
   const builtin = a.builtinRoles ?? a.roles;
@@ -33,6 +34,64 @@ async function ensureOwn(tx:Tx,a:Auth,id:string,key:string,write=false) {
 async function noPaidChanges(tx:Tx,a:Auth,from:string) {
   if(await tx.payrollRun.findFirst({where:{...scope(a),status:'paid',month:{gte:from.slice(0,7)}}})) throw conflict('This change affects paid payroll. Use an explicit later adjustment.');
 }
+/* ── manager location requests ── shift-only: sent inside shift hours, accepted only while checked in, expire at shift end. */
+export const LOCATION_REQUEST_CHANNEL='location-requests-v1';
+const MAX_LOCATION_REQUESTS_PER_DAY=3;
+type ShiftSettings={shiftStart:string;shiftEnd:string;holidays:{date:string}[];weekendDays?:number[]};
+const dayStartMs=(date:string)=>Date.parse(`${date}T00:00:00+06:00`);
+const shiftEndIso=(date:string,s:ShiftSettings)=>new Date(`${date}T${s.shiftEnd}:00+06:00`).toISOString();
+const inShift=(date:string,s:ShiftSettings,clock=dhakaClock())=>clock>=s.shiftStart&&clock<s.shiftEnd&&!isDayOff(date,s as any);
+const effectiveStatus=(r:Pick<LocationRequest,'status'|'expiresAt'>,now=Date.now()):LocationRequest['status']=>r.status==='pending'&&Date.parse(r.expiresAt)<=now?'expired':r.status;
+async function todaysRequests(tx:Tx,a:Auth,date:string){
+  const from=dayStartMs(date);
+  return (await records<Omit<LocationRequest,'id'|'revision'>>(tx,a,'location_request')).filter(r=>Date.parse(r.data.expiresAt)>=from);
+}
+/** True when the employee accepted a manager's request that is still within today's shift. */
+async function acceptedRequestOpen(tx:Tx,a:Auth,employeeId:string,date:string){
+  return (await todaysRequests(tx,a,date)).some(r=>r.data.employeeId===employeeId&&r.data.status==='accepted'&&Date.parse(r.data.expiresAt)>Date.now());
+}
+export async function requestLocation(a:Auth,employeeId:string,b:z.infer<typeof locationRequestSchema>){
+  allowed(portalGrant(a,'payroll_location'));
+  let push:{userId:string;id:string;name:string}|null=null;
+  const result=await mutate(a,`portal.location_request:${employeeId}`,b,async tx=>{
+    const e=await employee(tx,a,employeeId);
+    if(e.status==='inactive')throw conflict('This employee is inactive');
+    if(!e.userId)throw conflict(`${e.name} hasn’t signed in to the app yet, so they can’t receive a request`);
+    const date=today(),settings=await attendanceConfig(tx,a);
+    if(!inShift(date,settings))throw conflict('Location requests can only be sent during shift hours');
+    const mine=(await todaysRequests(tx,a,date)).filter(r=>r.data.employeeId===employeeId);
+    if(mine.some(r=>effectiveStatus(r.data)==='pending'))throw conflict('A request is already waiting for this employee');
+    if(mine.length>=MAX_LOCATION_REQUESTS_PER_DAY)throw conflict(`You can ask ${e.name} at most ${MAX_LOCATION_REQUESTS_PER_DAY} times a day`);
+    const requester=await tx.user.findFirst({where:{id:a.userId,tenantId:a.tenantId},select:{name:true}});
+    const key=randomUUID(),value:Omit<LocationRequest,'id'|'revision'>={employeeId,requestedBy:a.userId,requestedByName:requester?.name??'Your manager',requestedAt:new Date().toISOString(),expiresAt:shiftEndIso(date,settings),status:'pending',respondedAt:null};
+    const saved=mapped(await saveRecord(tx,a,'location_request',key,value,employeeId));
+    await audit(tx,a,'location.requested','payroll_employee',employeeId,{request_id:key});
+    push={userId:e.userId,id:key,name:value.requestedByName}; // only a fresh request notifies; idempotent replays do not
+    const {requestedBy,...visible}=saved;return visible;
+  });
+  if(push){const p:{userId:string;id:string;name:string}=push;
+    await notifyProjectMembers({tenantId:a.tenantId,projectId:a.projectId,actorUserId:a.userId,userIds:[p.userId],type:'payroll.location_request',
+      title:'Share your location?',body:`${p.name} asked you to share your on-shift location.`,entityType:'location_request',entityId:p.id,
+      push:{androidChannelId:LOCATION_REQUEST_CHANNEL,sound:'location_request',highPriority:true}}).catch(error=>console.error('[payroll] location request push failed',error));
+  }
+  return result;
+}
+export async function answerLocationRequest(a:Auth,id:string,b:z.infer<typeof locationRequestAnswerSchema>){return mutate(a,`portal.location_request:${id}:answer`,b,async tx=>{
+  const old=(await record<Omit<LocationRequest,'id'|'revision'>>(tx,a,'location_request',id))!;
+  const own=await ownEmployee(tx,a);if(!own||own.id!==old.data.employeeId||own.status==='inactive')throw forbidden('This request is not addressed to you');
+  revision(old.revision,b.revision);
+  if(effectiveStatus(old.data)!=='pending')throw conflict('This request is no longer open');
+  const date=today(),now=new Date().toISOString();
+  if(b.accept){
+    const settings=await attendanceConfig(tx,a),punch=await tx.payrollAttendance.findFirst({where:{...scope(a),employeeId:own.id,date:atDate(date)}});
+    if(!punch?.checkIn||punch.checkOut||!inShift(date,settings))throw conflict('Check in during your shift to accept');
+    const loc=await record<EmployeeLocation>(tx,a,'location',own.id,false);
+    await saveRecord(tx,a,'location',own.id,{employeeId:own.id,consent:true,status:'off_shift',latitude:null,longitude:null,accuracy:null,capturedAt:null,place:'',events:[]},own.id,loc?.revision??null);
+  }
+  const saved=mapped(await saveRecord(tx,a,'location_request',id,{...old.data,status:b.accept?'accepted':'declined',respondedAt:now},own.id,old.revision));
+  await audit(tx,a,b.accept?'location.request_accepted':'location.request_declined','payroll_employee',own.id,{request_id:id});
+  const {requestedBy,...visible}=saved;return visible;
+});}
 export async function portalWorkspace(a:Auth):Promise<EmployeePortalSnapshot> {
   return financialTransaction(async tx=>{
     await project(tx,a); const role=access(a); allowed(role.staff||role.member||!!a.menuPermissions);
@@ -54,7 +113,8 @@ export async function portalWorkspace(a:Auth):Promise<EmployeePortalSnapshot> {
     });
     // Exact positions expire after one day even if no more pings arrive.
     await tx.$executeRaw`UPDATE payroll_portal_records SET data=data||'{"latitude":null,"longitude":null,"accuracy":null,"events":[]}'::jsonb WHERE tenant_id=${a.tenantId} AND project_id=${a.projectId} AND kind='location' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '1 day' AND data->>'latitude' IS NOT NULL`;
-    return {today:date,profiles,departments:hr||permitted('payroll_org')?get<Department>('department'):[],designations:hr||permitted('payroll_org')?get<Designation>('designation'):[],projects,tasks:get<EmployeeTask>('task').filter(t=>permitted('payroll_tasks')||t.employeeId===own?.id),splits:get<WorkSplit>('work_split').filter(s=>(permitted('payroll_tasks')||s.employeeId===own?.id)&&s.date.startsWith(date.slice(0,7))),documents:get<EmployeeDocument>('document').filter(d=>permitted('payroll_documents')||d.employeeId===own?.id),locations:locations as EmployeeLocation[],canManage:portalGrant(a,'payroll_employees',true),canViewLocations};
+    const locationRequests=(await todaysRequests(tx,a,date)).filter(r=>canViewLocations||r.data.employeeId===own?.id).map(r=>{const {requestedBy,...v}=mapped(r);return {...v,status:effectiveStatus(v)};});
+    return {today:date,profiles,departments:hr||permitted('payroll_org')?get<Department>('department'):[],designations:hr||permitted('payroll_org')?get<Designation>('designation'):[],projects,tasks:get<EmployeeTask>('task').filter(t=>permitted('payroll_tasks')||t.employeeId===own?.id),splits:get<WorkSplit>('work_split').filter(s=>(permitted('payroll_tasks')||s.employeeId===own?.id)&&s.date.startsWith(date.slice(0,7))),documents:get<EmployeeDocument>('document').filter(d=>permitted('payroll_documents')||d.employeeId===own?.id),locations:locations as EmployeeLocation[],locationRequests,canManage:portalGrant(a,'payroll_employees',true),canViewLocations};
   },30000);
 }
 export async function createPortalEmployee(a:Auth,b:z.infer<typeof employeeCreateSchema>) {
@@ -155,7 +215,7 @@ export async function locationConsent(a:Auth,b:z.infer<typeof locationConsentSch
 });}
 export async function pingLocation(a:Auth,b:z.infer<typeof locationSchema>){
   // Location fixes are transient updates, not durable idempotency receipts containing coordinates.
-  return financialTransaction(async tx=>{await project(tx,a);const own=await ownEmployee(tx,a);if(!own||own.status==='inactive')throw forbidden('Link an active employee profile first');const old=await record<EmployeeLocation>(tx,a,'location',own.id,false);if(!old?.data.consent)throw forbidden('Enable location sharing on your device first');const p=await profile(tx,a,own);if(!p.value.locationRequired)throw forbidden('Location sharing is not enabled for this employee');
+  return financialTransaction(async tx=>{await project(tx,a);const own=await ownEmployee(tx,a);if(!own||own.status==='inactive')throw forbidden('Link an active employee profile first');const old=await record<EmployeeLocation>(tx,a,'location',own.id,false);if(!old?.data.consent)throw forbidden('Enable location sharing on your device first');const p=await profile(tx,a,own);if(!p.value.locationRequired&&!(await acceptedRequestOpen(tx,a,own.id,today())))throw forbidden('Location sharing is not enabled for this employee');
     const date=today(),settings=await attendanceConfig(tx,a),clock=dhakaClock(),punch=await tx.payrollAttendance.findFirst({where:{...scope(a),employeeId:own.id,date:atDate(date)}});
     if(!punch?.checkIn||punch.checkOut||clock<settings.shiftStart||clock>=settings.shiftEnd||isDayOff(date,settings))throw conflict('Location sharing is allowed only during a checked-in shift');
     if(b.mocked||Math.abs(Date.now()-Date.parse(b.captured_at))>120000||b.accuracy>100)throw badRequest('A fresh, accurate location is required');

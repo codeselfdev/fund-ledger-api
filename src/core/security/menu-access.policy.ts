@@ -35,7 +35,8 @@ export function routeMenuKeys(path: string, method: string, query: Record<string
   }
   if (root === 'payroll') {
     if (action === 'portal') {
-      const portal: Record<string,string> = { employees:'payroll_employees', departments:'payroll_org', designations:'payroll_org', projects:'payroll_projects', tasks:'payroll_tasks', documents:'payroll_documents', location:'payroll_location', 'work-split':'payroll_tasks' };
+      const portal: Record<string,string> = { employees:'payroll_employees', departments:'payroll_org', designations:'payroll_org', projects:'payroll_projects', tasks:'payroll_tasks', documents:'payroll_documents', location:'payroll_location', 'location-requests':'payroll_location', 'work-split':'payroll_tasks' };
+      if (parts[3] === 'employees' && parts[5] === 'location-request') return ['payroll_location'];
       return parts[3] === 'workspace' ? ['payroll_employees','payroll_org','payroll_projects','payroll_tasks','payroll_documents','payroll_location'] : [portal[parts[3]] ?? '__denied__'];
     }
     const payroll: Record<string, string> = { settings: 'payroll_settings', employees: 'payroll_employees', import: 'payroll_employees', runs: 'payroll_run', leave: 'payroll_leave', bills: 'payroll_bills', attendance: 'payroll_attendance' };

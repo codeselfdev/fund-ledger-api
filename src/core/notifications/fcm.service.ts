@@ -7,6 +7,10 @@ type PushMessageInput = {
   body: string;
   imageUrl?: string;
   data?: Record<string, string>;
+  /** Android channel created by the app (carries sound + importance) and a bundled sound name. */
+  androidChannelId?: string;
+  sound?: string;
+  highPriority?: boolean;
 };
 
 type PushMessageResult = {
@@ -58,7 +62,21 @@ export async function sendPushMessage(input: PushMessageInput): Promise<PushMess
         body: input.body,
         ...(input.imageUrl ? { imageUrl: input.imageUrl } : {})
       },
-      ...(input.imageUrl ? { android: { notification: { imageUrl: input.imageUrl } }, apns: { payload: { aps: { mutableContent: true } }, fcmOptions: { imageUrl: input.imageUrl } } } : {}),
+      ...(input.imageUrl || input.androidChannelId || input.sound || input.highPriority ? {
+        android: {
+          ...(input.highPriority ? { priority: "high" as const } : {}),
+          notification: {
+            ...(input.imageUrl ? { imageUrl: input.imageUrl } : {}),
+            ...(input.androidChannelId ? { channelId: input.androidChannelId } : {}),
+            ...(input.sound ? { sound: input.sound } : {})
+          }
+        },
+        apns: {
+          payload: { aps: { ...(input.imageUrl ? { mutableContent: true } : {}), ...(input.sound ? { sound: `${input.sound}.wav` } : {}) } },
+          ...(input.highPriority ? { headers: { "apns-priority": "10" } } : {}),
+          ...(input.imageUrl ? { fcmOptions: { imageUrl: input.imageUrl } } : {})
+        }
+      } : {}),
       data: input.data
     });
 

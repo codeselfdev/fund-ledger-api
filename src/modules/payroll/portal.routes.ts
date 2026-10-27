@@ -21,5 +21,7 @@ router.put('/work-split',asyncHandler(async(req,res)=>ok(res,await s.confirmSpli
 router.post('/documents',asyncHandler(async(req,res)=>created(res,await s.requestDocument(requireProjectContext(req),p.documentSchema.parse(req.body)))));
 router.post('/documents/:id',asyncHandler(async(req,res)=>ok(res,await s.actDocument(requireProjectContext(req),req.params.id,p.documentActionSchema.parse(req.body)))));
 router.put('/location/consent',asyncHandler(async(req,res)=>ok(res,await s.locationConsent(requireProjectContext(req),p.locationConsentSchema.parse(req.body)))));
+router.post('/employees/:id/location-request',asyncHandler(async(req,res)=>created(res,await s.requestLocation(requireProjectContext(req),req.params.id,p.locationRequestSchema.parse(req.body)))));
+router.put('/location-requests/:id',asyncHandler(async(req,res)=>ok(res,await s.answerLocationRequest(requireProjectContext(req),req.params.id,p.locationRequestAnswerSchema.parse(req.body)))));
 router.post('/location',asyncHandler(async(req,res)=>ok(res,await s.pingLocation(requireProjectContext(req),p.locationSchema.parse(req.body)))));
 export {router as portalRouter};

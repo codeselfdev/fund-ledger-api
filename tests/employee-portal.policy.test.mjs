@@ -47,3 +47,12 @@ test('strict inputs reject forged employee/time fields, invalid dates and incomp
 });
 
 test('personal payroll reads never turn synthetic custom-role auditor access into team salary access',()=>{const a={roles:['auditor'],builtinRoles:[],menuPermissions:{payroll_tasks:{read:true,write:true}}};assert.equal(workspaceAccess(a).staff,false);assert.equal(workspaceAccess(a).member,true);assert.equal(workspaceAccess({...a,menuPermissions:{payroll_run:{read:true,write:false}}}).staff,true);});
+test('location requests: managers need the Live location grant; only the answer route is personal',()=>{
+ assert.deepEqual(routeMenuKeys('/v1/payroll/portal/employees/emp-1/location-request','POST'),['payroll_location']);
+ assert.deepEqual(routeMenuKeys('/v1/payroll/portal/location-requests/req-1','PUT'),['payroll_location']);
+ assert.equal(payrollPersonalRoute('/v1/payroll/portal/employees/emp-1/location-request','POST'),false);
+ assert.equal(payrollPersonalRoute('/v1/payroll/portal/location-requests/req-1','PUT'),true);
+ assert.equal(payrollPersonalRoute('/v1/payroll/portal/location-requests/req-1/extra','PUT'),false);
+ assert.equal(p.locationRequestAnswerSchema.safeParse({accept:true,revision:0,request_key:'7f6c2b0e-4c1a-4d7e-9a51-3f2e8d1b6a90'}).success,true);
+ assert.equal(p.locationRequestSchema.safeParse({request_key:'7f6c2b0e-4c1a-4d7e-9a51-3f2e8d1b6a90',employeeId:'x'}).success,false);
+});

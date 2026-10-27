@@ -23,6 +23,8 @@ export const splitSchema = z.object({ date: dateSchema, revision: z.number().int
 export const documentSchema = z.object({ employeeId: id, title: name, category: z.enum(['Identity', 'Employment', 'Education', 'Payroll', 'Policy', 'Tax']), request_key: requestKey }).strict();
 export const documentActionSchema = z.object({ action: z.enum(['upload', 'verify', 'acknowledge']), fileId: id.optional(), revision: z.number().int().nonnegative(), request_key: requestKey }).strict();
 export const locationConsentSchema = z.object({ consent: z.boolean(), request_key: requestKey }).strict();
+export const locationRequestSchema = z.object({ request_key: requestKey }).strict();
+export const locationRequestAnswerSchema = z.object({ accept: z.boolean(), revision: z.number().int().nonnegative(), request_key: requestKey }).strict();
 export const locationSchema = z.object({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180), accuracy: z.number().finite().min(0).max(100), captured_at: z.string().datetime(), mocked: z.boolean().optional(), request_key: requestKey }).strict();
 export function allocationIssue(candidate: OfficeProject, projects: OfficeProject[]) {
   if (candidate.status === 'completed') return null;
