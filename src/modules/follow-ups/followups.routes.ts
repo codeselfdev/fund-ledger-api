@@ -1,3 +1,4 @@
+import { memberCommitment, saveMemberCommitment, selfCommitmentSchema } from './member-commitment.js';
 import { Prisma, type PaymentCommitment } from "@prisma/client";
 import { Router } from "express";
 import { nanoid } from "nanoid";
@@ -25,6 +26,14 @@ const memberReadRoles = requireRoles("owner", "admin", "accountant", "auditor");
 const callLogRoles = requireRoles("owner", "admin", "accountant");
 const reminderRoles = requireRoles("owner", "admin", "accountant");
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+
+router.get('/me/payment-commitment', requireProject, requireRoles('member'), asyncHandler(async(req,res)=>{
+ const requested=z.object({member_id:z.string().min(1).max(100).optional()}).strict().parse(req.query);
+ return ok(res,await memberCommitment(requireProjectContext(req),requested.member_id));
+}));
+router.post('/me/payment-commitment', requireProject, requireRoles('member'), validateBody(selfCommitmentSchema), asyncHandler(async(req,res)=>{
+ return created(res,await saveMemberCommitment(requireProjectContext(req),selfCommitmentSchema.parse(req.body)));
+}));
 
 router.get("/follow-ups", requireProject, readRoles, validateQuery(followupsQuerySchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
@@ -175,10 +184,11 @@ router.post("/members/:id/reminders", requireProject, reminderRoles, validatePar
       actorUserId: auth.userId,
       memberIds: [memberId],
       type: "payment.reminder",
-      title: "Payment reminder",
-      body: `You have ৳${outstanding.toLocaleString("en-IN")} due for ${project.name}.${suffix}`,
+      title: `Payment due · ৳${outstanding.toLocaleString("en-IN")}`,
+      body: `You have ৳${outstanding.toLocaleString("en-IN")} due for ${project.name}.${suffix} Tap to pay or set your payment date and comment.`,
       entityType: "member",
-      entityId: memberId
+      entityId: memberId,
+      push: { androidChannelId: 'payment-reminders-v1', sound: 'payment_reminder', highPriority: true }
     });
     deliveredCount = delivered.count;
   } catch (error) {

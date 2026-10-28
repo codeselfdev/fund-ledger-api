@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test, mock } from 'node:test';
 import type { PrismaClient } from '@prisma/client';
 import { createCampaignService } from './campaign.service.js';
-const delegates = Object.fromEntries(['member', 'projectMembership', 'due', 'project', 'notificationCampaign', 'notificationDelivery'].map(name => [name, Object.fromEntries(['findMany', 'findFirst', 'findFirstOrThrow', 'create', 'groupBy', 'updateMany', 'update'].map(method => [method, async () => { throw Error(`Unexpected database call ${name}.${method}`); }]))]));
+const delegates = Object.fromEntries(['member', 'projectMembership', 'due', 'project', 'notificationCampaign', 'notificationDelivery', 'upload'].map(name => [name, Object.fromEntries(['findMany', 'findFirst', 'findFirstOrThrow', 'create', 'groupBy', 'updateMany', 'update'].map(method => [method, async () => { throw Error(`Unexpected database call ${name}.${method}`); }]))]));
 const prisma = { ...delegates, $transaction: async () => { throw Error('Unexpected transaction'); } } as unknown as PrismaClient;
 const { createCampaign, loadPeople, previewCampaign, processCampaignQueue, retryCampaign } = createCampaignService(prisma);
 import { draftSchema } from './campaign.policy.js';
@@ -126,7 +126,7 @@ test('email uses the current recipient address and a project-scoped app link; di
   mock.method(prisma.notificationDelivery, 'update', async (args: any) => { assert.equal(args.data.status, 'failed'); failed = true; return {}; });
   const service = createCampaignService(prisma, {
    sendPush: async () => assert.fail('Push was not selected'),
-   sendEmail: async input => { assert.equal(input.to, 'current@example.test'); assert.match(input.text, /fundledger:\/\/notification\?project_id=project-a&tenant_id=tenant-a&destination=pay/); return false; },
+   sendEmail: async input => { assert.equal(input.to, 'current@example.test'); assert.match(input.text, /fundnesta:\/\/notification\?project_id=project-a&tenant_id=tenant-a&destination=pay/); return false; },
   });
   const original = console.error; console.error = () => {};
   try { await service.processCampaignQueue(); } finally { console.error = original; }
@@ -139,5 +139,60 @@ test('a delivery already claimed by another worker is not sent twice', async () 
   mock.method(prisma.notificationDelivery, 'updateMany', async () => ({ count: 0 }));
   const service = createCampaignService(prisma, { sendPush: async () => assert.fail('Already claimed'), sendEmail: async () => assert.fail('Already claimed') });
   await service.processCampaignQueue();
+ } finally { mock.restoreAll(); }
+});
+
+
+test('notification images are validated within the current project and are included in the reviewed draft', async () => {
+ try {
+  audienceFixture();
+  mock.method(prisma.upload, 'findFirst', async (args: any) => {
+   assert.deepEqual(args.where, { id: 'photo', tenantId: scope.tenantId, projectId: scope.projectId, purpose: 'notification_image', deletedAt: null });
+   return { id: 'photo', mimeType: 'image/jpeg', size: 500 };
+  });
+  const preview = await previewCampaign(scope, { ...draft, image_file_id: 'photo' });
+  assert.equal(preview.image_file_id, 'photo');
+  mock.method(prisma.notificationCampaign, 'findFirst', async () => null);
+  await assert.rejects(createCampaign(scope, draft, 'changed-image', preview.preview_token), /Review again/);
+  for (const image of [null, {mimeType:'application/pdf',size:100}, {mimeType:'image/jpeg',size:2_000_000}]) {
+   mock.method(prisma.upload, 'findFirst', async () => image);
+   await assert.rejects(previewCampaign(scope, { ...draft, image_file_id: 'photo' }), /notification image/);
+  }
+ } finally { mock.restoreAll(); }
+});
+
+test('only scoped campaign recipients and admins can read an image; deleted uploads fail closed', async () => {
+ try {
+  const bytes = Buffer.from('image'); let reads = 0, recipient: object | null = null;
+  const service = createCampaignService(prisma, undefined, { readObject: async key => { assert.equal(key, 'private/photo'); reads++; return {buffer:bytes}; } });
+  mock.method(prisma.notificationCampaign, 'findFirst', async (args: any) => { assert.deepEqual(args.where, {id:campaign.id,tenantId:scope.tenantId,projectId:scope.projectId}); return {...campaign,imageFileId:'photo'}; });
+  mock.method(prisma.notificationDelivery, 'findFirst', async (args: any) => { assert.deepEqual(args.where,{campaignId:campaign.id,userId:scope.userId}); return recipient; });
+  mock.method(prisma.upload, 'findFirst', async () => ({mimeType:'image/jpeg',size:500,fileName:'photo.jpg',storageKey:'private/photo'}));
+  await assert.rejects(service.campaignImage({...scope,roles:['member']},campaign.id), /not found/); assert.equal(reads,0);
+  recipient={id:'delivery'};
+  assert.equal((await service.campaignImage({...scope,roles:['member']},campaign.id)).buffer,bytes);
+  recipient=null;
+  assert.equal((await service.campaignImage({...scope,roles:['admin']},campaign.id)).buffer,bytes);
+  mock.method(prisma.upload, 'findFirst', async () => null);
+  await assert.rejects(service.campaignImage({...scope,roles:['admin']},campaign.id), /notification image/);
+ } finally { mock.restoreAll(); }
+});
+
+test('email delivery attaches private image bytes and push taps carry only the scoped app image path', async () => {
+ try {
+  const base={...campaign,tenantId:scope.tenantId,createdById:scope.userId,destination:'dues',imageFileId:'photo'};
+  mock.method(prisma.notificationDelivery, 'findMany', async () => ['push','email'].map(channel=>({id:channel,userId:'u1',memberId:'m1',channel,title:'Hello',body:'Message',campaign:base})));
+  mock.method(prisma.notificationDelivery, 'updateMany', async () => ({count:1}));
+  mock.method(prisma.notificationDelivery, 'update', async (args: any) => { assert.equal(args.data.status,'sent'); return {}; });
+  mock.method(prisma.project, 'findFirst', async () => ({id:scope.projectId,name:'Project A'}));
+  mock.method(prisma.projectMembership, 'findFirst', async () => ({user}));
+  mock.method(prisma.member, 'findFirst', async () => ({id:'m1'}));
+  mock.method(prisma.upload, 'findFirst', async () => ({mimeType:'image/jpeg',size:500,fileName:'photo.jpg',storageKey:'private/photo'}));
+  let pushes=0,emails=0; const bytes=Buffer.from('private image');
+  const service=createCampaignService(prisma,{
+   sendPush:async input=>{assert.equal(input.data!.image_url,`/v1/notifications/campaigns/${campaign.id}/image`);assert.equal(input.imageUrl,undefined);pushes++;return{sent_count:1,failed_count:0,invalid_tokens:[],skipped:false};},
+   sendEmail:async input=>{assert.deepEqual(input.attachments,[{filename:'photo.jpg',content:bytes,contentType:'image/jpeg'}]);emails++;return true;},
+  },{readObject:async()=>({buffer:bytes})});
+  await service.processCampaignQueue();assert.equal(pushes,1);assert.equal(emails,1);
  } finally { mock.restoreAll(); }
 });

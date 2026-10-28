@@ -1,3 +1,4 @@
+import { projectApprovalFlowRouter } from './project-approval-flow.routes.js';
 import { settingsSchema as instituteSettingsSchema, settings as instituteSettings } from '../institute/institute.policy.js';
 import { assertProjectCapacity } from "../../core/subscription/quota.service.js";
 import { constructionMenus } from "../construction/construction.menu.js";
@@ -37,6 +38,7 @@ import { projectTypeSchema, portalSettingsSchema, normalizePortalSettings } from
 const projectsRouter = Router();
 const invitationsRouter = Router();
 projectsRouter.use(authenticateAccount);
+projectsRouter.use("/:id/approval-flow", requireActiveSubscription, validateParams(idParamSchema), projectApprovalFlowRouter);
 
 const createProjectSchema = z.object({
   project_type: projectTypeSchema.default("fund_shares"),

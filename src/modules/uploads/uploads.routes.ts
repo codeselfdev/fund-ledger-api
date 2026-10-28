@@ -58,11 +58,11 @@ router.post("/", requireProject, requireRoles("any"), upload.single("file"), asy
     if (!req.file.mimetype.startsWith("image/") && req.file.mimetype !== "application/pdf") throw badRequest("Attach an image or PDF");
   }
 
-  if (purpose === "notice_image" && !auth.roles.some(role => role === "owner" || role === "admin")) throw forbidden("Only admins can upload notice images");
-  if (purpose === "notice_image") {
+  if ((purpose === "notice_image" || purpose === "notification_image") && !auth.roles.some(role => role === "owner" || role === "admin")) throw forbidden("Only admins can upload notice or notification images");
+  if (purpose === "notice_image" || purpose === "notification_image") {
     const jpeg = req.file.buffer[0] === 0xff && req.file.buffer[1] === 0xd8 && req.file.buffer[2] === 0xff;
     const png = req.file.buffer.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
-    if (!jpeg && !png) throw badRequest("Notice image must be a JPG or PNG");
+    if (!jpeg && !png) throw badRequest("Notice or notification image must be a JPG or PNG");
     req.file.mimetype = jpeg ? "image/jpeg" : "image/png";
     assertImageUploadSize(req.file);
   }
@@ -143,6 +143,7 @@ router.get("/:id/view", requireProject, requireRoles("any"), validateParams(idPa
 
   if (record.purpose === "fixed_asset_invoice" && !auth.roles.some(role => ["owner", "admin", "accountant", "auditor"].includes(role))) throw forbidden("Asset invoice access requires a finance role");
 
+  if (record.purpose === 'notification_image' && !auth.roles.some(role => ['owner', 'admin'].includes(role))) throw forbidden('Open notification images through the recipient-scoped viewer');
   if (record.purpose === "notice_image" && !auth.roles.some(role => role === "owner" || role === "admin")) {
     const notice = await prisma.projectNotice.findFirst({ where: { tenantId: auth.tenantId, projectId: auth.projectId, imageFileId: record.id, deletedAt: null, expiresAt: { gt: new Date() } } });
     if (!notice) throw forbidden("Notice image is no longer available");

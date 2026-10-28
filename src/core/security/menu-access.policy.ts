@@ -54,6 +54,7 @@ export function routeMenuKeys(path: string, method: string, query: Record<string
 }
 export function personalAccessPath(path: string, method: string) {
   if (payrollPersonalRoute(path, method)) return true;
+  if (method === 'GET' && /^\/v1\/notifications\/campaigns\/[\w-]{1,100}\/image$/.test(path)) return true;
   if (path === '/v1/app-guide/status' && method === 'GET' || path === '/v1/app-guide/ask' && method === 'POST') return true;
   return /^\/v1\/auth\/(?:me|logout|switch-project)$/.test(path)
     || /^\/v1\/shortcuts(?:\/(?:preferences|reset))?$/.test(path)

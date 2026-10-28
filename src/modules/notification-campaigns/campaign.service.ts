@@ -1,11 +1,31 @@
+import { readObject, StorageObjectNotFoundError } from '../../core/storage/object-storage.service.js';
 import { prisma } from '../../core/prisma/client.js';
 import { badRequest, conflict, notFound } from '../../core/http/api-error.js';
 import { sendPushMessage } from '../../core/notifications/fcm.service.js';
 import { sendMail } from '../../core/mail/mailer.service.js';
 import { audienceLabels, fillMessage, reachFor, reviewToken, selectAudience, type Draft, type Recipient } from './campaign.policy.js';
 
-export function createCampaignService(db: typeof prisma = prisma, transports = { sendPush: sendPushMessage, sendEmail: sendMail }) {
+export function createCampaignService(db: typeof prisma = prisma, transports = { sendPush: sendPushMessage, sendEmail: sendMail }, storage = { readObject }) {
 type Scope = { tenantId: string; projectId: string; userId: string };
+async function checkImage(scope: Scope, id: string) {
+  const image = await db.upload.findFirst({ where: { id, tenantId: scope.tenantId, projectId: scope.projectId, purpose: 'notification_image', deletedAt: null } });
+  if (!image || !['image/jpeg', 'image/png'].includes(image.mimeType) || image.size <= 0 || image.size >= 2_000_000) throw badRequest('Choose an uploaded notification image smaller than 2 MB');
+  return image;
+}
+async function imageContent(scope: Scope, id: string) {
+  const image = await checkImage(scope, id);
+  try { return { ...(await storage.readObject(image.storageKey)), mimeType: image.mimeType, fileName: image.fileName }; }
+  catch (error) { if (error instanceof StorageObjectNotFoundError) throw notFound('Notification image not found'); throw error; }
+}
+async function campaignImage(scope: Scope & { roles: string[] }, id: string) {
+  const campaign = await db.notificationCampaign.findFirst({ where: { id, tenantId: scope.tenantId, projectId: scope.projectId } });
+  if (!campaign?.imageFileId) throw notFound('Notification image not found');
+  if (!scope.roles.some(role => ['owner', 'admin'].includes(role))) {
+    const recipient = await db.notificationDelivery.findFirst({ where: { campaignId: id, userId: scope.userId } });
+    if (!recipient) throw notFound('Notification image not found');
+  }
+  return imageContent(scope, campaign.imageFileId);
+}
 const staffRoles = ['owner', 'admin', 'accountant', 'approver', 'auditor', 'cashier'];
 async function loadPeople(scope: Scope): Promise<Recipient[]> {
   const [members, memberships, dues] = await Promise.all([
@@ -39,13 +59,14 @@ async function loadPeople(scope: Scope): Promise<Recipient[]> {
   return people;
 }
 async function previewCampaign(scope: Scope, draft: Draft) {
+  if (draft.image_file_id) await checkImage(scope, draft.image_file_id);
   const people = await loadPeople(scope);
   const recipients = selectAudience(people, draft);
   if (draft.audience === 'pick' && new Set(draft.recipient_ids).size !== recipients.length) throw badRequest('Some selected members are no longer available in this project. Review the audience again.');
   if (!recipients.length) throw badRequest('This audience has no recipients');
   const project = await db.project.findFirstOrThrow({ where: { id: scope.projectId, tenantId: scope.tenantId } });
   const sample = recipients[0]!;
-  return { project_id: scope.projectId, project_name: project.name, audience_label: audienceLabels[draft.audience], reach: reachFor(recipients, draft.push, draft.email),
+  return { image_file_id: draft.image_file_id ?? null, project_id: scope.projectId, project_name: project.name, audience_label: audienceLabels[draft.audience], reach: reachFor(recipients, draft.push, draft.email),
     preview_token: reviewToken(scope.projectId, draft, recipients), sample: { title: fillMessage(draft.title, sample, project.name), body: fillMessage(draft.body, sample, project.name) }, recipients };
 }
 async function createCampaign(scope: Scope, draft: Draft, requestId: string, token: string) {
@@ -62,7 +83,7 @@ async function createCampaign(scope: Scope, draft: Draft, requestId: string, tok
   });
   try {
     const campaign = await db.notificationCampaign.create({ data: { tenantId: scope.tenantId, projectId: scope.projectId, createdById: scope.userId, requestId,
-      title: draft.title, body: draft.body, audience: draft.audience, destination: draft.destination, push: draft.push, email: draft.email, recipientCount: preview.reach.total,
+      imageFileId: draft.image_file_id ?? null, title: draft.title, body: draft.body, audience: draft.audience, destination: draft.destination, push: draft.push, email: draft.email, recipientCount: preview.reach.total,
       deliveries: { create: data } } });
     return campaignSummary(scope, campaign.id);
   } catch (error) {
@@ -81,7 +102,7 @@ async function campaignSummary(scope: Scope, id: string) {
     const accepted = count('sent'), failed = count('failed'), pending = count('pending') + count('sending'), skipped = count('skipped');
     return { channel, total: accepted + failed + pending, sent: accepted, failed, pending, skipped };
   });
-  return { id, project_id: campaign.projectId, title: campaign.title, body: campaign.body, audience: campaign.audience, audience_label: audienceLabels[campaign.audience as Draft['audience']],
+  return { id, image_file_id: campaign.imageFileId ?? null, project_id: campaign.projectId, title: campaign.title, body: campaign.body, audience: campaign.audience, audience_label: audienceLabels[campaign.audience as Draft['audience']],
     recipient_count: campaign.recipientCount, destination: campaign.destination, created_at: campaign.createdAt, created_by: campaign.createdBy?.name ?? 'Former admin', channels };
 }
 async function retryCampaign(scope: Scope, id: string) {
@@ -113,7 +134,7 @@ async function processCampaignQueue() {
         if (row.channel === 'inbox') {
           await db.$transaction(async tx => {
             await tx.notification.upsert({ where: { id: row.id }, create: { id: row.id, tenantId: c.tenantId, projectId: c.projectId, recipientUserId: row.userId!, actorUserId: c.createdById,
-              type: 'announcement.manual', title: row.title, body: row.body, entityType: 'announcement', entityId: c.id, destination: c.destination }, update: {} });
+              type: 'announcement.manual', title: row.title, body: row.body, entityType: 'announcement', entityId: c.id, destination: c.destination, imageUrl: c.imageFileId ? `/v1/notifications/campaigns/${c.id}/image` : null }, update: {} });
             await tx.notificationDelivery.update({ where: { id: row.id }, data: { status: 'sent', sentAt: new Date(), lockedAt: null, error: null } });
           });
           continue;
@@ -121,7 +142,7 @@ async function processCampaignQueue() {
         if (row.channel === 'push') {
           if (!user?.user.deviceId) throw new Error('No registered push device');
           const token = user.user.deviceId;
-          const push = await transports.sendPush({ tokens: [token], title: row.title, body: row.body, data: { type: 'announcement.manual', tenant_id: c.tenantId, project_id: c.projectId, entity_type: 'announcement', entity_id: c.id, destination: c.destination } });
+          const push = await transports.sendPush({ tokens: [token], title: row.title, body: row.body, data: { type: 'announcement.manual', tenant_id: c.tenantId, project_id: c.projectId, entity_type: 'announcement', entity_id: c.id, destination: c.destination, ...(c.imageFileId ? { image_url: `/v1/notifications/campaigns/${c.id}/image` } : {}) } });
           if (push.invalid_tokens.length) await db.user.updateMany({ where: { id: row.userId!, tenantId: c.tenantId, deviceId: token }, data: { deviceId: null } });
           if (push.sent_count !== 1) throw new Error(push.reason ?? 'Push provider rejected the notification');
         } else {
@@ -129,7 +150,8 @@ async function processCampaignQueue() {
           const email = member?.email || user?.user.email;
           if (!email) throw new Error('No email address');
           const link = c.destination === 'none' ? '' : `\n\nOpen in FundLedger: fundnesta://notification?project_id=${encodeURIComponent(c.projectId)}&tenant_id=${encodeURIComponent(c.tenantId)}&destination=${c.destination}`;
-          const accepted = await transports.sendEmail({ to: email, fromName: `${project.name} via FundLedger`, subject: row.title.replace(/[\r\n]/g, ' '), text: row.body + link });
+          const image = c.imageFileId ? await imageContent({ tenantId: c.tenantId, projectId: c.projectId, userId: c.createdById ?? '' }, c.imageFileId) : null;
+          const accepted = await transports.sendEmail({ ...(image ? { attachments: [{ filename: image.fileName, content: image.buffer, contentType: image.mimeType }] } : {}), to: email, fromName: `${project.name} via FundLedger`, subject: row.title.replace(/[\r\n]/g, ' '), text: row.body + link });
           if (!accepted) throw new Error('Email delivery is not configured');
         }
         await db.notificationDelivery.update({ where: { id: row.id }, data: { status: 'sent', sentAt: new Date(), lockedAt: null, error: null } });
@@ -147,6 +169,6 @@ function startCampaignWorker() {
 }
 function stopCampaignWorker() { if (timer) clearInterval(timer); timer = null; }
 
-return { loadPeople, previewCampaign, createCampaign, campaignSummary, retryCampaign, processCampaignQueue, startCampaignWorker, stopCampaignWorker };
+return { loadPeople, previewCampaign, createCampaign, campaignSummary, campaignImage, retryCampaign, processCampaignQueue, startCampaignWorker, stopCampaignWorker };
 }
-export const { loadPeople, previewCampaign, createCampaign, campaignSummary, retryCampaign, processCampaignQueue, startCampaignWorker, stopCampaignWorker } = createCampaignService();
+export const { loadPeople, previewCampaign, createCampaign, campaignSummary, campaignImage, retryCampaign, processCampaignQueue, startCampaignWorker, stopCampaignWorker } = createCampaignService();

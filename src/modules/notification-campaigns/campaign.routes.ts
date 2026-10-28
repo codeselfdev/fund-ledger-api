@@ -8,9 +8,15 @@ import { validateBody, validateParams } from '../../core/validation/validate.js'
 import { idParamSchema } from '../../core/validation/common.schemas.js';
 import { prisma } from '../../core/prisma/client.js';
 import { draftSchema, selectAudience } from './campaign.policy.js';
-import { campaignSummary, createCampaign, loadPeople, previewCampaign, retryCampaign } from './campaign.service.js';
+import { campaignImage, campaignSummary, createCampaign, loadPeople, previewCampaign, retryCampaign } from './campaign.service.js';
 const router = Router();
-router.use(requireProject, requireRoles('owner', 'admin'));
+router.use(requireProject);
+router.get('/:id/image', requireRoles('any'), validateParams(idParamSchema), asyncHandler(async (req, res) => {
+  const image = await campaignImage(requireProjectContext(req), String(req.params.id));
+  res.setHeader('Content-Type', image.mimeType); res.setHeader('Cache-Control', 'private, no-store'); res.setHeader('X-Content-Type-Options', 'nosniff');
+  return res.send(image.buffer);
+}));
+router.use(requireRoles('owner', 'admin'));
 router.get('/audiences', asyncHandler(async (req, res) => {
   const scope = requireProjectContext(req), people = await loadPeople(scope);
   return ok(res, { project_id: scope.projectId, people: people.map(p => ({ id: p.id, name: p.name, inbox: !!p.userId, push: p.push, email: !!p.email, due: p.due, staff: p.staff, member: !!p.memberId })),

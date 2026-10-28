@@ -33,3 +33,10 @@ test('server enforces the UI length limits and trims whitespace', () => {
  for (const update of [{ title: '   ' }, { body: '  ' }, { title: 'x'.repeat(66) }, { body: 'x'.repeat(501) }, { destination: 'external-url' }]) assert.equal(draftSchema.safeParse({ ...draft, ...update }).success, false);
  assert.equal(draftSchema.parse({ ...draft, title: '  Hello  ' }).title, 'Hello');
 });
+
+
+test('adding, replacing or removing a campaign photo invalidates the reviewed token', () => {
+ const plain=reviewToken('p',draft,people),photo=reviewToken('p',{...draft,image_file_id:'photo'},people);
+ assert.notEqual(plain,photo);assert.notEqual(photo,reviewToken('p',{...draft,image_file_id:'replacement'},people));
+ assert.equal(draftSchema.safeParse({...draft,image_file_id:''}).success,false);
+});

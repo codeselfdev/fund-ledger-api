@@ -6,6 +6,7 @@ export const draftSchema = z.object({
   recipient_ids: z.array(z.string().min(1)).max(5000).default([]),
   push: z.boolean().default(true), email: z.boolean().default(false),
   title: z.string().trim().min(3).max(65), body: z.string().trim().min(3).max(500),
+  image_file_id: z.string().min(1).max(100).optional(),
   destination: z.enum(['none', 'dues', 'schedules', 'notices', 'pay']).default('none'),
 }).superRefine((draft, ctx) => {
   if (draft.audience === 'pick' && !draft.recipient_ids.length) ctx.addIssue({ code: 'custom', path: ['recipient_ids'], message: 'Choose at least one member' });
