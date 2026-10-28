@@ -1,4 +1,5 @@
 import { projectApprovalFlowRouter } from './project-approval-flow.routes.js';
+import { seedMemberDocumentTitles, withDefaultMemberDocumentTitles } from "../../core/projects/member-document-titles.js";
 import { settingsSchema as instituteSettingsSchema, settings as instituteSettings } from '../institute/institute.policy.js';
 import { assertProjectCapacity } from "../../core/subscription/quota.service.js";
 import { constructionMenus } from "../construction/construction.menu.js";
@@ -128,7 +129,7 @@ projectsRouter.post("/owned-organization", requireRoles("any"), validateBody(req
   const result = await prisma.$transaction(async (tx) => {
     const tenant = await tx.tenant.create({ data: {
       name: body.organization_name, slug: `org-${randomUUID()}`, currency: "BDT", plan: "free",
-      contact: { subscription: createOneMonthTrial() }
+      contact: withDefaultMemberDocumentTitles({ subscription: createOneMonthTrial() }, body.project_type)
     } });
     const owner = await tx.user.create({ data: { tenantId: tenant.id, name: actor.name,
       mobile: actor.mobile, email: actor.email, identityRootId: identity.rootId, deviceId: actor.deviceId } });
@@ -227,6 +228,7 @@ projectsRouter.post("/", authenticate, requireActiveSubscription, requireProject
   });
 
   const result = await prisma.$transaction(async (tx) => {
+    await seedMemberDocumentTitles(tx, auth.tenantId, body.project_type);
     const createdProject = await tx.project.create({
       data: {
         tenantId: auth.tenantId,

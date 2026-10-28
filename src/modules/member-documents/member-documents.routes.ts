@@ -92,7 +92,8 @@ router.get("/member-document-titles", requireProject, requireRoles("any"), async
   });
   const titles = readTitles(tenant.contact);
   return ok(res, {
-    titles: titles.filter((title) => title.is_active)
+    titles: auth.roles.some(role => role === "owner" || role === "admin")
+      ? titles : titles.filter((title) => title.is_active)
   });
 }));
 

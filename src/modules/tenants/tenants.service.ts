@@ -1,4 +1,5 @@
 import { settings as instituteSettings } from '../institute/institute.policy.js';
+import { withDefaultMemberDocumentTitles } from "../../core/projects/member-document-titles.js";
 import { assertSignupMobileAvailable, signupMobile } from "../auth/signup-contact.js";
 import { withAvailableOrganizationSlug } from "../../core/onboarding/available-slug.js";
 import { Prisma, TenantPlan, ProjectType } from "@prisma/client";
@@ -43,11 +44,6 @@ export type ProvisionTenantResult = {
   token: string;
 };
 
-function jsonValue(value: unknown): Prisma.InputJsonValue | undefined {
-  if (value === undefined) return undefined;
-  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-}
-
 export async function provisionTenant(input: ProvisionTenantInput): Promise<ProvisionTenantResult> {
   if (input.source !== "self_signup") return provisionTenantOnce(input);
   // Both mobile/OTP signup and the Google ticket flow allocate slugs here.
@@ -78,7 +74,7 @@ async function provisionTenantOnce(input: ProvisionTenantInput): Promise<Provisi
     if (email && await tx.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } }, select: { id: true } })) {
       throw Object.assign(new Error("Email already registered"), { code: "EMAIL_TAKEN" });
     }
-    const contact = jsonValue({ subscription: input.trialDays === undefined ? createOneMonthTrial() : createTrialSubscription(input.trialDays) });
+    const contact = withDefaultMemberDocumentTitles({ subscription: input.trialDays === undefined ? createOneMonthTrial() : createTrialSubscription(input.trialDays) }, input.projectType ?? "fund_shares");
     const onboarding = createProvisionedOnboardingSeed({ source });
 
     const tenant = await tx.tenant.create({

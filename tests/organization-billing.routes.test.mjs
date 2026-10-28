@@ -15,6 +15,9 @@ const { projectsRouter } = await import('../dist/modules/projects/projects.route
 const { subscriptionRouter } = await import('../dist/modules/subscription/subscription.routes.js');
 const { platformBillingRouter } = await import('../dist/modules/subscription/platform-billing.routes.js');
 const { tenantsRouter } = await import('../dist/modules/tenants/tenants.routes.js');
+const { memberDocumentsRouter } = await import('../dist/modules/member-documents/member-documents.routes.js');
+const { DEFAULT_MEMBER_DOCUMENT_TITLES } = await import('../dist/core/projects/member-document-titles.js');
+const { provisionTenant } = await import('../dist/modules/tenants/tenants.service.js');
 const { authenticate, requireProject, requireRoles } = await import('../dist/core/security/auth.middleware.js');
 const { signAccessToken, hashToken, verifyAccessToken } = await import('../dist/core/security/jwt.js');
 const { createOneMonthTrial, createTrialSubscription, evaluateSubscription, renewTenantSubscription } = await import('../dist/core/subscription/subscription.service.js');
@@ -64,6 +67,8 @@ before(async () => {
   prisma.subscriptionPaymentReceipt.findFirst = async ({where}) => proofRows.find(row=>Object.entries(where).every(([k,v])=>row[k]===v))??null;
   prisma.platformAlert.upsert = async ({create}) => create;
   prisma.$queryRaw = async () => [];
+  prisma.upload.count = async () => 0;
+  prisma.project.count = async ({ where }) => projects.filter(row => matches(row, where)).length;
   prisma.$transaction = async fn => fn(prisma);
   prisma.user.findUniqueOrThrow = async ({ where }) => { const row = users.find(row => matches(row, where)); if (!row) throw new Error('User not found'); return userRow(row); };
   prisma.user.findMany = async ({ where }) => users.filter(row => matches(row, where)).map(userRow);
@@ -97,6 +102,7 @@ before(async () => {
   const app = express(); app.use(express.json());
   app.use('/auth', authRouter); app.use('/projects', projectsRouter); app.use('/tenants', tenantsRouter); app.use('/platform/billing', platformBillingRouter);
   app.use('/subscription', authenticate, subscriptionRouter);
+  app.use('/documents', authenticate, memberDocumentsRouter);
   app.get('/manage', authenticate, requireProject, requireRoles('admin'), (_req, res) => res.json({ ok: true }));
   app.use((error, _req, res, _next) => res.status(error.statusCode ?? 500).json({ error: error.message, code: error.code }));
   server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve)); base = `http://127.0.0.1:${server.address().port}`;
@@ -109,12 +115,68 @@ async function request(path, { token, body, method = body === undefined ? 'GET' 
   return { status: res.status, body: await res.json() };
 }
 const create = token => request('/projects/owned-organization', { token, body: { organization_name: 'Owned business', name: 'Owned fund', total_shares: 10, tenant_id: 'spoofed', role: 'owner', identity_root_id: 'someone-else' } });
+test('signup and provisioning seed fund titles while other project types keep their existing setup', async () => {
+  for (const type of ['fund_shares', 'accounting', 'billing', 'construction', 'payroll_pf', 'institute']) {
+    reset();
+    await provisionTenant({ name: 'New organization', slug: 'new-organization', adminName: 'New owner',
+      adminMobile: '+8801711000099', projectType: type, source: 'self_signup' });
+    const contact = tenants.at(-1).contact;
+    assert.equal(contact.subscription.status, 'trial');
+    assert.deepEqual(contact.member_document_titles?.map(row => row.title), type === 'fund_shares' ? DEFAULT_MEMBER_DOCUMENT_TITLES : undefined);
+  }
+});
+test('a new organization with a non-fund project receives no member document defaults', async () => {
+  const result = await request('/projects/owned-organization', { token: tokenFor(), body: {
+    organization_name: 'Accounting organization', name: 'Company', project_type: 'accounting'
+  } });
+  assert.equal(result.status, 201);
+  assert.equal(tenants.at(-1).contact.member_document_titles, undefined);
+});
+test('adding a fund project seeds missing titles once and preserves customized organization titles', async () => {
+  for (const titles of [undefined, [], [{ id: 'custom-id', title: 'Renamed identity proof', is_active: false }]]) {
+    reset('admin');
+    tenants[0].contact.email = 'saved@example.test';
+    if (titles !== undefined) tenants[0].contact.member_document_titles = copy(titles);
+    const result = await request('/projects', { token: tokenFor(), body: { name: 'Another fund', total_shares: 10 } });
+    assert.equal(result.status, 201, result.body.error);
+    assert.equal(tenants[0].contact.email, 'saved@example.test');
+    if (titles === undefined) assert.deepEqual(tenants[0].contact.member_document_titles.map(row => row.title), DEFAULT_MEMBER_DOCUMENT_TITLES);
+    else assert.deepEqual(tenants[0].contact.member_document_titles, titles);
+  }
+});
+test('saved defaults can be renamed, disabled and re-enabled by the owner', async () => {
+  const own = await owned();
+  const options = { token: own.token, projectId: own.id };
+  const listed = await request('/documents/member-document-titles', options);
+  assert.equal(listed.status, 200);
+  assert.deepEqual(listed.body.data.titles.map(row => row.title), DEFAULT_MEMBER_DOCUMENT_TITLES);
+  const id = listed.body.data.titles[0].id;
+  const path = `/documents/member-document-titles/${id}`;
+  assert.equal((await request(path, { ...options, method: 'PATCH', body: { title: 'National ID', is_active: false } })).status, 200);
+  const disabled = await request('/documents/member-document-titles', options);
+  assert.ok(disabled.body.data.titles.some(row => row.id === id && row.title === 'National ID' && !row.is_active));
+  assert.equal((await request(path, { ...options, method: 'PATCH', body: { is_active: true } })).status, 200);
+  const enabled = await request('/documents/member-document-titles', options);
+  assert.ok(enabled.body.data.titles.some(row => row.id === id && row.title === 'National ID' && row.is_active));
+});
+test('members receive only active titles and cannot change the organization title list', async () => {
+  tenants[0].contact.member_document_titles = [
+    { id: 'active-title', title: 'Passport', is_active: true },
+    { id: 'disabled-title', title: 'Identity card', is_active: false }
+  ];
+  const options = { token: tokenFor(), projectId: 'original-project' };
+  const result = await request('/documents/member-document-titles', options);
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.data.titles.map(row => row.id), ['active-title']);
+  assert.equal((await request('/documents/member-document-titles/disabled-title', { ...options, method: 'PATCH', body: { is_active: true } })).status, 403);
+});
 async function owned() { const originalToken = tokenFor(); const created = await create(originalToken); assert.equal(created.status, 201); const id = created.body.data.project_id; const switched = await request('/auth/switch-project', { token: originalToken, body: { project_id: id } }); assert.equal(switched.status, 200); return { originalToken, id, tenantId: created.body.data.tenant_id, token: switched.body.data.token }; }
 for (const role of ['member', 'accountant', 'approver', 'auditor', 'cashier', 'admin', 'owner']) test(`${role} creates an independently billed organization without elevating original access`, async () => {
   reset(role); const token = tokenFor(); const result = await create(token); assert.equal(result.status, 201);
   const created = result.body.data; assert.notEqual(created.tenant_id, 'original-org'); assert.equal(created.role, 'owner');
   assert.equal(memberships[0].role, role); assert.equal(members.length, 0); assert.equal(users.at(-1).identityRootId, 'original-user');
   assert.equal(users[0].tenantId, 'original-org'); assert.equal(tenants.at(-1).contact.subscription.status, 'trial');
+  assert.deepEqual(tenants.at(-1).contact.member_document_titles.map(row => row.title), DEFAULT_MEMBER_DOCUMENT_TITLES);
   assert.equal(accounts.at(-1).tenantId, created.tenant_id); assert.equal(progress.at(-1).accountantStepStatus, 'skipped');
   assert.equal(evaluateSubscription(tenants.at(-1).contact).has_access, true);
 });

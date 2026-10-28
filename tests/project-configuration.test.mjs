@@ -32,6 +32,7 @@ before(async () => {
  prisma.tenant.findUnique=async ({where})=>where.slug?null:{id:'tenant',name:'Business',slug:'business',contact:{subscription:createTrialSubscription(182)}};
  prisma.tenant.findUniqueOrThrow=async ()=>({id:'tenant',name:'Business',slug:'business',contact:{subscription:createTrialSubscription(182)}});
  prisma.tenant.create=async ({data})=>({id:'tenant',...data});
+ prisma.tenant.update=async ({data})=>({id:'tenant',...data});
  prisma.user.findFirst=async()=>null;
  prisma.user.findFirstOrThrow=async()=>owner;
  prisma.user.findUniqueOrThrow=async()=>owner;
