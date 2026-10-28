@@ -232,3 +232,13 @@ test('multipart receipts take precedence over a stale history key sent by an old
   assert.equal(calls,2); // No automatic second attempt or duplicate model request.
  }finally{global.fetch=saved.fetch;prisma.assistantReply.findUniqueOrThrow=saved.findReply;prisma.assistantReply.update=saved.updateReply;prisma.assistantAttachment.findMany=saved.findImages;prisma.assistantAttachment.createMany=saved.createImages;}
 });
+
+
+test('an active Free Trial with four of ten used credits accepts a Telegram reply',async()=>{
+ contact={subscription:createOneMonthTrial()};
+ records=Array.from({length:4},(_,i)=>({requestKey:`used-${i}`,status:'completed'}));
+ const response=await request('/usage',{request_key:'tg:free-with-credits',channel:'telegram_bot:-100',prompt_hash:'a'.repeat(64)});
+ assert.equal(response.status,200);
+ assert.equal(records.length,5);
+ assert.equal(records.at(-1).channel,'ai_chat');
+});

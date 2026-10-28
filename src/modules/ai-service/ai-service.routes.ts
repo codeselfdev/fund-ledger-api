@@ -19,7 +19,7 @@ import { projectDepositRoute } from '../../core/projects/project-settings.js';
 import { hasBusinessAssistant, hasAssistant, assistantQuotaMessage, allowancePeriod, featureLimit } from '../assistant/assistant.policy.js';
 import { assistantContext } from '../assistant/assistant.context.js';
 import { aiServiceWhatsAppCredential } from '../../core/whatsapp/whatsapp.service.js';
-import { startTelegramIdentityLink, confirmTelegramIdentityLink } from '../integrations/telegram-assistant.service.js';
+import { startTelegramIdentityLink, confirmTelegramIdentityLink, assertTelegramReplyDelivery } from '../integrations/telegram-assistant.service.js';
 import { telegramLinkStatus, telegramApi, TelegramGroupMigratedError } from '../integrations/telegram.service.js';
 import { resolveTelegramConnection } from '../integrations/telegram-migration.service.js';
 const router=Router();
@@ -170,10 +170,14 @@ router.get('/messages',asyncHandler(async(req,res)=>{
 router.post('/telegram/links',asyncHandler(async(req,res)=>ok(res,await startTelegramIdentityLink(requireProjectContext(req)))));
 router.get('/telegram/links/:id',asyncHandler(async(req,res)=>ok(res,await telegramLinkStatus(requireProjectContext(req),String(req.params.id)))));
 router.post('/telegram/links/:id/confirm',asyncHandler(async(req,res)=>{
+  await assertTelegramReplyDelivery(requireProjectContext(req));
   await confirmTelegramIdentityLink(requireProjectContext(req),String(req.params.id));
   return ok(res,await serviceRequest(req,'/telegram/link',{}));
 }));
-router.post('/telegram/link',asyncHandler(async(req,res)=>ok(res,await serviceRequest(req,'/telegram/link',{}))));
+router.post('/telegram/link',asyncHandler(async(req,res)=>{
+  await assertTelegramReplyDelivery(requireProjectContext(req));
+  return ok(res,await serviceRequest(req,'/telegram/link',{}));
+}));
 router.post('/whatsapp/link',asyncHandler(async(req,res)=>{const t=await prisma.tenant.findUniqueOrThrow({where:{id:requireProjectContext(req).tenantId}});if(!hasBusinessAssistant(t.contact))throw new ApiError(403,'BUSINESS_REQUIRED','WhatsApp Bot requires an active Business plan.');return ok(res,await serviceRequest(req,'/whatsapp/link',{}));}));
 router.get('/drafts/:id',asyncHandler(async(req,res)=>ok(res,await serviceRequest(req,`/drafts/${encodeURIComponent(req.params.id!)}`))));
 router.post('/drafts/:id/revise',asyncHandler(async(req,res)=>{

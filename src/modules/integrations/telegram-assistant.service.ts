@@ -1,9 +1,30 @@
 import { createHmac } from 'node:crypto';
 import { prisma } from '../../core/prisma/client.js';
-import { badRequest, conflict, serviceUnavailable } from '../../core/http/api-error.js';
+import { ApiError, badRequest, conflict, serviceUnavailable } from '../../core/http/api-error.js';
 import type { Scope } from '../reports/report.policy.js';
 import { writeAudit } from '../../core/audit/audit.service.js';
-import { startTelegramLink } from './telegram.service.js';
+import { startTelegramLink, telegramApi } from './telegram.service.js';
+
+/** Outgoing posts can work even when Telegram never delivers mentions to the bot. */
+export async function assertTelegramReplyDelivery(scope: Scope) {
+  const group = await prisma.telegramConnection.findFirst({ where: { tenantId: scope.tenantId, projectId: scope.projectId } });
+  if (!group) throw badRequest('Connect your project Telegram group from Integrations first.');
+  const [bot, webhook] = await Promise.all([
+    telegramApi<{ id: number; username?: string; can_read_all_group_messages?: boolean }>('getMe', {}),
+    telegramApi<{ url?: string; allowed_updates?: string[] }>('getWebhookInfo', {}),
+  ]);
+  const configured = process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/, '');
+  if (!Number.isSafeInteger(bot.id) || !configured || bot.username?.toLowerCase() !== configured.toLowerCase()) {
+    throw new ApiError(503, 'TELEGRAM_BOT_CONFIGURATION_REQUIRED', 'The configured Telegram username does not match the bot. Ask your platform administrator to check Telegram setup.');
+  }
+  if (!webhook.url || webhook.allowed_updates?.length && !webhook.allowed_updates.includes('message')) {
+    throw new ApiError(503, 'TELEGRAM_WEBHOOK_REQUIRED', 'Incoming Telegram messages are not enabled on the server. Ask your platform administrator to check the Telegram webhook. Sending a test message checks outgoing delivery only.');
+  }
+  const membership = await telegramApi<{ status: string }>('getChatMember', { chat_id: group.chatId, user_id: bot.id });
+  const readsMentions = ['administrator', 'creator'].includes(membership.status)
+    || membership.status === 'member' && bot.can_read_all_group_messages === true;
+  if (!readsMentions) throw new ApiError(409, 'TELEGRAM_BOT_PERMISSIONS_REQUIRED', 'The bot can send posts but cannot receive ordinary mentions or photo captions in this group. Make the bot a Telegram group administrator, then retry Link my Telegram account.');
+}
 
 export async function startTelegramIdentityLink(scope: Scope) {
   const group = await prisma.telegramConnection.findFirst({ where: { tenantId: scope.tenantId, projectId: scope.projectId } });

@@ -68,6 +68,11 @@ before(() => {
     && (!where.userId || row.userId === where.userId)
     && (!where.mobile || row.mobile === where.mobile)
   )) ?? null;
+  prisma.member.update = async ({ where, data }) => {
+    const row = members.find(item => item.id === where.id);
+    assert.ok(row, 'only a saved member may be updated');
+    return Object.assign(row, data);
+  };
   prisma.member.create = async ({ data }) => {
     const row = { id: `member-${members.length + 1}`, ...data };
     members.push(row);
@@ -185,4 +190,23 @@ test('custom role assignment cannot smuggle an owner or admin storage role', asy
     const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_id:user.id,role,custom_role_id:'custom-project'})});
     assert.equal(response.status,400); assert.equal(memberships.length,0);
   }
+});
+
+
+test('granting an existing member accountant access does not enroll the acting owner', async () => {
+  members.push({ id: 'existing-member', tenantId: 'tenant', projectId: 'project', userId: user.id,
+    name: user.name, mobile: user.mobile, shares: 4, status: 'active' });
+  memberships.push(
+    { id: 'owner-role', tenantId: 'tenant', projectId: 'project', userId: 'owner', role: 'owner', memberId: null, isActive: true },
+    { id: 'member-role', tenantId: 'tenant', projectId: 'project', userId: user.id, role: 'member', memberId: 'existing-member', isActive: true }
+  );
+  const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ user_id: user.id, role: 'accountant', also_member: true }) });
+  assert.equal(response.status, 201);
+  assert.equal(members.length, 1);
+  assert.equal(members[0].id, 'existing-member');
+  assert.equal(members[0].shares, 4);
+  assert.equal(members[0].userId, user.id);
+  assert.deepEqual(memberships.filter(row => row.userId === 'owner').map(row => ({ role: row.role, memberId: row.memberId })), [{ role: 'owner', memberId: null }]);
+  assert.deepEqual(memberships.filter(row => row.userId === user.id).map(row => row.role).sort(), ['accountant', 'member']);
 });

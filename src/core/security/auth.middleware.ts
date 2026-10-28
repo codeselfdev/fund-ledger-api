@@ -6,7 +6,6 @@ import { prisma } from "../prisma/client.js";
 import { forbidden, unauthorized } from "../http/api-error.js";
 import { hashToken, verifyAccessToken } from "./jwt.js";
 import { hasAnyRole, type RoleGate } from "./roles.js";
-import { ensureUserProjectMember } from "./member-link.service.js";
 import { mergePermissions } from "./menu-access.js";
 import { enforceMenuAccess } from "./menu-access.middleware.js";
 import { effectiveProjectRoles } from "./project-access.js";
@@ -95,26 +94,12 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
         const linkedMember = memberships.find((membership) => membership.role === "member" && membership.memberId);
         memberId = linkedMember?.memberId ?? null;
 
-        // Repair a missing link only for users explicitly assigned the member role.
-        // Management/access roles must never create a financial Member record.
-        if (hasMemberRole && !memberId && !impersonation && (await prisma.project.findUnique({ where: { id: requestedProjectId }, select: { projectType: true } }))?.projectType !== "institute") {
-          const ensured = await prisma.$transaction((tx) => ensureUserProjectMember(tx, {
-            tenantId: session.tenantId,
-            projectId: requestedProjectId,
-            user: {
-              id: session.userId,
-              name: session.user.name,
-              mobile: session.user.mobile,
-              email: session.user.email
-            },
-            defaultShares: 0
-          }));
-          memberId = ensured.memberId;
-        }
-
         if (hasMemberRole) {
           const owned = await prisma.member.findMany({ where: { tenantId: session.tenantId, projectId: requestedProjectId, userId: session.userId, status: "active" }, select: { id: true } });
           memberIds = owned.map(row => row.id);
+          // Resolve only saved share records. Authentication and role/settings
+          // refreshes must never enroll someone or create a zero-share Member.
+          if (!memberId || !memberIds.includes(memberId)) memberId = memberIds[0] ?? null;
           const requestedMemberId = req.header("x-member-id");
           if (requestedMemberId) {
             if (!memberIds.includes(requestedMemberId)) throw forbidden("This share record does not belong to your account");

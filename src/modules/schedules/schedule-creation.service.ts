@@ -1,7 +1,6 @@
 import { Prisma, ScheduleStatus } from "@prisma/client";
 import { badRequest } from "../../core/http/api-error.js";
 import { prisma } from "../../core/prisma/client.js";
-import { ensureUserProjectMember } from "../../core/security/member-link.service.js";
 
 type CreateScheduleWithUnitAmountInput = {
   tenantId: string;
@@ -100,34 +99,8 @@ export async function createScheduleWithUnitAmount(input: CreateScheduleWithUnit
   const dueStatus = input.dueDate.getTime() > Date.now() ? "upcoming" : "due";
 
   const result = await prisma.$transaction(async (tx) => {
-    const activeUsers = await tx.projectMembership.findMany({
-      where: {
-        tenantId: input.tenantId,
-        projectId: input.projectId,
-        isActive: true
-      },
-      distinct: ["userId"],
-      select: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            mobile: true,
-            email: true
-          }
-        }
-      }
-    });
-
-    for (const activeUser of activeUsers) {
-      await ensureUserProjectMember(tx, {
-        tenantId: input.tenantId,
-        projectId: input.projectId,
-        user: activeUser.user,
-        defaultShares: 0
-      });
-    }
-
+    // Project access does not imply share ownership. Bill saved members only;
+    // adding a schedule must not enroll owners, admins or accountants.
     const activeMembers = await tx.member.findMany({
       where: {
         tenantId: input.tenantId,
