@@ -632,8 +632,7 @@ invitationsRouter.post("/", requireProject, requireRoles("owner", "approver", "a
     ...invitation,
     otp: {
       sent: true,
-      emailed: otp.emailed,
-      ...(process.env.NODE_ENV === "production" ? {} : { dev_code: otp.code })
+      emailed: otp.emailed
     },
     invitationLink,
     invitation_link: invitationLink,

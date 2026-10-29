@@ -52,15 +52,14 @@ export async function requestLoginOtp(input: {
     }
     const email = users[0]?.email;
     if (!email && limited) throw new ApiError(429, "SMS_DAILY_LIMIT", "Your organization has used its 2 SMS for today and this account has no email. Continue with Google or try again tomorrow.");
-    if (!email && process.env.NODE_ENV === "production") throw serviceUnavailable("SMS delivery is unavailable and this account has no email. Continue with Google.");
+    if (!email) throw serviceUnavailable("SMS delivery is unavailable and this account has no email. Continue with Google.");
     const otp = await issueOtp(mobile, email);
-    if (!otp.emailed && process.env.NODE_ENV === "production") {
+    if (!otp.emailed) {
       throw serviceUnavailable(email ? "Could not deliver the code by email. Please try again later." : "SMS delivery is unavailable and this account has no email. Continue with Google.");
     }
     const masked = email ? email.replace(/^(.)(.*)(@.*)$/, "$1***$3") : undefined;
     return { sent: true, emailed: otp.emailed, delivery: "email" as const, sms_limit_reached: limited,
-      ...(masked ? { masked_email: masked } : {}),
-      ...(process.env.NODE_ENV === "production" ? {} : { dev_code: otp.code }) };
+      ...(masked ? { masked_email: masked } : {}) };
   };
 
   if (!apiKey) return sendEmail(false);
@@ -92,7 +91,6 @@ export async function requestLoginOtp(input: {
 export async function requestEmailOtp(email: string) {
   const normalized = email.trim().toLowerCase();
   const otp = await issueOtp(`email:${normalized}`, normalized);
-  if (!otp.emailed && process.env.NODE_ENV === "production") throw serviceUnavailable("Could not deliver the email code. Please try again later.");
-  return { sent: true, delivery: "email" as const, emailed: otp.emailed,
-    ...(process.env.NODE_ENV === "production" ? {} : { dev_code: otp.code }) };
+  if (!otp.emailed) throw serviceUnavailable("Could not deliver the email code. Please try again later.");
+  return { sent: true, delivery: "email" as const, emailed: otp.emailed };
 }

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { before, after, beforeEach, test } from 'node:test';
 import express from 'express';
 import bcrypt from 'bcryptjs';
+import nodemailer from 'nodemailer';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { prisma } from '../dist/core/prisma/client.js';
@@ -15,6 +16,10 @@ let server, url, users, tenants, projects, memberships, progresses, email, verif
 let clientId = 0, testFirebase;
 const phoneToken='isolated-verified-phone-token-for-tests';
 const nativeFetch = globalThis.fetch;
+const originalTransport = nodemailer.createTransport;
+const originalSmtp = { ...env.smtp };
+let sentEmails = [];
+const deliveredCode = () => { const code = sentEmails.at(-1)?.text.match(/\b\d{6}\b/)?.[0]; assert.match(code, /^\d{6}$/); return code; };
 const mobile = '+8801711000009', token = 'isolated-google-token-for-tests';
 const matches = (row, where = {}) => Object.entries(where).every(([key,value]) => {
  if (key === 'OR') return value.some(part => matches(row,part));
@@ -30,6 +35,8 @@ const matches = (row, where = {}) => Object.entries(where).every(([key,value]) =
 });
 const loginUser = row => row && { ...row, tenant:tenants.find(t=>t.id===row.tenantId), memberships:memberships.filter(m=>m.userId===row.id).map(m=>({...m,project:projects.find(p=>p.id===m.projectId),member:null})) };
 before(async () => {
+ env.smtp.user='isolated-test-user';env.smtp.pass='isolated-test-password';
+ nodemailer.createTransport=()=>({sendMail:async message=>{sentEmails.push(message);}});
  testFirebase=initializeApp({projectId:'isolated-auth-tests'});
  getAuth(testFirebase).verifyIdToken=async value=>{if(value!==phoneToken)throw Error('Use Google token verification');return {uid:'test-phone-user',phone_number:'+8801711000099',firebase:{sign_in_provider:'phone'}};};
  process.env.FIREBASE_SERVICE_ACCOUNT_JSON = ''; process.env.FCM_SERVICE_ACCOUNT_JSON = '';
@@ -71,13 +78,13 @@ before(async () => {
  server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));url=`http://127.0.0.1:${server.address().port}`;
 });
 beforeEach(()=>{
- clientId++;writes=0;otpWrites=0;otpRows=[];email='new@example.com';verified=true;validToken=true;
+ sentEmails=[];clientId++;writes=0;otpWrites=0;otpRows=[];email='new@example.com';verified=true;validToken=true;
  users=[{id:'existing-user',tenantId:'existing-tenant',name:'Existing Owner',mobile,email:'existing@example.com',isActive:true,identityRootId:null}];
  tenants=[{id:'existing-tenant',slug:'existing',name:'Existing organization',contact:null}];
  projects=[{id:'existing-project',tenantId:'existing-tenant',name:'Existing project',projectType:'fund_shares',isActive:true,totalShares:20}];
  memberships=[{id:'existing-role',tenantId:'existing-tenant',projectId:'existing-project',userId:'existing-user',role:'owner',memberId:null,isActive:true}];progresses=[];
 });
-after(async()=>{await deleteApp(testFirebase);globalThis.fetch=nativeFetch;await new Promise(resolve=>server.close(resolve));await prisma.$disconnect();});
+after(async()=>{nodemailer.createTransport=originalTransport;Object.assign(env.smtp,originalSmtp);await deleteApp(testFirebase);globalThis.fetch=nativeFetch;await new Promise(resolve=>server.close(resolve));await prisma.$disconnect();});
 async function request(path,body) { const response=await fetch(url+path,{method:'POST',headers:{'content-type':'application/json','x-forwarded-for':`192.0.2.${clientId}`},body:JSON.stringify(body)});return{status:response.status,body:await response.json()}; }
 const signup = extra => ({org_name:'New organization',project_name:'New project',owner_name:'Chosen Owner',owner_mobile:'+8801711000099',project_type:'fund_shares',total_shares:20,id_token:token,...extra});
 async function ticket() {
@@ -248,7 +255,7 @@ test('Google and OTP signup reject a registered mobile before any organization w
 
 test('new email receives OTP and only verified proof can enter organization signup', async () => {
  const sent=await request('/auth/otp/request',{email:' New@Example.com '});assert.equal(sent.status,200);
- const code=sent.body.data.dev_code;assert.match(code,/^\d{6}$/);assert.equal(writes,0);
+ assert.equal(sent.body.data.dev_code,undefined);const code=deliveredCode();assert.equal(writes,0);
  const invalid=await request('/auth/login',{email:'new@example.com',otp:'000000'});assert.equal(invalid.status,401);assert.equal(writes,0);
  const verified=await request('/auth/login',{email:'NEW@example.com',otp:code});assert.equal(verified.status,200);
  const proof=verified.body.data;assert.equal(proof.provider,'email');assert.equal(proof.signup_needed,true);assert.ok(proof.signup_token);assert.equal(proof.token,undefined);
@@ -260,17 +267,17 @@ test('new email receives OTP and only verified proof can enter organization sign
 
 test('email OTP signs in an existing user without creating a duplicate', async () => {
  const sent=await request('/auth/otp/request',{email:'EXISTING@example.com'});assert.equal(sent.status,200);
- const login=await request('/auth/login',{email:'existing@example.com',otp:sent.body.data.dev_code});
+ const login=await request('/auth/login',{email:'existing@example.com',otp:deliveredCode()});
  assert.equal(login.status,200);assert.ok(login.body.data.token);assert.equal(login.body.data.user.id,'existing-user');assert.equal(writes,0);
 });
 
 test('resending invalidates an older email code; wrong contacts and expired codes cannot authenticate', async () => {
- const first=await request('/auth/otp/request',{email:'new@example.com'});
- const second=await request('/auth/otp/request',{email:'new@example.com'});assert.equal(otpRows[0].consumedAt instanceof Date,true);
- if(first.body.data.dev_code!==second.body.data.dev_code) assert.equal((await request('/auth/login',{email:'new@example.com',otp:first.body.data.dev_code})).status,401);
- assert.equal((await request('/auth/login',{email:'other@example.com',otp:second.body.data.dev_code})).status,401);
+ await request('/auth/otp/request',{email:'new@example.com'});const firstCode=deliveredCode();
+ await request('/auth/otp/request',{email:'new@example.com'});const secondCode=deliveredCode();assert.equal(otpRows[0].consumedAt instanceof Date,true);
+ if(firstCode!==secondCode) assert.equal((await request('/auth/login',{email:'new@example.com',otp:firstCode})).status,401);
+ assert.equal((await request('/auth/login',{email:'other@example.com',otp:secondCode})).status,401);
  otpRows.at(-1).expiresAt=new Date(0);
- assert.equal((await request('/auth/login',{email:'new@example.com',otp:second.body.data.dev_code})).status,401);assert.equal(writes,0);
+ assert.equal((await request('/auth/login',{email:'new@example.com',otp:secondCode})).status,401);assert.equal(writes,0);
 });
 
 test('missing OTP never signs in even in development, and signup proof cannot be forged or expired', async () => {
@@ -278,7 +285,7 @@ test('missing OTP never signs in even in development, and signup proof cannot be
  assert.equal((await request('/onboarding/signup',signup({id_token:undefined}))).status,400);
  assert.equal((await request('/onboarding/signup',signup({id_token:undefined,signup_token:'fake-proof-that-is-long-enough'}))).status,401);
  const sent=await request('/auth/otp/request',{email:'new@example.com'});
- const verified=await request('/auth/login',{email:'new@example.com',otp:sent.body.data.dev_code});
+ const verified=await request('/auth/login',{email:'new@example.com',otp:deliveredCode()});
  const now=Date.now;try {Date.now=()=>now()+16*60*1000;assert.equal((await request('/onboarding/signup',signup({id_token:undefined,signup_token:verified.body.data.signup_token}))).status,401);}finally{Date.now=now;}
  assert.equal(writes,0);
 });
@@ -308,7 +315,7 @@ test('verified new mobile opens organization signup and its proof cannot claim a
 
 test('a single email OTP cannot authorize concurrent login requests twice', async () => {
  const sent=await request('/auth/otp/request',{email:'existing@example.com'});
- const replies=await Promise.all([1,2].map(()=>request('/auth/login',{email:'existing@example.com',otp:sent.body.data.dev_code})));
+ const replies=await Promise.all([1,2].map(()=>request('/auth/login',{email:'existing@example.com',otp:deliveredCode()})));
  assert.deepEqual(replies.map(r=>r.status).sort(),[200,401]);
 });
 

@@ -933,8 +933,7 @@ router.post("/shareholders", authenticate, requireActiveSubscription, requirePro
       status: member.status,
       otp: {
         sent: true,
-        emailed: otp.emailed,
-        ...(process.env.NODE_ENV === "production" ? {} : { dev_code: otp.code })
+        emailed: otp.emailed
       }
     });
   }

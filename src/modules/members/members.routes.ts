@@ -919,8 +919,7 @@ router.post("/", requireProject, requireRoles("owner", "accountant", "admin"), v
     previous_due_schedule_id: result.previousDueScheduleId,
     otp: {
       sent: true,
-      emailed: result.otp.emailed,
-      ...(process.env.NODE_ENV === "production" ? {} : { dev_code: result.otp.code })
+      emailed: result.otp.emailed
     },
     memberLink,
     member_link: memberLink,

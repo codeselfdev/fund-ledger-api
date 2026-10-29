@@ -249,8 +249,7 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
     user: { id: result.user.id, name: result.user.name, mobile: phoneMobile, email: result.user.email },
     otp: {
       sent: phoneMobile != null,
-      emailed: otp.emailed,
-      ...(process.env.NODE_ENV === "production" || !otp.code ? {} : { dev_code: otp.code })
+      emailed: otp.emailed
     },
     membershipLink,
     membership_link: membershipLink,
