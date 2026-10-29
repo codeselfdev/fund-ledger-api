@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../core/identity/tenant-accounts.js";
 /**
  * Bootstrap a fresh database with the first tenant + owner (super admin).
  *
@@ -109,12 +110,12 @@ function parseArgs(argv: string[]): Args {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
-  const existingSlug = await prisma.tenant.findUnique({ where: { slug: args.slug } });
+  const existingSlug = await prisma.tenant.findUnique({  where: { slug: args.slug } });
   if (existingSlug) {
     throw new Error(`Tenant slug "${args.slug}" already exists`);
   }
 
-  const existingMobile = await prisma.user.findFirst({
+  const existingMobile = await tenantAccounts(prisma).findFirst({
     where: { mobile: args.adminMobile, isActive: true }
   });
   if (existingMobile) {

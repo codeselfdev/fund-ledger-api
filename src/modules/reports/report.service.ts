@@ -11,8 +11,8 @@ export const MIME='application/vnd.openxmlformats-officedocument.spreadsheetml.s
 const json=(value:unknown)=>JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 export type StoredFile={filename:string;storage_key:string;size:number};
 export async function staffRecipients(scope:Pick<Scope,'tenantId'|'projectId'>) {
-  const rows=await prisma.projectMembership.findMany({where:{tenantId:scope.tenantId,projectId:scope.projectId,isActive:true,role:{not:'member'},user:{isActive:true}},include:{user:{select:{id:true,name:true,email:true,deviceId:true}}}});
-  return [...new Set(rows.map(r=>r.userId))].map(id=>({id,name:rows.find(r=>r.userId===id)!.user.name,email:rows.find(r=>r.userId===id)!.user.email,roles:[...new Set(rows.filter(r=>r.userId===id).map(r=>r.role))]}));
+  const rows=await prisma.projectMembership.findMany({where:{tenantId:scope.tenantId,projectId:scope.projectId,isActive:true,role:{not:'member'},user:{ isActive:true}},include:{user:{select:{ id:true, deviceId:true, identity: {select: {name:true, email:true}} }}}});
+  return [...new Set(rows.map(r=>r.userId))].map(id=>({id,name:rows.find(r=>r.userId===id)!.user.identity.name,email:rows.find(r=>r.userId===id)!.user.identity.email,roles:[...new Set(rows.filter(r=>r.userId===id).map(r=>r.role))]}));
 }
 export async function validateDestinations(scope:Pick<Scope,'tenantId'|'projectId'>,d:Destinations) {
   if(!d.email&&!d.inbox&&!d.telegram) throw badRequest('Choose at least one destination');

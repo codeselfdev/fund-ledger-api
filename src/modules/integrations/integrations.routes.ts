@@ -26,7 +26,7 @@ router.get('/',asyncHandler(async(req,res)=>{
   const s=requireProjectContext(req),scope={tenantId:s.tenantId,projectId:s.projectId};
   const [telegram,posts,whatsapp,devices,schedule]=await Promise.all([
     prisma.telegramConnection.findFirst({where:scope}),prisma.integrationPost.findMany({where:scope,orderBy:{createdAt:'desc'},take:10}),getWhatsAppConnection(s.tenantId,s.projectId),
-    prisma.projectMembership.findMany({where:{...scope,isActive:true,user:{isActive:true,deviceId:{not:null}}},distinct:['userId'],select:{userId:true}}),
+    prisma.projectMembership.findMany({where:{...scope,isActive:true,user:{ isActive:true,deviceId:{not:null}}},distinct:['userId'],select:{userId:true}}),
     prisma.reportSchedule.findFirst({where:scope}),
   ]);
   return ok(res,{automation_available:process.env.REPORTS_AUTOMATION_ENABLED==='true',telegram,posts,telegram_available:telegramConfigured(),bot_username:process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/,'')??null,whatsapp,whatsapp_available:env.whatsapp.enabled,email:{active:!!(env.smtp.user&&env.smtp.pass),from:env.smtp.from},push:{devices:devices.length},report_schedule_enabled:schedule?.enabled??false});

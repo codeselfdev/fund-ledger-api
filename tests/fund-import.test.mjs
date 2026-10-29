@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, installAccountRelationFixtures, installNormalizedFixtures, installSubscriptionReadFixtures, normalizedAccountRelations } from './helpers/normalized-fixtures.mjs';
 import test,{beforeEach,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {prisma} from '../dist/core/prisma/client.js';
@@ -26,7 +27,13 @@ beforeEach(()=>{
  prisma.account.update=async()=>{throw Error('Opening import must not change cash/bank balances');};
  prisma.accountTransaction.create=async()=>{throw Error('Opening import must not create cash transactions');};
  prisma.deposit.create=async()=>{throw Error('Opening import must not invent deposits');};
- prisma.$transaction=async(fn,options)=>{assert.equal(options.isolationLevel,'Serializable');const snapshot=structuredClone(db);try{return await fn(prisma);}catch(error){db=snapshot;throw error;}};
+ prisma.$transaction=async(fn,options)=>{assert.equal(options.isolationLevel,'Serializable');const snapshot=structuredClone(db);try{return await fn(fixtureTransactionClient(prisma));}catch(error){db=snapshot;throw error;}};
+prisma.$queryRaw=async()=>[];
+ installNormalizedFixtures(prisma,{users:()=>db.users,tenants:()=>[{id:'tenant',contact:{}}],memberships:()=>db.memberships,projects:()=>[{id:'project',isActive:true}],
+ createAccount:async data=>{const item={id:`u${db.users.length+1}`,isActive:true,...data};if(!item.id)item.id=`u${db.users.length+1}`;db.users.push(item);return item;},
+ updateAccount:async(where,data)=>Object.assign(db.users.find(row=>row.id===where.id),data)});
+installSubscriptionReadFixtures(prisma);
+installAccountRelationFixtures(prisma);
 });
 after(async()=>{await prisma.$disconnect();});
 test('preview validates and reconciles balances without inserting anything',async()=>{
@@ -63,7 +70,7 @@ test('linked share access allows only explicitly owned member IDs or staff roles
 });
 test('a requested share context is accepted only within the signed-in user, tenant and project',async()=>{
  const token=signAccessToken({sessionId:'session',userId:'user',tenantId:'tenant'});
- prisma.session.findFirst=async()=>({id:'session',tenantId:'tenant',userId:'user',activeProjectId:'project',user:{isActive:true,lastActiveAt:new Date()}});
+ prisma.session.findFirst=async()=>(normalizedAccountRelations({id:'session',tenantId:'tenant',userId:'user',activeProjectId:'project',user:{isActive:true,lastActiveAt:new Date()}}));
  prisma.projectMembership.findMany=async()=>[{role:'member',memberId:'m1'}];
  prisma.member.findMany=async({where})=>{assert.deepEqual(where,{tenantId:'tenant',projectId:'project',userId:'user',status:'active'});return[{id:'m1'},{id:'m2'}];};
  for(const [selected,allowed]of [['m2',true],['foreign',false]]){

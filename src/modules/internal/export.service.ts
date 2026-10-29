@@ -8,7 +8,7 @@ type Cell = string | number | boolean | null;
 const date = (value: Date | null | undefined) => value?.toISOString() ?? "";
 export async function organizationWorkbook(tenantId: string, projectId?: string) {
   const report = await prisma.$transaction(async tx => {
-    const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
+    const tenant = await tx.tenant.findUnique({  where: { id: tenantId } });
     if (!tenant) throw notFound("Organization not found");
     if (projectId && !await tx.project.findFirst({ where: { id: projectId, tenantId } })) throw notFound("Project not found in this organization");
     const scope = { tenantId, ...(projectId ? { projectId } : {}) };

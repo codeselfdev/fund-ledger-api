@@ -227,19 +227,19 @@ export async function getMemberFollowup(scope: Scope, memberId: string, cursor =
   const [callLogs, reminders] = await Promise.all([
     prisma.memberCallLog.findMany({
       where: { ...scope, memberId },
-      include: { createdBy: { select: { name: true } }, commitment: { select: { id: true } } },
+      include: { createdBy: { select: { identity: {select: {name: true}} } }, commitment: { select: { id: true } } },
       orderBy: { createdAt: "desc" }
     }),
     prisma.memberReminder.findMany({
       where: { ...scope, memberId },
-      include: { sentBy: { select: { name: true } } },
+      include: { sentBy: { select: { identity: {select: {name: true}} } } },
       orderBy: { sentAt: "desc" }
     })
   ]);
   const timeline = [
-    ...commitments.map(item => ({ id: item.id, kind: "commitment" as const, created_at: item.createdAt, created_by_name: callLogs.find(log => log.commitment?.id === item.id)?.createdBy?.name ?? (item.createdById === null ? "Deleted user" : undefined), commitment: commitmentPayload(item, now) })),
-    ...callLogs.filter(item => !item.commitment).map(item => ({ id: item.id, kind: "call_log" as const, created_at: item.calledAt, summary: item.summary, outcome: item.outcome, created_by_name: item.createdBy?.name ?? "Deleted user" })),
-    ...reminders.map(item => ({ id: item.id, kind: "reminder" as const, created_at: item.sentAt, created_by_name: item.sentBy?.name ?? "Deleted user" }))
+    ...commitments.map(item => ({ id: item.id, kind: "commitment" as const, created_at: item.createdAt, created_by_name: callLogs.find(log => log.commitment?.id === item.id)?.createdBy?.identity.name ?? (item.createdById === null ? "Deleted user" : undefined), commitment: commitmentPayload(item, now) })),
+    ...callLogs.filter(item => !item.commitment).map(item => ({ id: item.id, kind: "call_log" as const, created_at: item.calledAt, summary: item.summary, outcome: item.outcome, created_by_name: item.createdBy?.identity.name ?? "Deleted user" })),
+    ...reminders.map(item => ({ id: item.id, kind: "reminder" as const, created_at: item.sentAt, created_by_name: item.sentBy?.identity.name ?? "Deleted user" }))
   ].sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
   const page = timeline.slice(cursor, cursor + 30);
   return {

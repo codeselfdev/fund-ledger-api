@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, installAccountReadFixtures, installAccountRelationFixtures, installSubscriptionReadFixtures } from './helpers/normalized-fixtures.mjs';
 import test, { beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -11,7 +12,7 @@ const contact = plan => ({ subscription: { package: plan, status: plan === 'free
 const input = (extra = {}) => ({ request_key: randomUUID(), channel: 'ai_chat', credits: 25, reason: 'Customer extension approved', period_start: allowancePeriod(tenants.org.contact).start.toISOString(), ...extra });
 beforeEach(() => {
  tenants = Object.fromEntries(['org', 'other'].map(id => [id, { id, name: id, createdAt: new Date('2026-10-01T00:00:00Z'), contact: contact('free'), deletionStartedAt: null }])); audits = []; replies = []; inbox = []; deliveries = []; queue = Promise.resolve();
- prisma.$transaction = callback => { const task = queue.then(async () => { const old = structuredClone({ tenants, audits, replies, inbox, deliveries }); try { return await callback(prisma); } catch (error) { ({ tenants, audits, replies, inbox, deliveries } = old); throw error; } }); queue = task.catch(() => {}); return task; };
+ prisma.$transaction = callback => { const task = queue.then(async () => { const old = structuredClone({ tenants, audits, replies, inbox, deliveries }); try { return await callback(fixtureTransactionClient(prisma)); } catch (error) { ({ tenants, audits, replies, inbox, deliveries } = old); throw error; } }); queue = task.catch(() => {}); return task; };
  prisma.$queryRaw = async () => [];
  prisma.user.findFirst = async () => null; prisma.user.findMany = async () => [];
  prisma.tenant.findMany = async () => [];
@@ -28,6 +29,9 @@ beforeEach(() => {
  prisma.assistantReply.count = async ({ where }) => replies.filter(row => row.tenantId === where.tenantId && row.channel === where.channel && row.periodStart.getTime() === where.periodStart.getTime() && row.status !== 'cancelled').length;
  prisma.assistantReply.create = async ({ data }) => { const row = { id: String(replies.length), ...data }; replies.push(row); return row; };
  prisma.assistantReply.groupBy = async () => [];
+installAccountReadFixtures(prisma);
+installSubscriptionReadFixtures(prisma);
+installAccountRelationFixtures(prisma);
 });
 after(() => prisma.$disconnect());
 
@@ -86,7 +90,7 @@ test('an audit write failure rolls the quota update back', async () => {
 test('usage listing and extension history scope and paginate results', async () => {
  let query;
  prisma.tenant.findMany = async args => { query = args; return Array.from({ length: 101 }, (_, i) => ({ ...tenants.org, id: String(i), name: 'Tenant', slug: 'tenant', users: [{ name: 'Owner', email: 'owner@example.test' }] })); };
- const page = await aiCreditTenants(50, 'owner@example.test'); assert.equal(query.skip, undefined); assert.equal(query.take, undefined); assert.ok(query.where.OR[2].users.some.OR[1].email); assert.equal(page.tenants.length, 50); assert.equal(page.next_offset, 100);
+ const page = await aiCreditTenants(50, 'owner@example.test'); assert.equal(query.skip, undefined); assert.equal(query.take, undefined); assert.ok(query.where.OR[2].users.some.identity.OR[1].email); assert.equal(page.tenants.length, 50); assert.equal(page.next_offset, 100);
  for (let i = 0; i < 21; i++) await grantAiCredits('org', input(), 'admin');
  const history = await aiCreditHistory('org', 0); assert.equal(history.grants.length, 20); assert.equal(history.next_offset, 20); assert.equal(history.grants[0].actor, 'admin');
  assert.equal((await aiCreditHistory('other', 0)).grants.length, 0); await assert.rejects(aiCreditHistory('missing', 0), /not found/);
@@ -121,6 +125,7 @@ test('internal routes require an internal key and actor, validate grants, and ex
 
 test('one grant atomically queues its owner notification, and replay never grants or notifies twice',async()=>{
  prisma.user.findFirst=async({where})=>{assert.equal(where.tenantId,'org');assert.equal(where.memberships.some.role,'owner');return{id:'owner'};};
+ installAccountReadFixtures(prisma);
  const grant=input(),first=await grantAiCredits('org',grant,'admin');await grantAiCredits('org',grant,'admin');
  assert.equal(inbox.length,1);assert.equal(deliveries.length,2);assert.equal(first.notification_id,inbox[0].id);assert.equal(audits.length,1);assert.equal(featureLimit('ai_chat',tenants.org.contact),35);
  assert.equal(inbox[0].recipientUserId,'owner');assert.doesNotMatch(inbox[0].body,/Customer extension approved/);

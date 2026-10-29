@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, installAccountReadFixtures, installAccountRelationFixtures, installSubscriptionReadFixtures } from './helpers/normalized-fixtures.mjs';
 import test, { before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -80,7 +81,7 @@ function reset() {
 before(async () => {
   prisma.$queryRaw = async () => [];
   prisma.$transaction = callback => {
-    const run = serial.then(async () => { const snapshot = { sessions: copy(sessions), activities: copy(activities) }; try { return await callback(prisma); } catch (error) { sessions = snapshot.sessions; activities = snapshot.activities; throw error; } });
+    const run = serial.then(async () => { const snapshot = { sessions: copy(sessions), activities: copy(activities) }; try { return await callback(fixtureTransactionClient(prisma)); } catch (error) { sessions = snapshot.sessions; activities = snapshot.activities; throw error; } });
     serial = run.catch(() => {}); return run;
   };
   prisma.session.findFirst = async ({ where, include }) => { const row = sessions.find(s => matches(s, where)); return row ? copy({ ...row, ...(include?.user ? { user: users.find(u => u.id === row.userId) } : {}) }) : null; };
@@ -102,7 +103,10 @@ before(async () => {
   prisma.internalAudit.create = async ({ data }) => { activities.push(structuredClone(data)); return data; };
   prisma.platformBroadcast.findMany = async () => [];
   prisma.supportTicket.findMany = async () => [];
-  const app = express(); app.set('trust proxy', 1); app.use(express.json()); app.use('/v1/support/admin', masterAdminRouter); app.use('/v1/support/impersonation', impersonationRouter); app.use('/v1/auth', authRouter); app.use('/v1/projects', projectsRouter); app.use('/v1/accounts', authenticate, accountsRouter); app.use('/v1/inventory', authenticate, stockRouter, inventoryRouter); app.use('/v1/assistant', authenticate, assistantRouter); app.use('/v1', authenticate, whatsappRouter, activityRouter);
+  installSubscriptionReadFixtures(prisma);
+installAccountRelationFixtures(prisma);
+const app = express(); app.set('trust proxy', 1); installAccountReadFixtures(prisma);
+app.use(express.json()); app.use('/v1/support/admin', masterAdminRouter); app.use('/v1/support/impersonation', impersonationRouter); app.use('/v1/auth', authRouter); app.use('/v1/projects', projectsRouter); app.use('/v1/accounts', authenticate, accountsRouter); app.use('/v1/inventory', authenticate, stockRouter, inventoryRouter); app.use('/v1/assistant', authenticate, assistantRouter); app.use('/v1', authenticate, whatsappRouter, activityRouter);
   app.get('/v1/protected', authenticate, (req, res) => res.json({ ok: true, data: req.auth }));
   app.post('/v1/protected', authenticate, (_req, res) => { mutationCount++; res.json({ ok: true }); });
   app.use(errorHandler); server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve)); base = `http://127.0.0.1:${server.address().port}`;
@@ -400,6 +404,8 @@ test('master billing notification links load the exact invoice only after master
     assert.equal(where.deletionStartedAt, null);
     return where.id === 'target-org' ? { id: 'target-org', name: 'Target organization', slug: 'target', contact: { billing: { invoices: [{ id: 'requested-invoice', status: 'submitted', amount: 5000, currency: 'BDT' }] } } } : null;
   };
+  prisma.subscriptionInvoice.findMany=async({where})=>where.tenantId==='target-org'?[{id:'requested-invoice',tenantId:'target-org',status:'submitted',amount:5000,currency:'BDT',instructions:'Pay',issuedAt:new Date(),paymentReference:null,paymentAmount:null,paymentRequestKey:null,receiptId:null,submittedAt:null,approvedAt:null,rejectionReason:null,periodEndsAt:null}]:[];
+  prisma.subscriptionPaymentReceipt.findMany=async()=>[];
   try {
     const path = '/billing/target-org/invoices/requested-invoice';
     assert.equal((await adminRead({ ...access, grant: '' }, { path })).status, 403);

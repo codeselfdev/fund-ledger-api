@@ -1,3 +1,4 @@
+import {subscriptionContext} from "../../core/subscription/subscription.repository.js";
 import cron, { type ScheduledTask } from 'node-cron';
 import { prisma } from '../../core/prisma/client.js';
 import { evaluateSubscription } from '../../core/subscription/subscription.service.js';
@@ -8,10 +9,10 @@ let task:ScheduledTask|null=null,busy=false;
 export async function runReportsWorker(now=new Date()) {
   if(process.env.REPORTS_AUTOMATION_ENABLED!=='true'||busy) return;busy=true;
   try {
-    const schedules=await prisma.reportSchedule.findMany({where:{enabled:true,project:{isActive:true}},include:{project:{include:{tenant:true}}}});
+    const schedules=await prisma.reportSchedule.findMany({where:{enabled:true,project:{isActive:true}},include:{project:{include:{tenant:{ include: { subscription: true } }}}}});
     for(const s of schedules) {
-      if(!evaluateSubscription(s.project.tenant.contact,now).has_access) continue;
-      if(!await prisma.projectMembership.findFirst({where:{tenantId:s.tenantId,projectId:s.projectId,userId:s.updatedById,isActive:true,role:{in:['owner','admin']},user:{isActive:true}}})) continue;
+      if(!evaluateSubscription(subscriptionContext(s.project.tenant),now).has_access) continue;
+      if(!await prisma.projectMembership.findFirst({where:{tenantId:s.tenantId,projectId:s.projectId,userId:s.updatedById,isActive:true,role:{in:['owner','admin']},user:{ isActive:true}}})) continue;
       const local=localParts(now,s.timezone);
       if(!s.days.includes(local.day)||local.time<s.time) continue;
       const edited=localParts(s.updatedAt,s.timezone);
@@ -37,9 +38,9 @@ export async function runReportsWorker(now=new Date()) {
   } finally { busy=false; }
 }
 async function runIntegrationUpdates(now:Date) {
-  const connections=await prisma.telegramConnection.findMany({include:{project:{include:{tenant:true}}}});
+  const connections=await prisma.telegramConnection.findMany({include:{project:{include:{tenant:{ include: { subscription: true } }}}}});
   for(const c of connections) {
-    if(!c.project.isActive||!evaluateSubscription(c.project.tenant.contact,now).has_access) continue;
+    if(!c.project.isActive||!evaluateSubscription(subscriptionContext(c.project.tenant),now).has_access) continue;
     const scope={tenantId:c.tenantId,projectId:c.projectId};
     const since=new Date(Math.max(c.connectedAt.getTime(),c.updatedAt.getTime(),now.getTime()-7*86400000));
     const post=async(label:string,key:string,text:string)=>{

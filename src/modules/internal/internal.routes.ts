@@ -82,7 +82,7 @@ router.post('/tenants/:id/ai-credits', asyncHandler(async (req, res) =>
     ok(res, await grantAiCredits(String(req.params.id), aiCreditGrantSchema.parse(req.body), internalActor(req)))));
 router.get("/tenants", asyncHandler(async (req, res) => { const q = page.parse(req.query); return ok(res, await tenantSummaries(q.offset, q.search)); }));
 router.get("/tenants/:id", asyncHandler(async (req, res) => {
-    const tenant = await prisma.tenant.findUnique({ where: { id: String(req.params.id) } });
+    const tenant = await prisma.tenant.findUnique({ include: { subscription: true }, where: { id: String(req.params.id) } });
     if (!tenant)
         throw notFound("Organization not found");
     const [summary, quota, assistant] = await Promise.all([summariesFor([tenant]), tenantQuota(tenant.id), assistantStatus(tenant.id)]);

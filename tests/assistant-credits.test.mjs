@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, subscriptionRow } from './helpers/normalized-fixtures.mjs';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 Object.assign(process.env,{DATABASE_URL:'postgresql://test:test@127.0.0.1:1/test',JWT_SECRET:'ai-credit-tests'});
@@ -19,8 +20,8 @@ test('Free and Starter get fixed credits; WhatsApp remains Business only and exp
 });
 test('organization credit reservation serializes the final slot across projects, charges failures and permits safe replay',async()=>{
  let plan='free',rows=[],queue=Promise.resolve();
- prisma.$transaction=fn=>{const next=queue.then(()=>fn(prisma));queue=next.catch(()=>{});return next;};
- prisma.$queryRaw=async()=>[];prisma.tenant.findUniqueOrThrow=async()=>({contact:contact(plan)});
+ prisma.$transaction=fn=>{const next=queue.then(()=>fn(fixtureTransactionClient(prisma)));queue=next.catch(()=>{});return next;};
+ prisma.$queryRaw=async()=>[];prisma.tenant.findUniqueOrThrow=async()=>({contact:{},subscription:subscriptionRow('tenant',contact(plan).subscription)});
  prisma.assistantReply.findUnique=async({where})=>rows.find(row=>row.requestKey===where.tenantId_channel_requestKey.requestKey);
  prisma.assistantReply.count=async({where})=>rows.filter(row=>row.channel===where.channel&&row.periodStart.getTime()===where.periodStart.getTime()).length;
  prisma.assistantReply.create=async({data})=>{const row={...data,id:String(rows.length)};rows.push(row);return row;};

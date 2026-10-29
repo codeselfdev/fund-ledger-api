@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
 import type { PayrollEmployee } from '@prisma/client';
@@ -62,7 +63,7 @@ export async function requestLocation(a:Auth,employeeId:string,b:z.infer<typeof 
     const mine=(await todaysRequests(tx,a,date)).filter(r=>r.data.employeeId===employeeId);
     if(mine.some(r=>effectiveStatus(r.data)==='pending'))throw conflict('A request is already waiting for this employee');
     if(mine.length>=MAX_LOCATION_REQUESTS_PER_DAY)throw conflict(`You can ask ${e.name} at most ${MAX_LOCATION_REQUESTS_PER_DAY} times a day`);
-    const requester=await tx.user.findFirst({where:{id:a.userId,tenantId:a.tenantId},select:{name:true}});
+    const requester=await tenantAccounts(tx).findFirst({where:{id:a.userId,tenantId:a.tenantId},select:{name:true}});
     const key=randomUUID(),value:Omit<LocationRequest,'id'|'revision'>={employeeId,requestedBy:a.userId,requestedByName:requester?.name??'Your manager',requestedAt:new Date().toISOString(),expiresAt:shiftEndIso(date,settings),status:'pending',respondedAt:null};
     const saved=mapped(await saveRecord(tx,a,'location_request',key,value,employeeId));
     await audit(tx,a,'location.requested','payroll_employee',employeeId,{request_id:key});
@@ -121,7 +122,7 @@ export async function createPortalEmployee(a:Auth,b:z.infer<typeof employeeCreat
   manage(a); return mutate(a,'portal.employee.create',b,async tx=>{
     await jobReferences(tx,a,b);
     if(await tx.payrollEmployee.findFirst({where:{...scope(a),mobile:b.mobile}})) throw conflict('This mobile already belongs to an employee');
-    const users=await tx.user.findMany({where:{tenantId:a.tenantId,isActive:true},select:{id:true,mobile:true}}), matches=users.filter(u=>mobile(u.mobile)===b.mobile);
+    const users=await tenantAccounts(tx).findMany({where:{tenantId:a.tenantId,isActive:true},select:{id:true,mobile:true}}), matches=users.filter(u=>mobile(u.mobile)===b.mobile);
     if(matches.length>1) throw conflict('Resolve duplicate accounts for this mobile first');
     const dept=b.departmentId?(await record<Department>(tx,a,'department',b.departmentId))!.data:null;
     const desig=b.designationId?(await record<Designation>(tx,a,'designation',b.designationId))!.data:null;

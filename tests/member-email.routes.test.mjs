@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, installAccountReadFixtures } from './helpers/normalized-fixtures.mjs';
 import assert from 'node:assert/strict';
 import { test, before, after } from 'node:test';
 import express from 'express';
@@ -25,11 +26,12 @@ before(async () => {
   prisma.$queryRaw = async () => [];
   prisma.$transaction = async callback => {
     const snapshot = structuredClone({ member, user });
-    try { return await callback(prisma); }
+    try { return await callback(fixtureTransactionClient(prisma)); }
     catch (error) { ({ member, user } = snapshot); throw error; }
   };
   prisma.activity.create = async ({ data }) => data;
-  const app = express(); app.use(express.json());
+  const app = express(); installAccountReadFixtures(prisma);
+app.use(express.json());
   app.use((req, _res, next) => {
     req.auth = { tenantId: 'tenant', projectId: 'project', userId: 'actor', memberId: req.header('x-self') === 'yes' ? 'member' : null, roles: [req.header('x-role') || 'admin'] }; next();
   });
@@ -43,24 +45,24 @@ async function patch(body, suffix = '/profile', headers = {}) {
   const response = await fetch(url + '/members/member' + suffix, { method: 'PATCH', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
   return { status: response.status, body: await response.json() };
 }
-test('profile email updates both member and linked login account, preserving other identity fields and profile', async () => {
+test('profile email changes the member contact while preserving global login and profile', async () => {
   reset(); const response = await patch({ email: '  New.Email@example.com  ' });
-  assert.equal(response.status, 200); assert.equal(member.email, 'New.Email@example.com'); assert.equal(user.email, member.email);
-  assert.equal(user.name, 'Account name'); assert.equal(userWrites, 1);
+  assert.equal(response.status, 200); assert.equal(member.email, 'New.Email@example.com'); assert.equal(user.email, 'old@example.com');
+  assert.equal(user.name, 'Account name'); assert.equal(userWrites, 0);
   assert.deepEqual(member.profile, { occupation: 'Engineer', photo_file_id: 'photo' });
 });
-test('clearing profile email clears the linked account for both supported empty values', async () => {
-  for (const email of ['', null]) { reset(); assert.equal((await patch({ email })).status, 200); assert.equal(member.email, null); assert.equal(user.email, null); }
+test('clearing profile email preserves the global login for both supported empty values', async () => {
+  for (const email of ['', null]) { reset(); assert.equal((await patch({ email })).status, 200); assert.equal(member.email, null); assert.equal(user.email, 'old@example.com'); }
 });
 test('profile-only edits preserve a different account email and do not write the user', async () => {
   reset(); user.email = 'account@example.com';
   assert.equal((await patch({ occupation: 'Architect' })).status, 200);
   assert.equal(user.email, 'account@example.com'); assert.equal(userWrites, 0);
 });
-test('failed account update rolls back the member email', async () => {
+test('member contact edits are independent of login-account availability', async () => {
   reset(); failUserWrite = true;
-  assert.equal((await patch({ email: 'new@example.com' })).status, 500);
-  assert.equal(member.email, 'old@example.com'); assert.equal(user.email, 'old@example.com');
+  assert.equal((await patch({ email: 'new@example.com' })).status, 200);
+  assert.equal(member.email, 'new@example.com'); assert.equal(user.email, 'old@example.com');
 });
 test('unlinked member updates do not guess or overwrite another user account', async () => {
   reset(); member.userId = null;
@@ -73,14 +75,14 @@ test('foreign-project member and unauthorized edits fail without writes', async 
 });
 test('a member can update their own email using existing profile permissions', async () => {
   reset(); assert.equal((await patch({ email: 'new@example.com' }, '/profile', { 'x-role': 'member', 'x-self': 'yes' })).status, 200);
-  assert.equal(user.email, member.email);
+  assert.equal(user.email, 'old@example.com');
 });
-test('a linked user in a different tenant cannot be modified and the member change rolls back', async () => {
-  reset(); user.tenantId = 'foreign'; assert.equal((await patch({ email: 'new@example.com' })).status, 500);
-  assert.equal(user.email, 'old@example.com'); assert.equal(member.email, 'old@example.com');
+test('a member contact edit cannot modify a global account through another tenant', async () => {
+  reset(); user.tenantId = 'foreign'; assert.equal((await patch({ email: 'new@example.com' })).status, 200);
+  assert.equal(user.email, 'old@example.com'); assert.equal(member.email, 'new@example.com');
 });
-test('the general member update synchronizes email and preserves omitted account fields', async () => {
-  reset(); assert.equal((await patch({ email: 'new@example.com' }, '')).status, 200); assert.equal(user.email, member.email); assert.equal(user.name, 'Account name');
+test('general member updates keep their name and contact separate from global identity', async () => {
+  reset(); assert.equal((await patch({ email: 'new@example.com' }, '')).status, 200); assert.equal(user.email, 'old@example.com'); assert.equal(user.name, 'Account name');
   user.email = 'account@example.com'; assert.equal((await patch({ name: 'Updated member' }, '')).status, 200);
-  assert.equal(user.name, 'Updated member'); assert.equal(user.email, 'account@example.com');
+  assert.equal(user.name, 'Account name'); assert.equal(user.email, 'account@example.com');
 });

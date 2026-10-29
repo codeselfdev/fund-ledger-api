@@ -64,10 +64,10 @@ router.get("/receipts/:id/pdf", requireProject, requireRoles("any"), validatePar
   });
   if (!receipt) throw notFound("Receipt not found");
   if (!isSelfOrRole(auth, receipt.memberId, [...STAFF_ROLES, "owner"])) throw forbidden();
-  
+
   const ownerMembership = await prisma.projectMembership.findFirst({
     where: { tenantId: auth.tenantId, projectId: receipt.projectId, role: "owner" },
-    include: { user: true }
+    include: { user: { include: { identity: { select: { name: true, email: true, mobile: true, isActive: true } } } } }
   });
 
   let projectLogo: Buffer | null = null;
@@ -106,7 +106,7 @@ router.get("/receipts/:id/pdf", requireProject, requireRoles("any"), validatePar
     projectLogoMimeType,
     method: receipt.method,
     reference: receipt.deposit.reference,
-    ownerMobile: ownerMembership?.user.mobile ?? null,
+    ownerMobile: ownerMembership?.user.identity.mobile ?? null,
     paymentPurpose: receipt.deposit.allocate === "advance" ? "Advance member contribution" : "Member contribution"
   });
   res.setHeader("Content-Type", "application/pdf");

@@ -1,3 +1,4 @@
+import { subscriptionContext } from "../subscription/subscription.repository.js";
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../prisma/client.js';
@@ -11,11 +12,11 @@ export const createGroupSchema = z.object({ name: z.string().trim().min(2).max(1
 type Scope = { tenantId: string; projectId: string; userId: string };
 async function entitlement(scope: Pick<Scope, 'tenantId' | 'projectId'>) {
   const [tenant, project] = await Promise.all([
-    prisma.tenant.findUnique({ where: { id: scope.tenantId } }),
+    prisma.tenant.findUnique({ include: { subscription: true },  where: { id: scope.tenantId } }),
     prisma.project.findFirst({ where: { id: scope.projectId, tenantId: scope.tenantId, isActive: true } }),
   ]);
   if (!tenant || tenant.deletionStartedAt || !project) throw forbidden();
-  return hasBusinessAssistant(tenant.contact);
+  return hasBusinessAssistant(subscriptionContext(tenant));
 }
 
 export async function managedWhatsAppSetup(scope: Pick<Scope, 'tenantId' | 'projectId'>, readOnly = false) {

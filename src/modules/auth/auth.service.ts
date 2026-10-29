@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { randomInt } from "node:crypto";
 import { recordUserLogin } from "../../core/security/client-activity.js";
 import { linkedIdentityUsers } from "../../core/security/linked-identity.js";
@@ -114,6 +115,7 @@ export function mobileLookupValues(input: string): string[] {
 }
 
 export function canonicalMobile(input: string): string {
+  if (/^[ge]:/.test(input)) return input.trim();
   const trimmed = input.trim(), digits = trimmed.replace(/\D/g, "");
   if (!digits) return trimmed;
   if (trimmed.startsWith("+")) return `+${digits}`;
@@ -145,32 +147,21 @@ const userLoginInclude = {
     where: { isActive: true, project: { isActive: true } },
     include: { project: true, member: true, customRole: true }
   },
-  tenant: true
+  tenant: { include: { subscription: true } }
 } as const;
 
 export async function findActiveUsersByMobile(mobile: string, tenantSlug?: string, deduplicate = true) {
-  const candidates = mobileLookupValues(mobile);
-  const last10 = mobile.replace(/\D/g, "").slice(-10);
-  const users = await prisma.user.findMany({
-    where: {
-      isActive: true,
-      ...(tenantSlug ? { tenant: { slug: tenantSlug } } : {}),
-      OR: [
-        { mobile: { in: candidates } },
-        ...(last10.length === 10 ? [{ mobile: { endsWith: last10 } }] : [])
-      ]
-    },
+  const users = await tenantAccounts(prisma).findMany({
+    where: { isActive: true, mobile: canonicalMobile(mobile), ...(tenantSlug ? { tenant: {slug:tenantSlug} } : {}) },
     include: userLoginInclude
   });
-
-  const matching = users.filter((user) => mobilesEquivalent(user.mobile, mobile));
-  return deduplicate ? deduplicateLinkedUsers(matching) : matching;
+  return deduplicate ? deduplicateLinkedUsers(users) : users;
 }
 
 export async function findActiveUsersByEmail(email: string, tenantSlug?: string) {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return [];
-  const users = await prisma.user.findMany({
+  const users = await tenantAccounts(prisma).findMany({
     where: {
       isActive: true,
       email: { equals: normalized, mode: "insensitive" },
@@ -181,9 +172,9 @@ export async function findActiveUsersByEmail(email: string, tenantSlug?: string)
   return deduplicateLinkedUsers(users);
 }
 
-function deduplicateLinkedUsers<T extends { id: string; identityRootId: string | null }>(users: T[]) {
+function deduplicateLinkedUsers<T extends { id: string; userId: string | null }>(users: T[]) {
   const seen = new Set<string>();
-  return users.filter(user => { const root = user.identityRootId ?? user.id; if (seen.has(root)) return false; seen.add(root); return true; });
+  return users.filter(user => { const root = user.userId ?? user.id; if (seen.has(root)) return false; seen.add(root); return true; });
 }
 
 export function toLoginSessionPayload(
@@ -216,7 +207,7 @@ export async function issueLoginSession(user: LoginUser, projectId?: string, rec
 }
 
 export async function getActiveUserForLogin(userId: string) {
-  return prisma.user.findUniqueOrThrow({
+  return tenantAccounts(prisma).findUniqueOrThrow({
     where: { id: userId },
     include: userLoginInclude
   });

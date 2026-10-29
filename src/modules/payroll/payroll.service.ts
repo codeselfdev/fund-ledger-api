@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { records } from './portal.store.js';
 import { spreadsheetRun } from './payroll.imports.policy.js';
 import { mapAttendanceRequest } from './attendance.requests.js';
@@ -33,7 +34,7 @@ export async function audit(tx: Tx, a: PayrollAuth, action: string, entityType: 
   await tx.activity.create({ data: { ...scope(a), actorUserId: a.userId, action: `payroll.${action}`, entityType, entityId, after: json(detail) } });
 }
 export async function history(tx: Tx, a: PayrollAuth, action: string, prior: unknown = [], note?: string): Promise<History[]> {
-  const user = await tx.user.findFirstOrThrow({ where: { id: a.userId, tenantId: a.tenantId } });
+  const user = await tenantAccounts(tx).findFirstOrThrow({ where: { id: a.userId, tenantId: a.tenantId } });
   return [...(prior as History[]), { action, actor: user.name, actorId: a.userId, at: new Date().toISOString(), ...(note ? { note } : {}) }];
 }
 export function revision(actual: number, expected: number) { if (actual !== expected) throw conflict('This record changed. Refresh before reviewing or paying it.'); }
@@ -63,7 +64,7 @@ export async function mutate<T>(a: PayrollAuth, action: string, body: { request_
 export async function ownEmployee(tx: Tx, a: PayrollAuth): Promise<PayrollEmployee | null> {
   const linked = await tx.payrollEmployee.findFirst({ where: { ...scope(a), userId: a.userId } });
   if (linked) return linked;
-  const user = await tx.user.findFirstOrThrow({ where: { id: a.userId, tenantId: a.tenantId, isActive: true } });
+  const user = await tenantAccounts(tx).findFirstOrThrow({ where: { id: a.userId, tenantId: a.tenantId, isActive: true } });
   const candidate = await tx.payrollEmployee.findFirst({ where: { ...scope(a), mobile: mobile(user.mobile), userId: null } });
   if (!candidate) return null;
   // Bind once to the authenticated account, so a later phone-number change cannot transfer salary history.

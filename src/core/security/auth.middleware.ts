@@ -34,10 +34,10 @@ function authenticateSession(resolveProject: boolean): RequestHandler {
           revokedAt: null,
           expiresAt: { gt: new Date() }
         },
-        include: { user: true }
+        include: { user: { include: { identity: { select: { name: true, email: true, mobile: true, isActive: true } } } } }
       });
 
-      if (!session || !session.user.isActive) {
+      if (!session || (!session.user.isActive || !session.user.identity.isActive || session.user.tenantId !== session.tenantId)) {
         throw unauthorized("Invalid or expired session");
       }
 

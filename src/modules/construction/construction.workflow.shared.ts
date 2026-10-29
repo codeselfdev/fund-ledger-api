@@ -5,9 +5,9 @@ export type Tx=Prisma.TransactionClient;export type A=BillingScope;
 export {scope};
 export async function evidence(tx:Tx,a:A,ids:string[]){for(const id of ids)if(!await tx.upload.findFirst({where:{...scope(a),id,deletedAt:null}}))throw notFound('Project evidence file not found.');}
 export async function reviewerOptions(tx:Tx,a:A){
- const rows=await tx.projectMembership.findMany({where:{...scope(a),isActive:true,user:{isActive:true}},include:{user:{select:{id:true,name:true}},customRole:true}});
+ const rows=await tx.projectMembership.findMany({where:{...scope(a),isActive:true,user:{ isActive:true}},include:{user:{select:{ id:true, identity: {select: {name:true}} }},customRole:true}});
  const ids=new Map<string,{id:string;name:string}>();
- for(const row of rows){const permissions=row.customRole?.permissions as Record<string,{write?:boolean}>|undefined;if(!row.customRoleId&&['owner','admin','approver'].includes(row.role)||permissions?.construction_control?.write)ids.set(row.userId,{id:row.userId,name:row.user?.name??row.userId});}
+ for(const row of rows){const permissions=row.customRole?.permissions as Record<string,{write?:boolean}>|undefined;if(!row.customRoleId&&['owner','admin','approver'].includes(row.role)||permissions?.construction_control?.write)ids.set(row.userId,{id:row.userId,name:row.user?.identity.name??row.userId});}
  return [...ids.values()];
 }
 export async function validateReviewer(tx:Tx,a:A,id:string){if(id===a.userId)throw badRequest('Choose a different person for independent approval.');if(!(await reviewerOptions(tx,a)).some(r=>r.id===id))throw badRequest('Choose an active project approver or Site controls writer.');}

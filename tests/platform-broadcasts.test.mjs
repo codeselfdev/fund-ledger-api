@@ -1,3 +1,4 @@
+import { installAccountReadFixtures } from './helpers/normalized-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
@@ -38,6 +39,7 @@ function fixture(includeInboxOnlyAccounts = false) {
     internalAudit: { async create({ data }) { audit.push(data); return data; } },
     async $transaction(fn) { return fn(db); },
   };
+  installAccountReadFixtures(db);
   const service = createPlatformBroadcasts(db, async input => { pushes.push(input); if (result instanceof Error) throw result; return result; }, () => ready, 'synthetic-preview-secret', includeInboxOnlyAccounts);
   const input = async () => { const p = await service.preview(actor, draft); return { draft, request_key: randomUUID(), preview_token: p.preview_token, expires_at: p.expires_at }; };
   const workerRow = (extra = {}) => { deliveries.push({ id: 'delivery1', broadcastId: 'broadcast1', recipientIds: ['u1', 'u2'], tokenHash: digest('same-device'), attempts: 0, broadcast: draft, ...extra }); };

@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../identity/tenant-accounts.js";
 import type { Role } from "@prisma/client";
 import { prisma } from "../prisma/client.js";
 import { sendPushMessage } from "./fcm.service.js";
@@ -20,12 +21,12 @@ type NotificationInput = {
 export async function getRoleEmails(tenantId: string, projectId: string, roles: Role[]): Promise<string[]> {
   const memberships = await prisma.projectMembership.findMany({
     where: { tenantId, projectId, isActive: true, role: { in: roles } },
-    include: { user: { select: { email: true } } }
+    include: { user: { select: { identity: {select: {email: true}} } } }
   });
 
   return [...new Set(
     memberships
-      .map((membership) => membership.user.email)
+      .map((membership) => membership.user.identity.email)
       .filter((email): email is string => !!email)
   )];
 }
@@ -44,7 +45,7 @@ export async function notifyProjectMembers(input: NotificationInput) {
         },
         select: { userId: true }
       })
-    : await prisma.user.findMany({
+    : await tenantAccounts(prisma).findMany({
         where: {
           tenantId: input.tenantId,
           isActive: true
@@ -74,7 +75,7 @@ export async function notifyProjectMembers(input: NotificationInput) {
     }))
   });
 
-  const usersWithToken = await prisma.user.findMany({
+  const usersWithToken = await tenantAccounts(prisma).findMany({
     where: {
       tenantId: input.tenantId,
       id: { in: recipientUserIds },
@@ -100,7 +101,7 @@ export async function notifyProjectMembers(input: NotificationInput) {
     });
 
     if (push.invalid_tokens.length > 0) {
-      await prisma.user.updateMany({
+      await tenantAccounts(prisma).updateMany({
         where: {
           tenantId: input.tenantId,
           deviceId: { in: push.invalid_tokens }

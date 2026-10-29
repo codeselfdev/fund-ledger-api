@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, installNormalizedFixtures } from './helpers/normalized-fixtures.mjs';
 import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { before, after, beforeEach, test } from 'node:test';
@@ -48,7 +49,7 @@ function userRow(row) {
 function reset(role = 'member') {
   nextId = 0; sessions = []; members = []; accounts = []; progress = []; audits = [];
   users = [{ id: 'original-user', tenantId: 'original-org', identityRootId: null, name: 'Member', mobile: '+8801711000001', email: 'member@example.test', isActive: true, deviceId: null }];
-  tenants = [{ id: 'original-org', slug: 'original', name: 'Original', plan: 'free', contact: { subscription: createOneMonthTrial() }, updatedAt: new Date(1) }];
+  tenants = [{ id: 'original-org', slug: 'original', name: 'Original', subscription: createOneMonthTrial(), contact: {}, updatedAt: new Date(1) }];
   projects = [{ id: 'original-project', tenantId: 'original-org', name: 'Original', projectType: 'fund_shares', totalShares: 10, portalSettings: null, logoFileId: null, isActive: true }];
   memberships = [{ id: 'original-membership', tenantId: 'original-org', projectId: 'original-project', userId: 'original-user', role, memberId: role === 'member' ? 'original-member' : null, isActive: true }];
 }
@@ -69,7 +70,7 @@ before(async () => {
   prisma.$queryRaw = async () => [];
   prisma.upload.count = async () => 0;
   prisma.project.count = async ({ where }) => projects.filter(row => matches(row, where)).length;
-  prisma.$transaction = async fn => fn(prisma);
+  prisma.$transaction = async fn => fn(fixtureTransactionClient(prisma));
   prisma.user.findUniqueOrThrow = async ({ where }) => { const row = users.find(row => matches(row, where)); if (!row) throw new Error('User not found'); return userRow(row); };
   prisma.user.findMany = async ({ where }) => users.filter(row => matches(row, where)).map(userRow);
   prisma.user.update = async ({where,data}) => { const row=users.find(user=>user.id===where.id); Object.assign(row,data); return copy(row); };
@@ -99,6 +100,9 @@ before(async () => {
   prisma.session.update = async ({ where, data }) => { const row = sessions.find(row => matches(row, where)); Object.assign(row, data); return copy(row); };
   prisma.session.updateMany = async ({ where, data }) => { const rows = sessions.filter(row => matches(row, where)); rows.forEach(row => Object.assign(row, data)); return { count: rows.length }; };
   prisma.activity.create = async ({ data }) => { audits.push(data); return data; };
+  installNormalizedFixtures(prisma,{users:()=>users,tenants:()=>tenants,memberships:()=>memberships,projects:()=>projects,
+    createAccount:async data=>{const row={id:`fixture-user-${users.length}`,isActive:true,identityRootId:null,...data};if(!row.id)row.id=`fixture-user-${users.length}`;users.push(row);return row;},
+    updateAccount:async(where,data)=>{const row=users.find(row=>row.id===where.id);Object.assign(row,data);return row;},receipts:()=>proofRows});
   const app = express(); app.use(express.json());
   app.use('/auth', authRouter); app.use('/projects', projectsRouter); app.use('/tenants', tenantsRouter); app.use('/platform/billing', platformBillingRouter);
   app.use('/subscription', authenticate, subscriptionRouter);
@@ -121,7 +125,7 @@ test('signup and provisioning seed fund titles while other project types keep th
     await provisionTenant({ name: 'New organization', slug: 'new-organization', adminName: 'New owner',
       adminMobile: '+8801711000099', projectType: type, source: 'self_signup' });
     const contact = tenants.at(-1).contact;
-    assert.equal(contact.subscription.status, 'trial');
+    assert.equal(tenants.at(-1).subscription.status, 'trial');
     assert.deepEqual(contact.member_document_titles?.map(row => row.title), type === 'fund_shares' ? DEFAULT_MEMBER_DOCUMENT_TITLES : undefined);
   }
 });
@@ -175,13 +179,13 @@ for (const role of ['member', 'accountant', 'approver', 'auditor', 'cashier', 'a
   reset(role); const token = tokenFor(); const result = await create(token); assert.equal(result.status, 201);
   const created = result.body.data; assert.notEqual(created.tenant_id, 'original-org'); assert.equal(created.role, 'owner');
   assert.equal(memberships[0].role, role); assert.equal(members.length, 0); assert.equal(users.at(-1).identityRootId, 'original-user');
-  assert.equal(users[0].tenantId, 'original-org'); assert.equal(tenants.at(-1).contact.subscription.status, 'trial');
+  assert.equal(users[0].tenantId, 'original-org'); assert.equal(tenants.at(-1).subscription.status, 'trial');
   assert.deepEqual(tenants.at(-1).contact.member_document_titles.map(row => row.title), DEFAULT_MEMBER_DOCUMENT_TITLES);
   assert.equal(accounts.at(-1).tenantId, created.tenant_id); assert.equal(progress.at(-1).accountantStepStatus, 'skipped');
-  assert.equal(evaluateSubscription(tenants.at(-1).contact).has_access, true);
+  assert.equal(evaluateSubscription({subscription:tenants.at(-1).subscription}).has_access, true);
 });
 test('expired or revoked original project access does not prevent account-level organization creation', async () => {
-  memberships[0].isActive = false; tenants[0].contact = { subscription: createTrialSubscription(0, new Date('2020-01-01')) };
+  memberships[0].isActive = false; tenants[0].subscription = createTrialSubscription(0, new Date('2020-01-01'));
   const result = await create(tokenFor()); assert.equal(result.status, 201);
 });
 test('optional member linkage belongs only to the new organization', async () => {
@@ -245,17 +249,17 @@ test('only the billing service can issue bills and approve paid renewals', async
   assert.equal((await request('/subscription/invoices', { token: own.originalToken, projectId: 'original-project' })).status, 403);
 });
 test('expired access resumes for one year only after submitted manual payment is approved', async () => {
-  const own = await owned(); const tenant = tenants.find(row => row.id === own.tenantId); tenant.contact.subscription = createTrialSubscription(0, new Date('2020-01-01'));
-  const invoice = await invoiceFor(own); assert.equal(evaluateSubscription(tenant.contact).has_access, false);
-  const submit = await request(`/subscription/invoices/${invoice.id}/payment`, { token: own.token, projectId: own.id, body: { payment_reference: 'TX-123' } }); assert.equal(submit.status, 200); assert.equal(evaluateSubscription(tenant.contact).has_access, false);
-  const approved = await request(`/platform/billing/${own.tenantId}/invoices/${invoice.id}/review`, { platformKey: 'test-platform-key', body: { decision: 'approve' } }); assert.equal(approved.status, 200); assert.equal(evaluateSubscription(tenant.contact).has_access, true);
-  const end = tenant.contact.subscription.current_period_end_at; assert.equal(new Date(end).getUTCFullYear(), new Date().getUTCFullYear() + 1);
-  const again = await request(`/platform/billing/${own.tenantId}/invoices/${invoice.id}/review`, { platformKey: 'test-platform-key', body: { decision: 'approve' } }); assert.equal(again.status, 200); assert.equal(tenant.contact.subscription.current_period_end_at, end);
+  const own = await owned(); const tenant = tenants.find(row => row.id === own.tenantId); tenant.subscription = createTrialSubscription(0, new Date('2020-01-01'));
+  const invoice = await invoiceFor(own); assert.equal(evaluateSubscription({subscription:tenant.subscription}).has_access, false);
+  const submit = await request(`/subscription/invoices/${invoice.id}/payment`, { token: own.token, projectId: own.id, body: { payment_reference: 'TX-123' } }); assert.equal(submit.status, 200); assert.equal(evaluateSubscription({subscription:tenant.subscription}).has_access, false);
+  const approved = await request(`/platform/billing/${own.tenantId}/invoices/${invoice.id}/review`, { platformKey: 'test-platform-key', body: { decision: 'approve' } }); assert.equal(approved.status, 200); assert.equal(evaluateSubscription({subscription:tenant.subscription}).has_access, true);
+  const end = tenant.subscription.current_period_end_at; assert.equal(new Date(end).getUTCFullYear(), new Date().getUTCFullYear() + 1);
+  const again = await request(`/platform/billing/${own.tenantId}/invoices/${invoice.id}/review`, { platformKey: 'test-platform-key', body: { decision: 'approve' } }); assert.equal(again.status, 200); assert.equal(tenant.subscription.current_period_end_at, end);
 });
 test('rejected payments remain blocked and can be resubmitted without issuing another invoice', async () => {
-  const own = await owned(); const tenant = tenants.find(row => row.id === own.tenantId); tenant.contact.subscription = createTrialSubscription(0, new Date('2020-01-01')); const invoice = await invoiceFor(own);
+  const own = await owned(); const tenant = tenants.find(row => row.id === own.tenantId); tenant.subscription = createTrialSubscription(0, new Date('2020-01-01')); const invoice = await invoiceFor(own);
   await request(`/subscription/invoices/${invoice.id}/payment`, { token: own.token, projectId: own.id, body: { payment_reference: 'TX-bad' } });
-  const rejected = await request(`/platform/billing/${own.tenantId}/invoices/${invoice.id}/review`, { platformKey: 'test-platform-key', body: { decision: 'reject', reason: 'Payment not found' } }); assert.equal(rejected.status, 200); assert.equal(evaluateSubscription(tenant.contact).has_access, false);
+  const rejected = await request(`/platform/billing/${own.tenantId}/invoices/${invoice.id}/review`, { platformKey: 'test-platform-key', body: { decision: 'reject', reason: 'Payment not found' } }); assert.equal(rejected.status, 200); assert.equal(evaluateSubscription({subscription:tenant.subscription}).has_access, false);
   assert.equal((await request(`/subscription/invoices/${invoice.id}/payment`, { token: own.token, projectId: own.id, body: { payment_reference: 'TX-good' } })).status, 200);
 });
 test('a payment from another organization cannot be submitted against this invoice', async () => {
@@ -264,13 +268,13 @@ test('a payment from another organization cannot be submitted against this invoi
 });
 
 test('concurrent approval requests cannot grant two renewal years', async () => {
-  const own = await owned(); const tenant = tenants.find(row => row.id === own.tenantId); tenant.contact.subscription = createTrialSubscription(0, new Date('2020-01-01'));
+  const own = await owned(); const tenant = tenants.find(row => row.id === own.tenantId); tenant.subscription = createTrialSubscription(0, new Date('2020-01-01'));
   const invoice = await invoiceFor(own);
   await request(`/subscription/invoices/${invoice.id}/payment`, { token: own.token, projectId: own.id, body: { payment_reference: 'TX-concurrent' } });
   const approve = () => request(`/platform/billing/${own.tenantId}/invoices/${invoice.id}/review`, { platformKey: 'test-platform-key', body: { decision: 'approve' } });
   const replies = await Promise.all([approve(), approve()]);
   assert.ok(replies.some(reply => reply.status === 200)); assert.ok(replies.every(reply => [200, 409].includes(reply.status)));
-  assert.equal(new Date(tenant.contact.subscription.current_period_end_at).getUTCFullYear(), new Date().getUTCFullYear() + 1);
+  assert.equal(new Date(tenant.subscription.current_period_end_at).getUTCFullYear(), new Date().getUTCFullYear() + 1);
 });
 
 
@@ -325,8 +329,8 @@ test('a project-level owner cannot become the payer for another organization',as
  assert.equal((await request('/projects',{token,projectId:'secondary-project',body:{name:'Another',total_shares:1}})).status,403);
 });
 test('an expired organization does not affect the same person’s access to a separately paid organization',async()=>{
- const own=await owned();tenants[0].contact.subscription=createTrialSubscription(0,new Date('2020-01-01'));
- const paid=tenants.find(row=>row.id===own.tenantId);paid.contact=renewTenantSubscription(paid.contact,new Date(),{package:'starter',billing_cycle:'monthly'}).contact;
+ const own=await owned();tenants[0].subscription=createTrialSubscription(0,new Date('2020-01-01'));
+ const paid=tenants.find(row=>row.id===own.tenantId);paid.subscription=renewTenantSubscription({subscription:paid.subscription},new Date(),{package:'starter',billing_cycle:'monthly'}).subscription;
  const original=await request('/subscription',{token:own.originalToken,projectId:'original-project'});
  const other=await request('/subscription',{token:own.token,projectId:own.id});
  assert.equal(original.body.data.has_access,false);assert.equal(other.body.data.has_access,true);

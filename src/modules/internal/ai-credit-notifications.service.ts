@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../core/prisma/client.js';
@@ -9,7 +10,7 @@ const type = 'ai.credits_extended';
 export async function queueAiCreditNotification(tx: Prisma.TransactionClient,
   tenant: { id: string; name: string }, grant: { id: string; channel: string; credits: number; limit: number; expires_at: string }) {
   // Match the primary active owner shown in the platform admin tenant row.
-  const owner = await tx.user.findFirst({ where: { tenantId: tenant.id, isActive: true,
+  const owner = await tenantAccounts(tx).findFirst({ where: { tenantId: tenant.id, isActive: true,
     memberships: { some: { role: 'owner', isActive: true } } }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { id: true } });
   if (!owner) return { notification_id: null };
   const id = `ai-credit:${grant.id}`, channel = grant.channel === 'ai_chat' ? 'AI chat' : 'WhatsApp AI';
@@ -40,7 +41,7 @@ export function createAiCreditNotifier(db = prisma, transports = { push: sendPus
       try {
         const notification = await db.notification.findFirst({ where: { id: row.notificationId, tenantId: row.tenantId, type,
           recipient: { tenantId: row.tenantId, isActive: true, memberships: { some: { role: 'owner', isActive: true } } } },
-          include: { recipient: true, tenant: { select: { deletionStartedAt: true } } } });
+          include: { recipient: { include: { identity: { select: { name: true, email: true, mobile: true, isActive: true } } } }, tenant: { select: { deletionStartedAt: true } } } });
         const user = notification?.recipient;
         if (!notification || !user || user.tenantId !== row.tenantId || !user.isActive || notification.tenant.deletionStartedAt) {
           await finish({ status: 'skipped', lastError: 'recipient_unavailable' }); continue;
@@ -51,15 +52,15 @@ export function createAiCreditNotifier(db = prisma, transports = { push: sendPus
           const result = await transports.push({ tokens: [token], title: notification.title, body: notification.body,
             data: { type, tenant_id: row.tenantId, entity_type: 'ai_credit_grant', entity_id: notification.entityId ?? '' } });
           if (result.invalid_tokens.includes(token)) {
-            await db.user.updateMany({ where: { id: user.id, tenantId: row.tenantId, deviceId: token }, data: { deviceId: null } });
+            await tenantAccounts(db).updateMany({ where: { id: user.id, tenantId: row.tenantId, deviceId: token }, data: { deviceId: null } });
             await finish({ status: 'skipped', lastError: 'invalid_device_token' }); continue;
           }
           if (result.sent_count !== 1) throw new Error('push_unavailable');
         } else if (row.channel === 'email') {
-          const email = user.email?.trim();
+          const email = user.identity.email?.trim();
           if (!email) { await finish({ status: 'skipped', lastError: 'no_email_address' }); continue; }
           const accepted = await transports.email({ to: email, fromName: 'Fund Nesta', subject: notification.title,
-            text: `Hello ${user.name},\n\n${notification.body}\n\nOpen Fund Nesta to use your credits. Usage is shared across your organization’s projects.` });
+            text: `Hello ${user.identity.name},\n\n${notification.body}\n\nOpen Fund Nesta to use your credits. Usage is shared across your organization’s projects.` });
           if (!accepted) throw new Error('email_unavailable');
         } else { await finish({ status: 'skipped', lastError: 'unsupported_channel' }); continue; }
         await finish({ status: 'sent', sentAt: new Date(), lastError: null });

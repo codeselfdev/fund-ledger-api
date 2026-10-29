@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, installNormalizedFixtures } from './helpers/normalized-fixtures.mjs';
 import test,{beforeEach,after} from 'node:test';
 import assert from 'node:assert/strict';
 import * as XLSX from 'xlsx';
@@ -11,14 +12,15 @@ import {organizationWorkbook} from '../dist/modules/internal/export.service.js';
 let tenant,payments,audits;
 const activeContact=()=>({subscription:{status:'active',package:'business',billing_cycle:'monthly',current_period_end_at:new Date(Date.now()+86400000).toISOString()}});
 beforeEach(()=>{
- tenant={id:'org',name:'Test organization',slug:'test-org',currency:'BDT',contact:activeContact(),updatedAt:new Date(),deletionStartedAt:null};payments=[];audits=[];
+ tenant={id:'org',name:'Test organization',slug:'test-org',currency:'BDT',contact:{},subscription:activeContact().subscription,updatedAt:new Date(),deletionStartedAt:null};payments=[];audits=[];
  prisma.$queryRaw=async()=>[{count:5n}];prisma.tenant.findUnique=async({where})=>where.id==='org'?tenant:null;prisma.tenant.findUniqueOrThrow=async()=>tenant;
  prisma.tenant.update=async({data})=>(tenant={...tenant,...data});
  prisma.platformPayment.findUnique=async({where})=>payments.find(p=>p.tenantId===where.tenantId_requestKey.tenantId&&p.requestKey===where.tenantId_requestKey.requestKey)??null;
  prisma.platformPayment.create=async({data})=>{const row={id:`payment-${payments.length}`,...data};payments.push(row);return row;};
  prisma.internalAudit.create=async({data})=>{audits.push(data);return data;};
  prisma.upload.count=async()=>7;prisma.project.count=async()=>2;
- prisma.$transaction=async callback=>{const snapshot=structuredClone({tenant,payments,audits});try{return await callback(prisma);}catch(error){({tenant,payments,audits}=snapshot);throw error;}};
+ prisma.$transaction=async callback=>{const snapshot=structuredClone({tenant,payments,audits});try{return await callback(fixtureTransactionClient(prisma));}catch(error){({tenant,payments,audits}=snapshot);throw error;}};
+const fixtureUsers=[];installNormalizedFixtures(prisma,{users:()=>fixtureUsers,tenants:()=>[tenant]});
 });
 after(()=>prisma.$disconnect());
 test('internal key fails closed when unset/short and rejects JWTs, wrong keys and query keys',()=>{
@@ -31,14 +33,14 @@ test('internal key fails closed when unset/short and rejects JWTs, wrong keys an
 });
 test('manual payment changes plan immediately, resets monthly counters and keeps actual capacity usage',async()=>{
  const input=manualPaymentSchema.parse({request_key:'6f22d132-73c4-4e34-8724-097078ba9423',package:'starter',billing_cycle:'monthly',amount:1000,currency:'BDT',method:'bank',reference:'test-only',paid_at:new Date().toISOString()});
- const oldEnd=new Date(tenant.contact.subscription.current_period_end_at);
+ const oldEnd=new Date(tenant.subscription.current_period_end_at);
  const first=await recordManualPayment('org',input,'operator');
- assert.equal(first.replayed,false);assert.equal(tenant.contact.subscription.package,'starter');assert.ok(new Date(tenant.contact.subscription.current_period_end_at)>oldEnd);
+ assert.equal(first.replayed,false);assert.equal(tenant.subscription.package,'starter');assert.ok(new Date(tenant.subscription.current_period_end_at)>oldEnd);
  assert.equal(first.quota.documents.used,7);assert.equal(first.quota.users.used,5);assert.equal(first.quota.projects.used,2);
  assert.equal(first.quota.documents.limit,1000);assert.equal(first.quota.users.limit,20);
- const reset=tenant.contact.subscription.quota_reset_at,now=new Date(Date.now()+1000);
- assert.equal(allowancePeriod(tenant.contact,now).start.toISOString(),reset);
- const replay=await recordManualPayment('org',input,'operator');assert.equal(replay.replayed,true);assert.equal(payments.length,1);assert.equal(audits.length,1);assert.equal(tenant.contact.subscription.quota_reset_at,reset);
+ const reset=tenant.subscription.quota_reset_at,now=new Date(Date.now()+1000);
+ assert.equal(allowancePeriod({subscription:tenant.subscription},now).start.toISOString(),reset);
+ const replay=await recordManualPayment('org',input,'operator');assert.equal(replay.replayed,true);assert.equal(payments.length,1);assert.equal(audits.length,1);assert.equal(tenant.subscription.quota_reset_at,reset);
  await assert.rejects(recordManualPayment('org',{...input,amount:2000},'operator'),/different data/);
  assert.equal(allowancePeriod(tenant.contact,new Date(monthlyPeriod(now).end.getTime()+1)).start.toISOString(),monthlyPeriod(new Date(monthlyPeriod(now).end.getTime()+1)).start.toISOString());
 });
@@ -58,7 +60,7 @@ test('cleanup requires three calendar months after paid expiry and rejects activ
 });
 test('cleanup deletion order respects financial restrictions and never includes global audit/OTP tables',async()=>{
  const order=tenantDeletionOrder();
- for(const [child,parent]of [['BillingAllocation','BillingPayment'],['BillingPayment','Account'],['ConstructionCostAllocation','Expense'],['FixedAssetJournal','FixedAsset'],['Member','User'],['SupportAttachment','SupportMessage'],['SupportMessage','SupportTicket']])assert.ok(order.indexOf(child)<order.indexOf(parent),`${child} before ${parent}`);
+ for(const [child,parent]of [['BillingAllocation','BillingPayment'],['BillingPayment','Account'],['ConstructionCostAllocation','Expense'],['FixedAssetJournal','FixedAsset'],['Member','TenantUser'],['SupportAttachment','SupportMessage'],['SupportMessage','SupportTicket']])assert.ok(order.indexOf(child)<order.indexOf(parent),`${child} before ${parent}`);
  assert.ok(!order.includes('InternalAudit'));assert.ok(!order.includes('TenantDeletionJob'));assert.ok(!order.includes('OtpCode'));
  env.internalApiKey='test-only-internal-key-that-is-long-enough';await assert.rejects(beginCleanup('org','bad.token','DELETE test-org','operator'),/Invalid cleanup preview/);
 });

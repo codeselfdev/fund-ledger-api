@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { documentItemFields, snapshotItemDetails, validateItemDetails } from './item-details.js';
 import { professionalProfile } from '../profile/user-profile.routes.js';
 import { documentLogo } from './document-logo.js';
@@ -103,7 +104,7 @@ router.put('/document-settings', requireRoles('admin'), asyncHandler(async (req,
     if (body.itemDetails === undefined) body.itemDetails = old.itemDetails ?? null;
     await validateItemDetails(tx, auth, body.itemDetails);
     const { prefix, prefixRevision, ...settings } = body;
-    await tx.tenant.update({ where: { id: auth.tenantId }, data: { documentPrefix: prefix, documentPrefixRevision: { increment: 1 } } });
+    await tx.tenant.update({  where: { id: auth.tenantId }, data: { documentPrefix: prefix, documentPrefixRevision: { increment: 1 } } });
     await tx.project.update({ where: { id: auth.projectId }, data: { documentSettings: json({ ...settings, revision: old.revision + 1 }) } });
     await audit(tx, auth, auth.projectId, 'accounting.document_settings.updated', { revision: old.revision + 1, prefix });
     return { ...body, revision: old.revision + 1, prefixRevision: old.prefixRevision + 1 };
@@ -113,7 +114,7 @@ router.post('/document-settings/preview', requireRoles('admin'), asyncHandler(as
   const auth = requireProjectContext(req), settings = settingsSchema.parse(req.body), kind = kindSchema.parse(req.query.kind ?? 'quotation');
   const result = await financialTransaction(async tx => {
     if (settings.itemDetails === undefined) settings.itemDetails = (await getDocumentSettings(tx, auth)).itemDetails ?? null;
-    const [project, tenant, user] = await Promise.all([tx.project.findFirst({ where: { id: auth.projectId, tenantId: auth.tenantId } }), tx.tenant.findFirstOrThrow({ where: { id: auth.tenantId } }), tx.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId } })]);
+    const [project, tenant, user] = await Promise.all([tx.project.findFirst({ where: { id: auth.projectId, tenantId: auth.tenantId } }), tx.tenant.findFirstOrThrow({ where: { id: auth.tenantId } }), tenantAccounts(tx).findFirst({ where: { id: auth.userId, tenantId: auth.tenantId } })]);
     await validateItemDetails(tx, auth, settings.itemDetails);
     const fields = settings.itemDetails ? await documentItemFields(tx, auth) : [];
     const sampleDetails = fields.map(f => ({ key: f.key, label: f.label, value: f.type === 'boolean' ? 'Yes' : f.type === 'money' ? '12,500' : f.type === 'number' ? '10' : f.type === 'date' ? '2026-10-23' : ({ sku: 'DEMO-01', unit: 'pcs', category: 'Equipment', description: 'Sample product specifications' }[f.key] ?? `Sample ${f.label.toLowerCase()}`) }));
@@ -363,7 +364,7 @@ router.get('/documents/:id/document.pdf', asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const d = await prisma.businessDocument.findFirst({ where: { id: req.params.id, ...scoped(auth) } });
   if (!d) throw notFound('Document not found');
-  const p = await prisma.project.findFirstOrThrow({ where: { id: auth.projectId, tenantId: auth.tenantId }, include: { tenant: true } });
+  const p = await prisma.project.findFirstOrThrow({ where: { id: auth.projectId, tenantId: auth.tenantId }, include: { tenant: { include: { subscription: true } } } });
   const result = await buildProfessionalDocument(d, p.tenant.currency, p.tenant.name, await documentLogo(prisma, auth, d.presentationSnapshot));
   res.setHeader('Cache-Control', 'private, no-store');
   res.type('pdf').setHeader('Content-Disposition', `inline; filename="${d.number.replace(/[^a-z0-9-]/gi, '_')}.pdf"`); return res.send(result.pdf);

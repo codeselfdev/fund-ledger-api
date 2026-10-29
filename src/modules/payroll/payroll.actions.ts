@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { record } from './portal.store.js';
 import { z } from 'zod';
 import { badRequest, conflict, forbidden, notFound } from '../../core/http/api-error.js';
@@ -9,7 +10,7 @@ import { access, allowed, mutate, project, config, rebuild, audit, history, revi
 export async function importEmployees(a: PayrollAuth, b: z.infer<typeof importSchema>) {
   allowed(access(a).manage);
   return mutate(a, 'employees.import', b, async tx => {
-    const users = await tx.user.findMany({ where: { tenantId: a.tenantId, isActive: true }, select: { id: true, mobile: true } });
+    const users = await tenantAccounts(tx).findMany({ where: { tenantId: a.tenantId, isActive: true }, select: { id: true, mobile: true } });
     let added = 0, updated = 0;
     for (const row of b.rows) {
       const existing = await tx.payrollEmployee.findFirst({ where: { ...scope(a), mobile: row.mobile } });

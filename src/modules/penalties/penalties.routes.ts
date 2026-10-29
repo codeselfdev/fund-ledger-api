@@ -21,7 +21,7 @@ router.get("/penalty-policy", requireProject, requireRoles("any"), validateQuery
   const auth = requireProjectContext(req);
   const query = req.query as z.infer<typeof policyQuerySchema>;
   const [tenant, project, schedule] = await Promise.all([
-    prisma.tenant.findUniqueOrThrow({ where: { id: auth.tenantId } }),
+    prisma.tenant.findUniqueOrThrow({  where: { id: auth.tenantId } }),
     prisma.project.findFirstOrThrow({ where: { id: auth.projectId, tenantId: auth.tenantId } }),
     query.schedule_id
       ? prisma.schedule.findFirst({ where: { id: query.schedule_id, tenantId: auth.tenantId, projectId: auth.projectId } })
@@ -46,7 +46,7 @@ router.put("/penalty-policy", requireProject, requireRoles("owner"), validateQue
   const scope = query.scope ?? "project";
 
   if (scope === "client") {
-    const before = await prisma.tenant.findUniqueOrThrow({ where: { id: auth.tenantId } });
+    const before = await prisma.tenant.findUniqueOrThrow({  where: { id: auth.tenantId } });
     const tenant = await prisma.tenant.update({
       where: { id: auth.tenantId },
       data: { penaltyPolicy: body }

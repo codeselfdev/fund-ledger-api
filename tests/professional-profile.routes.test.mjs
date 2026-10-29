@@ -7,7 +7,8 @@ const {userProfileRouter}=await import('../dist/modules/profile/user-profile.rou
 const {errorHandler}=await import('../dist/core/http/error-handler.js');
 let user,audit,server,base,failAudit;
 before(()=>{
- prisma.user.findFirst=async({where})=>user.id===where.id&&user.tenantId===where.tenantId?structuredClone(user):null;
+ prisma.tenantUser.findFirst=async({where})=>user.id===where.id&&(!where.tenantId||user.tenantId===where.tenantId)?{...structuredClone(user),userId:'global-user',isActive:true,identity:{name:user.name,email:user.email,mobile:user.mobile,isActive:true}}:null;
+ prisma.tenantUser.update=async({data})=>{Object.assign(user,data);return {...structuredClone(user),userId:'global-user',isActive:true,identity:{name:user.name,email:user.email,mobile:user.mobile,isActive:true}};};
  prisma.user.update=async({data})=>{Object.assign(user,data);return structuredClone(user);};
  prisma.activity.create=async({data})=>{if(failAudit)throw Error('Audit unavailable');audit.push(data);return data;};
  prisma.$transaction=async fn=>{const old=structuredClone(user);try{return await fn(prisma);}catch(e){user=old;throw e;}};

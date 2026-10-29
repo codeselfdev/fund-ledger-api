@@ -1,3 +1,5 @@
+import {subscriptionContext} from "../../core/subscription/subscription.repository.js";
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { userProfileRouter } from '../profile/user-profile.routes.js';
 import { assertSignupMobileAvailable } from "./signup-contact.js";
 import { verifiedSignup } from "./signup-identity.js";
@@ -269,10 +271,10 @@ router.post("/switch-project", authenticateAccount, requireRoles("any"), validat
 router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const [user, onboardingProgress] = await Promise.all([
-    prisma.user.findUniqueOrThrow({
+    tenantAccounts(prisma).findUniqueOrThrow({
       where: { id: auth.userId },
       include: {
-        tenant: true,
+        tenant: { include: { subscription: true } },
         memberships: {
           where: { isActive: true, project: { isActive: true } },
           include: { project: true, member: true, customRole: true }
@@ -307,7 +309,7 @@ router.get("/me", authenticate, requireRoles("any"), asyncHandler(async (req, re
   const onboarding = summarizeOnboardingForClient(
     onboardingProgress?.projectId === auth.projectId ? onboardingProgress : null, onboardingProject
   );
-  const subscription = evaluateSubscription(user.tenant.contact);
+  const subscription = evaluateSubscription(subscriptionContext(user.tenant));
 
   return ok(res, {
     ...(auth.impersonation ? { impersonation: { read_only: true, expires_at: auth.impersonation.expiresAt, target_email: user.email } } : {}),

@@ -29,10 +29,10 @@ function validateDates(v: z.infer<z.ZodObject<typeof fields>>, ctx: z.Refinement
 export const createPhaseSchema = z.object({ ...fields, name: z.string().trim().min(2).max(150), request_key: requestKey }).strict().superRefine(validateDates);
 export const updatePhaseSchema = z.object({ ...fields, revision: z.number().int().positive() }).strict().superRefine(validateDates);
 const difference = (from: string, to: string) => Math.round((atDate(to).getTime() - atDate(from).getTime()) / 86400000);
-export function phaseResponse(p: ConstructionPhase & { responsibleUser?: { id: string; name: string } | null }, asOf = today()) {
+export function phaseResponse(p: ConstructionPhase & { responsibleUser?: { id: string; identity: {name: string} } | null }, asOf = today()) {
   const start = p.plannedStart ? day(p.plannedStart) : null, end = p.plannedEnd ? day(p.plannedEnd) : null;
   const actualEnd = p.actualEnd ? day(p.actualEnd) : null;
-  return { ...p, requestHash: undefined, requestKey: undefined,
+  return { ...p, responsibleUser: p.responsibleUser ? {id:p.responsibleUser.id,name:p.responsibleUser.identity.name} : null, requestHash: undefined, requestKey: undefined,
     plannedStart: start, plannedEnd: end, actualStart: p.actualStart ? day(p.actualStart) : null, actualEnd,
     plannedDays: start && end ? difference(start, end) + 1 : null,
     actualDays: p.actualStart && p.actualEnd ? difference(day(p.actualStart), day(p.actualEnd)) + 1 : null,
@@ -40,7 +40,7 @@ export function phaseResponse(p: ConstructionPhase & { responsibleUser?: { id: s
     delayDays: end && actualEnd ? Math.max(0, difference(end, actualEnd)) : null,
   };
 }
-const include = { responsibleUser: { select: { id: true, name: true } } };
+const include = { responsibleUser: { select: { id: true, identity: {select: {name: true}} } } };
 const dataFor = (b: z.infer<typeof updatePhaseSchema> | z.infer<typeof createPhaseSchema>) => ({
   plannedStart: b.planned_start ? atDate(b.planned_start) : null, plannedEnd: b.planned_end ? atDate(b.planned_end) : null,
   actualStart: b.actual_start ? atDate(b.actual_start) : null, actualEnd: b.actual_end ? atDate(b.actual_end) : null,
@@ -52,8 +52,8 @@ export function canChoosePhaseAssignee(a: ReturnType<typeof requireProjectContex
 }
 phaseRouter.get('/phases/assignees', asyncHandler(async (req, res) => {
   if (!canChoosePhaseAssignee(requireProjectContext(req))) throw forbidden('Write access to construction budgets is required');
-  const rows = await prisma.projectMembership.findMany({ where: { ...scope(requireProjectContext(req)), isActive: true, user: { isActive: true }, OR: [{ role: { not: 'member' } }, { customRoleId: { not: null } }] }, select: { user: { select: { id: true, name: true } } } });
-  return ok(res, [...new Map(rows.map(r => [r.user.id, r.user])).values()].sort((a, b) => a.name.localeCompare(b.name)));
+  const rows = await prisma.projectMembership.findMany({ where: { ...scope(requireProjectContext(req)), isActive: true, user: { isActive: true }, OR: [{ role: { not: 'member' } }, { customRoleId: { not: null } }] }, select: { user: { select: { id: true, identity: {select: {name: true}} } } } });
+  return ok(res, [...new Map(rows.map(r => [r.user.id, {id:r.user.id,name:r.user.identity.name}])).values()].sort((a, b) => a.name.localeCompare(b.name)));
 }));
 phaseRouter.get('/phases', asyncHandler(async (req, res) => {
   const rows = await prisma.constructionPhase.findMany({ where: scope(requireProjectContext(req)), include, orderBy: [{ createdAt: 'asc' }, { name: 'asc' }] });

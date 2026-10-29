@@ -58,9 +58,7 @@ router.patch("/:id/profile", requireProject, requireRoles("any"), validateParams
       name, mobile, email, address,
       profile: { ...profile, ...fields } as Prisma.InputJsonValue
     } });
-    if (current.userId && (name !== undefined || mobile !== undefined || email !== undefined)) {
-      await tx.user.update({ where: { id: current.userId, tenantId: auth.tenantId }, data: { name, mobile, email } });
-    }
+    // Member contact details are project-local; editing them does not replace login identity.
     return updated;
   });
   await writeAudit({ tenantId: auth.tenantId, projectId: auth.projectId, actorUserId: auth.userId, action: "member.profile_updated", entityType: "member", entityId: member.id,

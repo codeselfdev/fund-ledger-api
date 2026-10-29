@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { prisma } from "../../core/prisma/client.js";
 import { badRequest, conflict, notFound } from "../../core/http/api-error.js";
+import { saveSubscription, subscriptionContext } from "../../core/subscription/subscription.repository.js";
 import { renewTenantSubscription } from "../../core/subscription/subscription.service.js";
 import { tenantQuota } from "../../core/subscription/quota.service.js";
 
@@ -11,7 +12,7 @@ export async function recordManualPayment(tenantId: string, input: z.infer<typeo
   const hash = createHash("sha256").update(JSON.stringify(input)).digest("hex");
   const saved = await prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR NO KEY UPDATE`;
-    const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
+    const tenant = await tx.tenant.findUnique({ include: { subscription: true },  where: { id: tenantId } });
     if (!tenant) throw notFound("Organization not found");
     if (tenant.deletionStartedAt) throw conflict("Organization cleanup has started");
     const existing = await tx.platformPayment.findUnique({ where: { tenantId_requestKey: { tenantId, requestKey: input.request_key } } });
@@ -20,11 +21,10 @@ export async function recordManualPayment(tenantId: string, input: z.infer<typeo
       return { payment: existing, replayed: true };
     }
     if (tenant.currency !== input.currency) throw badRequest("Payment currency must match the organization's currency");
-    const now = new Date(), renewed = renewTenantSubscription(tenant.contact, now, input);
-    const contact = renewed.contact as Record<string, unknown>;
+    const now = new Date(), renewed = renewTenantSubscription(subscriptionContext(tenant), now, input);
     const subscription = { ...renewed.subscription, quota_reset_at: now.toISOString() };
-    await tx.tenant.update({ where: { id: tenantId }, data: { contact: JSON.parse(JSON.stringify({ ...contact, subscription })) } });
     const payment = await tx.platformPayment.create({ data: { tenantId, requestKey: input.request_key, payloadHash: hash, package: input.package, billingCycle: input.billing_cycle, amount: input.amount, currency: input.currency, method: input.method, reference: input.reference, notes: input.notes, paidAt: new Date(input.paid_at), periodEndsAt: new Date(subscription.current_period_end_at!), actor } });
+    await saveSubscription(tx, tenantId, subscription, { event: "manual_payment", actor, paymentId: payment.id });
     await tx.internalAudit.create({ data: { tenantId, actor, action: "subscription.manual_payment", metadata: { payment_id: payment.id, package: input.package, quota_reset_at: now.toISOString() } } });
     return { payment, replayed: false };
   });

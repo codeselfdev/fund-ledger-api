@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
@@ -129,7 +130,7 @@ export async function commitFundImport(context: FundImportContext, input: FundIm
         let userId = existing?.userId ?? users.get(row.mobile);
         if (!userId) {
           const email = input.rows.find(item => item.mobile === row.mobile && item.email)?.email || undefined;
-          const user = await tx.user.upsert({ where: { tenantId_mobile: { tenantId: context.tenantId, mobile: row.mobile } },
+          const user = await tenantAccounts(tx).upsert({ where: { tenantId_mobile: { tenantId: context.tenantId, mobile: row.mobile } },
             update: { ...(email ? { email } : {}), isActive: true }, create: { tenantId: context.tenantId, name: row.name, mobile: row.mobile, email } });
           userId = user.id; users.set(row.mobile, user.id);
         }

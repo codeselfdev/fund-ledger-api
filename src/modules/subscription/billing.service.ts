@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../core/prisma/client.js";
 import { badRequest, conflict, notFound } from "../../core/http/api-error.js";
+import { saveSubscription, subscriptionContext } from "../../core/subscription/subscription.repository.js";
 import { renewTenantSubscription } from "../../core/subscription/subscription.service.js";
 
 export interface SubscriptionInvoice {
@@ -16,33 +17,52 @@ export interface SubscriptionInvoice {
   approved_at: string | null; rejection_reason: string | null; period_ends_at: string | null;
 }
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-export function invoicesFromContact(contact: unknown): SubscriptionInvoice[] {
-  const invoices = record(record(contact).billing).invoices;
-  return Array.isArray(invoices) ? invoices as SubscriptionInvoice[] : [];
+/** API shape is stable; persistence is entirely relational. */
+export async function listInvoices(tenantId: string, tx: Prisma.TransactionClient = prisma): Promise<SubscriptionInvoice[]> {
+  const rows = await tx.subscriptionInvoice.findMany({ where: { tenantId }, orderBy: [{ issuedAt: 'asc' }, { id: 'asc' }] });
+  const receipts = await tx.subscriptionPaymentReceipt.findMany({ where: { tenantId, id: { in: rows.flatMap(row => row.receiptId ? [row.receiptId] : []) } } });
+  return rows.map(row => {
+    const receipt = receipts.find(proof => proof.id === row.receiptId && proof.invoiceId === row.id);
+    return { id: row.id, ...(row.package ? { package: row.package } : {}), ...(row.billingCycle ? { billing_cycle: row.billingCycle } : {}),
+      amount: row.amount, currency: row.currency, status: row.status, instructions: row.instructions, issued_at: row.issuedAt.toISOString(),
+      payment_reference: row.paymentReference, ...(row.paymentAmount !== null ? { payment_amount: row.paymentAmount } : {}),
+      ...(row.paymentRequestKey ? { payment_request_key: row.paymentRequestKey } : {}),
+      ...(receipt ? { receipt: { id: receipt.id, file_name: receipt.fileName, mime_type: receipt.mimeType, size: receipt.size } } : {}),
+      submitted_at: row.submittedAt?.toISOString() ?? null, approved_at: row.approvedAt?.toISOString() ?? null,
+      rejection_reason: row.rejectionReason, period_ends_at: row.periodEndsAt?.toISOString() ?? null };
+  });
 }
-
-/** Compare-and-swap protects concurrent approvals without granting customer-controlled renewals. */
+export async function persistInvoice(tx: Prisma.TransactionClient, tenantId: string, invoice: SubscriptionInvoice) {
+  const date = (value: string | null) => value ? new Date(value) : null;
+  const data = { package: invoice.package ?? null, billingCycle: invoice.billing_cycle ?? null, amount: invoice.amount,
+    currency: invoice.currency, status: invoice.status, instructions: invoice.instructions, issuedAt: new Date(invoice.issued_at),
+    paymentReference: invoice.payment_reference, paymentAmount: invoice.payment_amount ?? null,
+    paymentRequestKey: invoice.payment_request_key ?? null, receiptId: invoice.receipt?.id ?? null,
+    submittedAt: date(invoice.submitted_at), approvedAt: date(invoice.approved_at), rejectionReason: invoice.rejection_reason, periodEndsAt: date(invoice.period_ends_at) };
+  await tx.subscriptionInvoice.upsert({ where: { tenantId_id: { tenantId, id: invoice.id } }, create: { tenantId, id: invoice.id, ...data }, update: data });
+}
+/** The tenant lock serializes invoice decisions, entitlements, history and quota checks. */
 async function mutateBilling(tenantId: string, action: string, actorUserId: string | null,
-  mutate: (contact: Record<string, unknown>, invoices: SubscriptionInvoice[], tx: Prisma.TransactionClient) => { contact?: unknown; invoice: SubscriptionInvoice; unchanged?: boolean } | Promise<{ contact?: unknown; invoice: SubscriptionInvoice; unchanged?: boolean }>) {
+  mutate: (context: Record<string, unknown>, invoices: SubscriptionInvoice[], tx: Prisma.TransactionClient) => { invoice: SubscriptionInvoice; subscription?: import('../../core/subscription/subscription.repository.js').SubscriptionData; unchanged?: boolean } | Promise<{ invoice: SubscriptionInvoice; subscription?: import('../../core/subscription/subscription.repository.js').SubscriptionData; unchanged?: boolean }>, actor?: string) {
   return prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR NO KEY UPDATE`;
-    const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
+    const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, include: { subscription: true } });
     if (!tenant) throw notFound("Organization not found");
     if (tenant.deletionStartedAt) throw conflict("Organization cleanup has started");
-    const contact = record(tenant.contact);
-    const invoices = structuredClone(invoicesFromContact(contact));
-    const result = await mutate(contact, invoices, tx);
+    const invoices = await listInvoices(tenantId, tx);
+    const result = await mutate(subscriptionContext(tenant), invoices, tx);
     if (result.unchanged) return result.invoice;
-    const next = { ...record(result.contact ?? contact), billing: { ...record(contact.billing), invoices } };
-    const updated = await tx.tenant.updateMany({ where: { id: tenant.id, updatedAt: tenant.updatedAt },
-      data: { contact: JSON.parse(JSON.stringify(next)) as Prisma.InputJsonValue } });
-    if (updated.count !== 1) throw conflict("Billing was updated concurrently. Reload and retry.");
+    await persistInvoice(tx, tenantId, result.invoice);
+    if (result.subscription) await saveSubscription(tx, tenantId, result.subscription, {
+      event: 'invoice_approved', actor: actor ?? 'billing-service', ...(actorUserId ? { actorUserId } : {}), invoiceId: result.invoice.id });
     await tx.activity.create({ data: { tenantId, actorUserId, action, entityType: "subscription_invoice", entityId: result.invoice.id,
       after: JSON.parse(JSON.stringify(result.invoice)) as Prisma.InputJsonValue } });
     return result.invoice;
   });
 }
 export function issueInvoice(tenantId: string, amount: number, currency: string, instructions: string, selection?: { package: PackageId; billing_cycle: BillingCycle }) {
+  if (!Number.isSafeInteger(amount) || amount<=0 || amount>2147483647) throw badRequest("Invoice amount must be a positive 32-bit integer.");
+  if (!/^[A-Z]{3}$/.test(currency)) throw badRequest("Use a three-letter uppercase currency code.");
   return mutateBilling(tenantId, "subscription.invoice_issued", null, (_contact, invoices) => {
     if (invoices.some(row => row.status !== "approved")) throw conflict("An unpaid invoice already exists");
     const invoice: SubscriptionInvoice = { ...selection, id: randomUUID(), amount, currency, instructions, status: "open", issued_at: new Date().toISOString(),
@@ -78,7 +98,7 @@ export async function submitInvoicePayment(tenantId: string, invoiceId: string, 
     return result;
   } finally { if (!keep) await deleteObject(storageKey); }
 }
-export function reviewInvoicePayment(tenantId: string, invoiceId: string, decision: "approve" | "reject", reason?: string, expectedRequestKey?: string) {
+export function reviewInvoicePayment(tenantId: string, invoiceId: string, decision: "approve" | "reject", reason?: string, expectedRequestKey?: string, actor?: string) {
   return mutateBilling(tenantId, `subscription.payment_${decision}d`, null, async (contact, invoices, tx) => {
     const invoice = invoices.find(row => row.id === invoiceId);
     if (!invoice) throw notFound("Invoice not found");
@@ -99,6 +119,6 @@ export function reviewInvoicePayment(tenantId: string, invoiceId: string, decisi
     }
     const renewed = renewTenantSubscription(contact, new Date(), invoice.package ? { package: invoice.package, billing_cycle: invoice.billing_cycle ?? "yearly" } : undefined);
     Object.assign(invoice, { status: "approved", approved_at: new Date().toISOString(), period_ends_at: renewed.subscription.current_period_end_at });
-    return { contact: renewed.contact, invoice };
-  });
+    return { subscription: renewed.subscription, invoice };
+  }, actor);
 }

@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
@@ -20,7 +21,7 @@ router.get('/status', asyncHandler(async (req, res) => {
 router.get('/users', asyncHandler(async (req, res) => {
   const { session, config } = await requireMasterSession(req);
   const query = z.object({ search: z.string().trim().max(100).default(''), cursor: z.string().max(100).optional() }).parse(req.query);
-  const rows = await prisma.user.findMany({ where: {
+  const rows = await tenantAccounts(prisma).findMany({ where: {
     isActive: true, id: { not: session.userId, ...(query.cursor ? { gt: query.cursor } : {}) },
     email: { not: null }, NOT: { email: { equals: config.email, mode: 'insensitive' } },
     memberships: { some: { isActive: true, project: { isActive: true } } },

@@ -39,7 +39,7 @@ async function projectContext(db:Db,a:Auth,operation?:Operation){
  if(!project||!['fund_shares','accounting','billing','construction'].includes(project.projectType))throw forbidden('Choose an active supported project.');
  const policy=await db.onboardingProgress.findUnique({where:{tenantId:a.tenantId},select:{incomeApprovalFlow:true,expenseApprovalFlow:true}});
  if(operation==='bulk_incomes'&&!isAdmin(a)&&policy?.incomeApprovalFlow&&policy.incomeApprovalFlow!=='accountant_only')throw forbidden('The income approval rule requires an authorized administrator.');
- const tenant=await db.tenant.findUniqueOrThrow({where:{id:a.tenantId},select:{currency:true}});
+ const tenant=await db.tenant.findUniqueOrThrow({where:{id:a.tenantId},select:{ subscription: true, currency:true}});
  if(operation&&['bulk_incomes','bulk_expenses','bulk_items'].includes(operation)&&tenant.currency!=='BDT')throw badRequest('Bulk AI monetary entries currently require BDT.');
  return{project,policy:{income:policy?.incomeApprovalFlow??'accountant_only',expense:policy?.expenseApprovalFlow??'accountant_and_approver'},currency:tenant.currency};
 }

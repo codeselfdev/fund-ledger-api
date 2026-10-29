@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { prisma } from '../../core/prisma/client.js';
 import { sendPushMessage } from '../../core/notifications/fcm.service.js';
 import { financialTransaction } from '../accounting/transaction.js';
@@ -44,16 +45,16 @@ export async function deliverInstituteNotifications() {
       const claimed = await prisma.instituteNotificationDelivery.updateMany({ where: { id: row.id, status: 'pending' }, data: { status: 'sending', attempts: { increment: 1 } } });
       if (!claimed.count) continue;
       try {
-        const membership = await prisma.projectMembership.findFirst({ where: { tenantId: row.tenantId, projectId: row.projectId, userId: row.userId, isActive: true, user: { isActive: true } }, include: { user: true } });
+        const membership = await prisma.projectMembership.findFirst({ where: { tenantId: row.tenantId, projectId: row.projectId, userId: row.userId, isActive: true, user: { isActive: true } }, include: { user: { include: { identity: { select: { name: true, email: true, mobile: true, isActive: true } } } } } });
         if (!membership) { await prisma.instituteNotificationDelivery.update({ where: { id: row.id }, data: { status: 'cancelled' } }); continue; }
         if (row.channel === 'sms') {
           const endpoint = process.env.INSTITUTE_SMS_WEBHOOK_URL;
           if (!endpoint) throw new Error('INSTITUTE_SMS_WEBHOOK_URL is not configured');
-          const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(process.env.INSTITUTE_SMS_WEBHOOK_TOKEN ? { Authorization: `Bearer ${process.env.INSTITUTE_SMS_WEBHOOK_TOKEN}` } : {}) }, body: JSON.stringify({ to: membership.user.mobile, message: row.body, idempotency_key: row.id }), signal: AbortSignal.timeout(15000) });
+          const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(process.env.INSTITUTE_SMS_WEBHOOK_TOKEN ? { Authorization: `Bearer ${process.env.INSTITUTE_SMS_WEBHOOK_TOKEN}` } : {}) }, body: JSON.stringify({ to: membership.user.identity.mobile, message: row.body, idempotency_key: row.id }), signal: AbortSignal.timeout(15000) });
           if (!response.ok) throw new Error(`SMS adapter returned ${response.status}`);
         } else if (membership.user.deviceId) {
           const result = await sendPushMessage({ tokens: [membership.user.deviceId], title: row.title, body: row.body, data: { type: row.type, tenant_id: row.tenantId, project_id: row.projectId, entity_type: 'institute', entity_id: row.entityId } });
-          if (result.invalid_tokens.length) await prisma.user.updateMany({ where: { id: row.userId, tenantId: row.tenantId, deviceId: { in: result.invalid_tokens } }, data: { deviceId: null } });
+          if (result.invalid_tokens.length) await tenantAccounts(prisma).updateMany({ where: { id: row.userId, tenantId: row.tenantId, deviceId: { in: result.invalid_tokens } }, data: { deviceId: null } });
           if (result.failed_count > 0) throw new Error(result.reason ?? 'Push delivery failed');
         }
         await prisma.instituteNotificationDelivery.update({ where: { id: row.id }, data: { status: 'sent', lastError: null } });

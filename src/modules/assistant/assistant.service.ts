@@ -1,3 +1,4 @@
+import { subscriptionContext } from "../../core/subscription/subscription.repository.js";
 import { readObject } from "../../core/storage/object-storage.service.js";
 import { createHash } from "node:crypto";
 import { prisma } from "../../core/prisma/client.js";
@@ -6,10 +7,10 @@ import { aiConfigured, botConfigured, CHANNELS, featureLimit, hasAssistant, assi
 import { assistantContext } from "./assistant.context.js";
 import { generateAssistantReply } from "./assistant.provider.js";
 export async function assistantStatus(tenantId: string, now = new Date()) {
-    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { contact: true } });
-    const period = allowancePeriod(tenant.contact, now);
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { subscription: true,  contact: true } });
+    const period = allowancePeriod(subscriptionContext(tenant), now);
     const usage = await prisma.assistantReply.groupBy({ by: ["channel"], where: { tenantId, periodStart: period.start, status: { not: "cancelled" } }, _count: true });
-    return { action_service_enabled: !!process.env.AI_SERVICE_URL, resets_at: period.end.toISOString(), upgrade_plan: assistantUpgrade(tenant.contact), features: Object.fromEntries(CHANNELS.map(channel => [channel, { enabled: hasAssistant(tenant.contact, channel, now), configured: !!process.env.AI_SERVICE_URL || (channel === "ai_chat" ? aiConfigured() : botConfigured()), used: usage.find(row => row.channel === channel)?._count ?? 0, limit: featureLimit(channel, tenant.contact, now) }])) };
+    return { action_service_enabled: !!process.env.AI_SERVICE_URL, resets_at: period.end.toISOString(), upgrade_plan: assistantUpgrade(subscriptionContext(tenant)), features: Object.fromEntries(CHANNELS.map(channel => [channel, { enabled: hasAssistant(subscriptionContext(tenant), channel, now), configured: !!process.env.AI_SERVICE_URL || (channel === "ai_chat" ? aiConfigured() : botConfigured()), used: usage.find(row => row.channel === channel)?._count ?? 0, limit: featureLimit(channel, subscriptionContext(tenant), now) }])) };
 }
 export async function reserveReply(input: {
     tenantId: string;
@@ -31,9 +32,9 @@ export async function reserveReply(input: {
     const now = new Date(), hash = createHash("sha256").update(input.attachments?.length ? JSON.stringify([input.prompt, input.attachments.map(f => [f.fileName, f.contentHash])]) : input.prompt).digest("hex");
     return prisma.$transaction(async (tx) => {
         await tx.$queryRaw `SELECT id FROM tenants WHERE id = ${input.tenantId} FOR NO KEY UPDATE`;
-        const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: input.tenantId } });
-        const period = allowancePeriod(tenant.contact, now);
-        if (!hasAssistant(tenant.contact, input.channel, now))
+        const tenant = await tx.tenant.findUniqueOrThrow({ include: { subscription: true },  where: { id: input.tenantId } });
+        const period = allowancePeriod(subscriptionContext(tenant), now);
+        if (!hasAssistant(subscriptionContext(tenant), input.channel, now))
             throw new ApiError(403, "ASSISTANT_PLAN_REQUIRED", "An active eligible plan is required to use this assistant channel.");
         const key = { tenantId: input.tenantId, channel: input.channel, requestKey: input.requestKey };
         const existing = await tx.assistantReply.findUnique({ where: { tenantId_channel_requestKey: key } });
@@ -45,8 +46,8 @@ export async function reserveReply(input: {
             return existing;
         }
         const used = await tx.assistantReply.count({ where: { tenantId: input.tenantId, channel: input.channel, periodStart: period.start, status: { not: "cancelled" } } });
-        if (used >= featureLimit(input.channel, tenant.contact, now))
-            throw new ApiError(429, "ASSISTANT_QUOTA_EXCEEDED", assistantQuotaMessage(tenant.contact));
+        if (used >= featureLimit(input.channel, subscriptionContext(tenant), now))
+            throw new ApiError(429, "ASSISTANT_QUOTA_EXCEEDED", assistantQuotaMessage(subscriptionContext(tenant)));
         const data = { ...key, userId: input.userId, projectId: input.projectId, promptHash: hash, prompt: input.prompt, periodStart: period.start, status: "queued", leaseUntil: null, errorCode: null, recipient: input.recipient, connectionId: input.connectionId };
         return tx.assistantReply.create({ data: { ...data, attachments: { create: input.attachments?.map(f => ({ ...f, tenantId: input.tenantId })) ?? [] } } });
     });
@@ -60,8 +61,8 @@ export async function processReply(id: string) {
     }
     const row = await prisma.assistantReply.findUniqueOrThrow({ where: { id } });
     try {
-        const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: row.tenantId } });
-        if (!hasAssistant(tenant.contact, row.channel as AssistantChannel))
+        const tenant = await prisma.tenant.findUniqueOrThrow({ include: { subscription: true },  where: { id: row.tenantId } });
+        if (!hasAssistant(subscriptionContext(tenant), row.channel as AssistantChannel))
             throw new ApiError(403, "ASSISTANT_PLAN_REQUIRED", "An active eligible plan is required.");
         const context = await assistantContext(row.tenantId, row.projectId, row.userId);
         const history = await prisma.assistantReply.findMany({ where: { tenantId: row.tenantId, projectId: row.projectId, userId: row.userId, channel: row.channel, authorizationHash: context.authorization_hash, status: "completed", id: { not: id } }, orderBy: { createdAt: "desc" }, take: 4, select: { prompt: true, reply: true } });

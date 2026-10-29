@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { createHash } from 'node:crypto';
 import type { Request } from 'express';
 import { z } from 'zod';
@@ -36,7 +37,7 @@ export async function inviteEmployee(a: Auth, id: string, body: z.infer<typeof e
     const recent = await tx.activity.findFirst({ where: { ...scope(a), action: 'payroll.employee.email_invitation', entityId: id, createdAt: { gt: new Date(Date.now() - 60000) } } });
     if (recent) throw conflict('An invitation was requested recently. Wait a minute before resending.');
     // Never change an existing login identity to a different email as a side effect of inviting.
-    const candidates = await tx.user.findMany({ where: { tenantId: a.tenantId, OR: [
+    const candidates = await tenantAccounts(tx).findMany({ where: { tenantId: a.tenantId, OR: [
       ...(person.userId ? [{ id: person.userId }] : []),
       { mobile: { in: [body.mobile, `+88${body.mobile}`, `88${body.mobile}`] } },
       { email: { equals: body.email, mode: 'insensitive' } },
@@ -47,8 +48,8 @@ export async function inviteEmployee(a: Auth, id: string, body: z.infer<typeof e
     if (user && (!user.isActive || mobile(user.mobile) !== body.mobile || user.email && user.email.trim().toLowerCase() !== body.email)) throw conflict('The employee and login account details differ or the account is inactive. Resolve the linked account before inviting.');
     if (user && await tx.payrollEmployee.findFirst({ where: { ...scope(a), userId: user.id, id: { not: id } } })) throw conflict('This account is already linked to another employee in this project');
     await persistEmployeeProfile(tx, a, id, body);
-    if (!user) user = await tx.user.create({ data: { tenantId: a.tenantId, name: body.name, mobile: body.mobile, email: body.email } });
-    else if (!user.email) user = await tx.user.update({ where: { id: user.id }, data: { email: body.email } });
+    if (!user) user = await tenantAccounts(tx).create({ data: { tenantId: a.tenantId, name: body.name, mobile: body.mobile, email: body.email } });
+    else if (!user.email) user = await tenantAccounts(tx).update({ where: { id: user.id }, data: { email: body.email } });
     await tx.payrollEmployee.update({ where: { id }, data: { userId: user.id } });
     await tx.projectMembership.upsert({ where: { projectId_userId_role: { projectId: a.projectId, userId: user.id, role: 'employee' } },
       update: { isActive: true, customRoleId: null, memberId: null },

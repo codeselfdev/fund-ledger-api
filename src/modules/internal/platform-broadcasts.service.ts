@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
@@ -27,8 +28,8 @@ export const broadcastSendSchema = z.object({
 type Draft = z.infer<typeof broadcastDraftSchema>;
 type Send = z.infer<typeof broadcastSendSchema>;
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
-const eligible = { isActive: true, tenant: { deletionStartedAt: null }, deviceId: { not: null } } satisfies Prisma.UserWhereInput;
-const userSelect = { id: true, tenantId: true, deviceId: true } satisfies Prisma.UserSelect;
+const eligible = { isActive: true, tenant: { deletionStartedAt: null }, deviceId: { not: null } } satisfies Prisma.TenantUserWhereInput;
+const userSelect = { id: true, tenantId: true, deviceId: true } satisfies Prisma.TenantUserSelect;
 type Recipient = { id: string; tenantId: string; deviceId: string | null };
 export function broadcastAudience(users: Recipient[], includeInboxOnlyAccounts = false) {
   const recipients = includeInboxOnlyAccounts ? users : users.filter(user => user.deviceId?.trim());
@@ -51,7 +52,7 @@ export function createPlatformBroadcasts(db = prisma, push = sendPushMessage,
   }
   async function searchUsers(search: string) {
     const query = z.string().trim().min(2).max(100).parse(search);
-    const users = await db.user.findMany({ where: { ...eligible, OR: [
+    const users = await tenantAccounts(db).findMany({ where: { ...eligible, OR: [
       { name: { contains: query, mode: 'insensitive' } }, { email: { contains: query, mode: 'insensitive' } }, { mobile: { contains: query } },
     ] }, select: { ...userSelect, name: true, email: true, mobile: true, tenant: { select: { name: true } } }, orderBy: [{ name: 'asc' }, { id: 'asc' }], take: 20 });
     return { users: users.filter(user => user.deviceId?.trim()).map(user => ({
@@ -141,14 +142,14 @@ export function createPlatformBroadcasts(db = prisma, push = sendPushMessage,
         where: { id: row.id, leaseToken }, data: { ...data, leaseToken: null, leaseUntil: null },
       });
       try {
-        const users = await db.user.findMany({ where: { ...eligible, id: { in: row.recipientIds } }, select: userSelect });
+        const users = await tenantAccounts(db).findMany({ where: { ...eligible, id: { in: row.recipientIds } }, select: userSelect });
         const token = users.map(user => user.deviceId?.trim()).find(value => value && hash(value) === row.tokenHash);
         if (!token) { await finish({ status: 'skipped', lastError: 'recipient_unavailable' }); continue; }
         const result = await push({ tokens: [token], title: row.broadcast.title, body: row.broadcast.body,
           ...(row.broadcast.imageUrl ? { imageUrl: row.broadcast.imageUrl } : {}),
           data: { type: 'announcement.platform', entity_type: 'platform_broadcast', entity_id: row.broadcastId, ...(row.broadcast.imageUrl ? { image_url: row.broadcast.imageUrl } : {}), ...(row.broadcast.actionUrl ? { url: row.broadcast.actionUrl } : {}) } });
         if (result.invalid_tokens.includes(token)) {
-          await db.user.updateMany({ where: { deviceId: token }, data: { deviceId: null } });
+          await tenantAccounts(db).updateMany({ where: { deviceId: token }, data: { deviceId: null } });
           await finish({ status: 'skipped', lastError: 'invalid_device_token' }); continue;
         }
         if (result.sent_count !== 1) throw new Error('push_unavailable');

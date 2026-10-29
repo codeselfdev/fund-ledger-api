@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../../core/http/async-handler.js";
@@ -30,7 +31,7 @@ router.post("/", asyncHandler(async (req, res) => {
       if (message.group_id || message.context?.group_id || change.value.group_id) continue;
       const age = Date.now() - Number(message.timestamp) * 1000;
       if (message.type !== "text" || !message.text?.body.trim() || !Number.isFinite(age) || age < -300000 || age > 23 * 3600000) continue;
-      const users = await prisma.user.findMany({ where: { tenantId: connection.tenantId, isActive: true, mobile: { in: [message.from, `+${message.from}`] }, memberships: { some: { tenantId: connection.tenantId, projectId: connection.projectId, isActive: true } } }, take: 2 });
+      const users = await tenantAccounts(prisma).findMany({ where: { tenantId: connection.tenantId, isActive: true, mobile: { in: [message.from, `+${message.from}`] }, memberships: { some: { tenantId: connection.tenantId, projectId: connection.projectId, isActive: true } } }, take: 2 });
       if (users.length !== 1) continue;
       try { await reserveReply({ tenantId: connection.tenantId, projectId: connection.projectId, userId: users[0]!.id, channel: "whatsapp_bot", requestKey: message.id, prompt: message.text.body.trim(), recipient: message.from, connectionId: connection.id }); }
       catch (error) { if (!(error instanceof ApiError && [403, 409, 429].includes(error.statusCode))) throw error; }

@@ -1,3 +1,5 @@
+import { subscriptionContext } from "../../core/subscription/subscription.repository.js";
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { settingsSchema as instituteSettingsSchema } from '../institute/institute.policy.js';
 import { assertSignupMobileAvailable, signupMobile } from "../auth/signup-contact.js";
 import { readSignupIdentity } from "../auth/signup-identity.js";
@@ -122,7 +124,7 @@ async function loadOnboardingBundle(tenantId: string) {
   const [tenant, progress] = await Promise.all([
     prisma.tenant.findUniqueOrThrow({
       where: { id: tenantId },
-      select: { id: true, name: true, slug: true, contact: true }
+      select: { subscription: true,  id: true, name: true, slug: true, contact: true }
     }),
     getOnboardingProgress(tenantId)
   ]);
@@ -138,7 +140,7 @@ async function loadOnboardingBundle(tenantId: string) {
     progress,
     project,
     onboarding: summarizeOnboardingForClient(progress, project),
-    subscription: evaluateSubscription(tenant.contact)
+    subscription: evaluateSubscription(subscriptionContext(tenant))
   };
 }
 
@@ -257,8 +259,7 @@ router.post("/signup", signupRateLimit, validateBody(signupSchema), asyncHandler
 
   return created(res, {
     token: result.token,
-    user: {
-      id: result.ownerUserId,
+    user: { id: result.ownerUserId,
       name: result.ownerName,
       mobile: result.ownerMobile,
       email: result.ownerEmail
@@ -414,7 +415,7 @@ async function completeOrganizationStep(req: import("express").Request, res: imp
 
   const nextProgress = await prisma.$transaction(async (tx) => {
     if (orgName) {
-      await tx.tenant.update({
+      await tx.tenant.update({ include: { subscription: true },
         where: { id: auth.tenantId },
         data: { name: orgName }
       });
@@ -487,7 +488,7 @@ router.post("/accounting", authenticate, requireActiveSubscription, requireProje
   assertOnboardingProject(auth.projectId, progress.projectId);
 
   const { user, member, nextProgress } = await prisma.$transaction(async (tx) => {
-    const user = await tx.user.upsert({
+    const user = await tenantAccounts(tx).upsert({
       where: {
         tenantId_mobile: {
           tenantId: auth.tenantId,
@@ -790,7 +791,7 @@ router.post("/shareholders", authenticate, requireActiveSubscription, requirePro
     for (const member of normalizedMembers) {
       const existingMember = existingByMobile.get(member.mobile) ?? null;
 
-      const user = await tx.user.upsert({
+      const user = await tenantAccounts(tx).upsert({
         where: {
           tenantId_mobile: {
             tenantId: auth.tenantId,

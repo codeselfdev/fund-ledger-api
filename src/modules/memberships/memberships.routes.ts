@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { assertPersonCapacity } from "../../core/subscription/quota.service.js";
 import { Router } from "express";
 import { roleResponse } from "../project-roles/project-roles.routes.js";
@@ -47,14 +48,14 @@ const createMembershipSchema = z
   });
 
 function isSyntheticMobile(mobile: string) {
-  return mobile.startsWith("g:") || mobile.startsWith("e:");
+  return !mobile || mobile.startsWith("g:") || mobile.startsWith("e:");
 }
 
 router.get("/", requireProject, requireRoles("owner", "admin"), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   const memberships = await prisma.projectMembership.findMany({
     where: { tenantId: auth.tenantId, projectId: auth.projectId },
-    include: { customRole: true, user: { select: { id: true, name: true, mobile: true, email: true } } },
+    include: { customRole: true, user: { select: { id: true, identity: {select: {name: true, mobile: true, email: true}} } } },
     orderBy: { createdAt: "asc" }
   });
 
@@ -65,9 +66,8 @@ router.get("/", requireProject, requireRoles("owner", "admin"), asyncHandler(asy
     custom_role: membership.customRole ? roleResponse(membership.customRole) : null,
     is_active: membership.isActive,
     member_id: membership.memberId,
-    user: {
-      ...membership.user,
-      mobile: isSyntheticMobile(membership.user.mobile) ? null : membership.user.mobile
+    user: { id: membership.user.id, name: membership.user.identity.name, email: membership.user.identity.email,
+      mobile: isSyntheticMobile(membership.user.identity.mobile ?? '') ? null : membership.user.identity.mobile
     }
   })));
 }));
@@ -89,10 +89,10 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
     }
     const normalizedEmail = body.email?.trim().toLowerCase();
     const matchingUsers = body.user_id
-      ? await tx.user.findMany({
+      ? await tenantAccounts(tx).findMany({
           where: { id: body.user_id, tenantId: auth.tenantId, isActive: true }
         })
-      : await tx.user.findMany({
+      : await tenantAccounts(tx).findMany({
           where: {
             tenantId: auth.tenantId,
             isActive: true,
@@ -119,7 +119,7 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
       if (!body.name) {
         throw badRequest("name is required when creating a new user");
       }
-      user = await tx.user.create({
+      user = await tenantAccounts(tx).create({
         data: {
           tenantId: auth.tenantId,
           name: body.name,
@@ -129,7 +129,7 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
       });
       userCreated = true;
     } else if (body.name || body.email) {
-      user = await tx.user.update({
+      user = await tenantAccounts(tx).update({
         where: { id: user.id },
         data: {
           ...(body.name ? { name: body.name } : {}),
@@ -149,8 +149,7 @@ router.post("/", requireProject, requireRoles("owner", "admin"), validateBody(cr
       ? await ensureUserProjectMember(tx, {
           tenantId: auth.tenantId,
           projectId: auth.projectId,
-          user: {
-            id: user.id,
+          user: { id: user.id,
             name: user.name,
             mobile: user.mobile,
             email: user.email
@@ -314,7 +313,7 @@ router.patch("/:id", requireProject, requireRoles("owner", "admin"), validatePar
     let memberId: string | null | undefined;
 
     if (nextIsActive && (nextRole === "member" || body.also_member)) {
-      const targetUser = await tx.user.findFirstOrThrow({
+      const targetUser = await tenantAccounts(tx).findFirstOrThrow({
         where: { id: before.userId, tenantId: auth.tenantId, isActive: true },
         select: { id: true, name: true, mobile: true, email: true }
       });

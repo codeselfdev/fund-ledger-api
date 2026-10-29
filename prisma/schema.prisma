@@ -7,12 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum TenantPlan {
-  free
-  standard
-  pro
-}
-
 enum Role {
   employee
   teacher
@@ -207,14 +201,16 @@ model Tenant {
   name          String
   slug          String     @unique
   currency      String     @default("BDT")
-  plan          TenantPlan @default(free)
   branding      Json?
   contact       Json?
+  subscription TenantSubscription?
+  subscriptionInvoices SubscriptionInvoice[]
+  subscriptionHistory SubscriptionHistory[]
   penaltyPolicy Json?      @map("penalty_policy")
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 
-  users         User[]
+  users         TenantUser[]
   projects      Project[]
   members       Member[]
   onboardingProgress OnboardingProgress?
@@ -454,8 +450,23 @@ model OnboardingProgress {
 }
 
 model User {
-  responsibleConstructionPhases ConstructionPhase[]
+  id String @id @default(cuid())
+  name String
+  email String? @unique
+  mobile String? @unique
+  passwordHash String? @map("password_hash")
+  isActive Boolean @default(true) @map("is_active")
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  mobileVerifiedAt DateTime? @map("mobile_verified_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
   appGuideRequests AppGuideRequest[]
+  tenantMemberships TenantUser[]
+  @@map("users")
+}
+
+model TenantUser {
+  responsibleConstructionPhases ConstructionPhase[]
   professionalProfile Json? @map("professional_profile")
   supportTickets SupportTicket[]
   appInstallations AppInstallation[]
@@ -463,16 +474,11 @@ model User {
   notificationCampaigns NotificationCampaign[]
   id           String   @id @default(cuid())
   tenantId     String   @map("tenant_id")
-  name         String
-  mobile       String
-  email        String?
+  userId       String   @map("user_id")
+  identity     User     @relation(fields: [userId], references: [id], onDelete: Restrict)
   lastLoginAt DateTime? @map("last_login_at")
   lastLoginPlatform String? @map("last_login_platform")
   lastActiveAt DateTime? @map("last_active_at")
-  identityRootId String? @map("identity_root_id")
-  identityRoot User? @relation("LinkedOrganizationIdentity", fields: [identityRootId], references: [id], onDelete: Restrict)
-  linkedOrganizationUsers User[] @relation("LinkedOrganizationIdentity")
-  passwordHash String?  @map("password_hash")
   deviceId     String?  @map("device_id")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
@@ -494,10 +500,10 @@ model User {
   resolvedCommitments PaymentCommitment[] @relation("PaymentCommitmentResolver")
   sentReminders      MemberReminder[]     @relation("MemberReminderSender")
 
-  @@index([identityRootId])
-  @@unique([tenantId, mobile])
-  @@index([tenantId])
-  @@map("users")
+  @@unique([tenantId, userId])
+  @@index([userId])
+  @@index([tenantId], map: "users_tenant_id_idx")
+  @@map("tenant_users")
 }
 
 model ProjectRole {
@@ -532,7 +538,7 @@ model ProjectMembership {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    TenantUser    @relation(fields: [userId], references: [id], onDelete: Cascade)
   member  Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
 
   @@unique([projectId, userId, role])
@@ -559,7 +565,7 @@ model Member {
 
   tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user        User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user        TenantUser?               @relation(fields: [userId], references: [id], onDelete: SetNull)
   memberships ProjectMembership[]
   dues        Due[]
   deposits    Deposit[]
@@ -625,7 +631,7 @@ model Session {
   revokedAt       DateTime? @map("revoked_at")
   createdAt       DateTime  @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user TenantUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, userId])
   @@index([tokenHash])
@@ -1173,7 +1179,7 @@ model NotificationCampaign {
   createdAt DateTime @default(now()) @map("created_at")
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy TenantUser? @relation(fields: [createdById], references: [id], onDelete: SetNull)
   deliveries NotificationDelivery[]
   @@unique([projectId, createdById, requestId])
   @@index([tenantId, projectId, createdAt])
@@ -1223,8 +1229,8 @@ model Notification {
   project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   aiCreditDeliveries AiCreditDelivery[]
   subscriptionDeliveries SubscriptionReminderDelivery[]
-  recipient User     @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
-  actor     User?    @relation("NotificationActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  recipient TenantUser     @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  actor     TenantUser?    @relation("NotificationActor", fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, projectId, recipientUserId, readAt])
   @@map("notifications")
@@ -1243,7 +1249,7 @@ model MemberCallLog {
 
   project    Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   member     Member             @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  createdBy  User?               @relation("MemberCallLogCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy  TenantUser?               @relation("MemberCallLogCreator", fields: [createdById], references: [id], onDelete: SetNull)
   commitment PaymentCommitment?
 
   @@index([tenantId, projectId, memberId, calledAt])
@@ -1273,8 +1279,8 @@ model PaymentCommitment {
   project         Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
   member          Member              @relation(fields: [memberId], references: [id], onDelete: Cascade)
   callLog         MemberCallLog?      @relation(fields: [callLogId], references: [id], onDelete: SetNull)
-  createdBy       User?                @relation("PaymentCommitmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  resolvedBy      User?               @relation("PaymentCommitmentResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  createdBy       TenantUser?                @relation("PaymentCommitmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  resolvedBy      TenantUser?               @relation("PaymentCommitmentResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
   resolvedDeposit Deposit?            @relation("CommitmentResolvedDeposit", fields: [resolvedDepositId], references: [id], onDelete: SetNull)
   supersededBy    PaymentCommitment?  @relation("CommitmentSupersession", fields: [supersededById], references: [id], onDelete: SetNull)
   supersedes      PaymentCommitment[] @relation("CommitmentSupersession")
@@ -1297,7 +1303,7 @@ model MemberReminder {
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  sentBy  User?    @relation("MemberReminderSender", fields: [sentById], references: [id], onDelete: SetNull)
+  sentBy  TenantUser?    @relation("MemberReminderSender", fields: [sentById], references: [id], onDelete: SetNull)
 
   @@unique([projectId, memberId, reminderDate])
   @@index([tenantId, projectId, memberId, sentAt])
@@ -1318,7 +1324,7 @@ model Poll {
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
   project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdBy User?         @relation("PollCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy TenantUser?         @relation("PollCreator", fields: [createdById], references: [id], onDelete: SetNull)
   options   PollOption[]
   votes     PollVote[]
 
@@ -1355,7 +1361,7 @@ model PollVote {
 
   poll   Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
   option PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
-  user   User       @relation("PollVoter", fields: [userId], references: [id], onDelete: Cascade)
+  user   TenantUser       @relation("PollVoter", fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([pollId, userId])
   @@index([tenantId, projectId, pollId, optionId])
@@ -1378,7 +1384,7 @@ model ProjectEvent {
   updatedAt              DateTime  @updatedAt @map("updated_at")
 
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdBy User?    @relation("ProjectEventCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy TenantUser?    @relation("ProjectEventCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([tenantId, projectId, startsAt, cancelledAt])
   @@map("project_events")
@@ -1398,7 +1404,7 @@ model Activity {
 
   tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  actor   User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actor   TenantUser?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, projectId, createdAt])
   @@map("activity")
@@ -1417,7 +1423,7 @@ model ProjectNotice {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdBy   User? @relation("ProjectNoticeCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy   TenantUser? @relation("ProjectNoticeCreator", fields: [createdById], references: [id], onDelete: SetNull)
   @@index([tenantId, projectId, expiresAt, deletedAt])
   @@map("project_notices")
 }
@@ -1802,7 +1808,7 @@ model ConstructionPhase {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  responsibleUser User? @relation(fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  responsibleUser TenantUser? @relation(fields: [responsibleUserId], references: [id], onDelete: SetNull)
   costHeads ConstructionCostHead[]
   @@unique([projectId, name])
   @@unique([projectId, requestKey])
@@ -2338,7 +2344,7 @@ model ShortcutPreference {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user TenantUser @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([tenantId, projectId, userId])
   @@map("shortcut_preferences")
 }
@@ -2386,7 +2392,7 @@ model SupportTicket {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  requester User @relation(fields: [requesterId], references: [id], onDelete: Cascade)
+  requester TenantUser @relation(fields: [requesterId], references: [id], onDelete: Cascade)
   messages SupportMessage[]
   @@unique([tenantId, requesterId, requestKey])
   @@index([tenantId, requesterId, lastMessageAt])
@@ -2436,7 +2442,7 @@ model AppInstallation {
   firstSeenAt DateTime @default(now()) @map("first_seen_at")
   lastSeenAt DateTime @default(now()) @map("last_seen_at")
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user TenantUser @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([tenantId, userId, installationId])
   @@index([tenantId, firstSeenAt])
   @@map("app_installations")
@@ -2563,6 +2569,7 @@ model SubscriptionPaymentReceipt {
   storageKey String @unique @map("storage_key")
   createdAt DateTime @default(now()) @map("created_at")
   tenant Tenant @relation(fields:[tenantId],references:[id],onDelete:Cascade)
+  invoice SubscriptionInvoice @relation(fields:[tenantId,invoiceId],references:[tenantId,id],onDelete:Cascade,map:"subscription_payment_receipts_invoice_fkey")
   @@index([tenantId,invoiceId])
   @@map("subscription_payment_receipts")
 }
@@ -4053,4 +4060,89 @@ model SubscriptionReminderDelivery {
   @@index([status, nextAttemptAt, leaseUntil], map: "subscription_reminder_deliveries_pending_idx")
   @@index([tenantId])
   @@map("subscription_reminder_deliveries")
+}
+
+// Current entitlement. All updates and their history event commit together.
+enum SubscriptionPackage {
+  free
+  starter
+  business
+  custom
+}
+enum SubscriptionState {
+  trial
+  active
+  expired
+}
+enum SubscriptionBillingCycle {
+  monthly
+  yearly
+}
+enum SubscriptionInvoiceState {
+  open
+  submitted
+  approved
+  rejected
+}
+model TenantSubscription {
+  tenantId String @id @map("tenant_id")
+  package SubscriptionPackage @default(free)
+  status SubscriptionState
+  billingCycle SubscriptionBillingCycle @map("billing_cycle")
+  trialStartsAt DateTime? @map("trial_starts_at")
+  trialEndsAt DateTime? @map("trial_ends_at")
+  currentPeriodStartAt DateTime? @map("current_period_start_at")
+  currentPeriodEndAt DateTime? @map("current_period_end_at")
+  quotaResetAt DateTime? @map("quota_reset_at")
+  revision Int @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([status, trialEndsAt])
+  @@index([status, currentPeriodEndAt])
+  @@map("tenant_subscriptions")
+}
+model SubscriptionInvoice {
+  receipts SubscriptionPaymentReceipt[]
+  tenantId String @map("tenant_id")
+  id String @default(uuid())
+  package SubscriptionPackage?
+  billingCycle SubscriptionBillingCycle? @map("billing_cycle")
+  amount Int
+  currency String
+  status SubscriptionInvoiceState @default(open)
+  instructions String
+  issuedAt DateTime @default(now()) @map("issued_at")
+  paymentReference String? @map("payment_reference")
+  paymentAmount Int? @map("payment_amount")
+  paymentRequestKey String? @map("payment_request_key")
+  receiptId String? @map("receipt_id")
+  submittedAt DateTime? @map("submitted_at")
+  approvedAt DateTime? @map("approved_at")
+  rejectionReason String? @map("rejection_reason")
+  periodEndsAt DateTime? @map("period_ends_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@id([tenantId, id])
+  @@unique([tenantId, paymentRequestKey])
+  @@index([tenantId, issuedAt])
+  @@index([status, submittedAt])
+  @@map("subscription_invoices")
+}
+// Append-only events include before/after snapshots and references to their cause.
+model SubscriptionHistory {
+  id String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  revision Int
+  event String
+  actorUserId String? @map("actor_user_id")
+  actor String?
+  invoiceId String? @map("invoice_id")
+  paymentId String? @map("payment_id")
+  previous Json?
+  current Json
+  createdAt DateTime @default(now()) @map("created_at")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, revision])
+  @@index([tenantId, createdAt])
+  @@map("subscription_history")
 }

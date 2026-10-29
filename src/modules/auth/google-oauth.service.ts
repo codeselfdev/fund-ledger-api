@@ -1,3 +1,4 @@
+import { subscriptionContext } from "../../core/subscription/subscription.repository.js";
 import crypto from "node:crypto";
 import type { Request, Response } from "express";
 import jwt from "jsonwebtoken";
@@ -432,10 +433,10 @@ export async function signupWithGoogleTicket(input: {
     }),
     prisma.tenant.findUniqueOrThrow({
       where: { id: result.tenantId },
-      select: { contact: true }
+      select: { subscription: true,  contact: true }
     })
   ]);
-  const subscription = evaluateSubscription(tenant.contact);
+  const subscription = evaluateSubscription(subscriptionContext(tenant));
   return {
     ...toLoginSessionPayload(user, result.token, result.defaultProjectId),
     onboarding: summarizeOnboardingForClient(progress, project),

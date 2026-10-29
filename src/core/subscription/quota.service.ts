@@ -1,3 +1,5 @@
+import { subscriptionContext } from "./subscription.repository.js";
+import { tenantAccounts } from "../identity/tenant-accounts.js";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../prisma/client.js";
 import { ApiError } from "../http/api-error.js";
@@ -9,12 +11,12 @@ export function assertDocumentSize(size: number) {
 }
 export async function tenantQuota(tenantId: string, tx: Prisma.TransactionClient = prisma) {
   const [tenant, documents, users, projects] = await Promise.all([
-    tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { contact: true } }),
+    tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { subscription: true,  contact: true } }),
     tx.upload.count({ where: { tenantId, deletedAt: null } }),
     tx.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM organization_quota_identities(${tenantId}, NULL, NULL)`,
     tx.project.count({ where: { tenantId } })
   ]);
-  const id = packageId(tenant.contact), plan = PACKAGES[id];
+  const id = packageId(subscriptionContext(tenant)), plan = PACKAGES[id];
   return { package: id, max_document_bytes: MAX_DOCUMENT_BYTES,
     documents: { used: documents, limit: plan.documents }, users: { used: Number(users[0]?.count ?? 0), limit: plan.users }, projects: { used: projects, limit: plan.projects } };
 }
@@ -25,13 +27,13 @@ export async function assertProjectCapacity(tenantId: string) {
   return quota;
 }
 export async function assertPersonCapacity(tenantId: string, input: { user_id?: string; mobile?: string; email?: string }, tx: Prisma.TransactionClient = prisma) {
-  const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { contact: true } });
-  if (PACKAGES[packageId(tenant.contact)].users === null) return;
+  const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { subscription: true,  contact: true } });
+  if (PACKAGES[packageId(subscriptionContext(tenant))].users === null) return;
   const quota = await tenantQuota(tenantId,tx);
   if (quota.users.limit === null || quota.users.used < quota.users.limit) return quota;
-  const matches = [ ...(input.user_id ? [{ id: input.user_id }] : []), ...(input.mobile ? [{ mobile: input.mobile }] : []), ...(input.email ? [{ email: { equals: input.email, mode: "insensitive" as const } }] : []) ];
-  const user = matches.length ? await tx.user.findFirst({ where: { tenantId, OR: matches } }) : null;
-  const member = await tx.member.findFirst({ where: { tenantId, status: "active", OR: [ ...(user ? [{ userId: user.id }] : []), ...(input.mobile ? [{ mobile: input.mobile }] : []), ...(input.email ? [{ email: { equals: input.email, mode: "insensitive" as const } }] : []) ] } });
+  const matches = [ ...(input.user_id ? [{ id: input.user_id }] : []), ...(input.mobile ? [{ mobile: input.mobile }] : []), ...(input.email ? [{ email: { equals: input.email.trim().toLowerCase(), mode: "insensitive" as const } }] : []) ];
+  const user = matches.length ? await tenantAccounts(tx).findFirst({ where: { tenantId, OR: matches } }) : null;
+  const member = await tx.member.findFirst({ where: { tenantId, status: "active", OR: [ ...(user ? [{ userId: user.id }] : []), ...(input.mobile ? [{ mobile: input.mobile }] : []), ...(input.email ? [{ email: { equals: input.email.trim().toLowerCase(), mode: "insensitive" as const } }] : []) ] } });
   if (user?.isActive || member) return quota;
   throw new ApiError(409, "USER_QUOTA_EXCEEDED", "Your organization has reached its user/member limit. Upgrade your package to add more people.", { quota });
 }

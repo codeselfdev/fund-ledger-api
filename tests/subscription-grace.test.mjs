@@ -35,7 +35,7 @@ test('renewal during grace restores the current organization and preserves prepa
 test('subscription middleware blocks every role after grace and admits every role during grace',async()=>{
  const now=Date.now();
  for(const elapsed of [2,6]){
-  prisma.tenant.findUnique=async()=>({deletionStartedAt:null,contact:{subscription:{status:'active',package:'starter',current_period_end_at:new Date(now-elapsed*DAY).toISOString()}}});
+  prisma.tenant.findUnique=async()=>({deletionStartedAt:null,contact:{},subscription:{status:'active',package:'starter',billingCycle:'monthly',currentPeriodEndAt:new Date(now-elapsed*DAY),updatedAt:new Date(now)}});
   for(const role of ['owner','admin','accountant','member','teacher','employee']){
    let error;await requireActiveSubscription({auth:{tenantId:'org',roles:[role]}},{},value=>{error=value;});
    if(elapsed===2)assert.equal(error,undefined,role);else{assert.equal(error.statusCode,402);assert.equal(error.code,'SUBSCRIPTION_EXPIRED');}

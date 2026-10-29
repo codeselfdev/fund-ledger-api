@@ -1,3 +1,4 @@
+import { subscriptionContext } from "../../core/subscription/subscription.repository.js";
 import { purgeObject } from "../../core/storage/object-storage.service.js";
 import { prisma } from "../../core/prisma/client.js";
 import { sendWhatsAppBotReply } from "../../core/whatsapp/whatsapp.service.js";
@@ -18,8 +19,8 @@ export async function runAssistantJobs() {
       }
       const completed = row.status === "ready" ? row : await processReply(row.id);
       if (completed.status !== "ready" || !completed.reply || !completed.recipient || !completed.connectionId) continue;
-      const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: row.tenantId } });
-      if (!hasBusinessAssistant(tenant.contact)) {
+      const tenant = await prisma.tenant.findUniqueOrThrow({ include: { subscription: true },  where: { id: row.tenantId } });
+      if (!hasBusinessAssistant(subscriptionContext(tenant))) {
         await prisma.assistantReply.updateMany({ where: { id: row.id, status: "ready" }, data: { status: "failed", reply: null, errorCode: "BUSINESS_REQUIRED" } }); continue;
       }
       const context = await assistantContext(row.tenantId, row.projectId, row.userId);

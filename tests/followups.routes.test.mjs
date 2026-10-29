@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, installAccountRelationFixtures, installSubscriptionReadFixtures } from './helpers/normalized-fixtures.mjs';
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import express from 'express';
@@ -30,7 +31,7 @@ before(async () => {
   prisma.memberCallLog.findMany = async ({where}) => callLogs.filter(row => row.memberId === where.memberId).map(row => ({...row,createdBy:row.createdById === null ? null : {name:'Staff User'},commitment:row.outcome==='committed'?{id:commitments.find(item=>item.callLogId===row.id)?.id}:null}));
   prisma.memberCallLog.create = async ({data}) => {const row={calledAt:new Date(),createdAt:new Date(),...data};callLogs.push(row);return row;};
   prisma.$queryRaw = async () => [];
-  prisma.$transaction = async callback => callback(prisma);
+  prisma.$transaction = async callback => callback(fixtureTransactionClient(prisma));
   prisma.memberReminder.create = async ({data}) => {
     if (reminders.some(row => row.projectId===data.projectId && row.memberId===data.memberId && row.reminderDate.getTime()===data.reminderDate.getTime())) throw new Prisma.PrismaClientKnownRequestError('unique',{code:'P2002',clientVersion:'5.22.0'});
     await new Promise(resolve => setTimeout(resolve, 2));
@@ -42,7 +43,9 @@ before(async () => {
   prisma.memberReminder.update = async ({where,data}) => Object.assign(reminders.find(row=>row.id===where.id),data);
   prisma.projectMembership.findMany = async () => [];
   prisma.activity.create = async ({data}) => data;
-  const app=express(); app.use(express.json()); app.use((req,_res,next)=>{req.auth={tenantId:'tenant',projectId:'project',userId:'admin',memberId:'admin-member',roles:[req.header('x-role')??'admin']};next();}); app.use('/v1',followupsRouter); app.use((error,_req,res,_next)=>res.status(error.statusCode??500).json({error:{code:error.code,message:error.message,fields:error.fields}}));
+  installSubscriptionReadFixtures(prisma);
+installAccountRelationFixtures(prisma);
+const app=express(); app.use(express.json()); app.use((req,_res,next)=>{req.auth={tenantId:'tenant',projectId:'project',userId:'admin',memberId:'admin-member',roles:[req.header('x-role')??'admin']};next();}); app.use('/v1',followupsRouter); app.use((error,_req,res,_next)=>res.status(error.statusCode??500).json({error:{code:error.code,message:error.message,fields:error.fields}}));
   server=app.listen(0,'127.0.0.1'); await new Promise(resolve=>server.once('listening',resolve)); url=`http://127.0.0.1:${server.address().port}/v1`;
 });
 after(async()=>{await new Promise(resolve=>server.close(resolve));await prisma.$disconnect();});

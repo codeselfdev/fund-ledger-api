@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { Router } from "express";
 import { z } from "zod";
 import { Role } from "@prisma/client";
@@ -44,7 +45,7 @@ router.get("/activity", requireProject, requireRoles("any"), asyncHandler(async 
     },
     include: {
       actor: {
-        select: { id: true, name: true, mobile: true, email: true }
+        select: { id: true, identity: {select: {name: true, mobile: true, email: true}} }
       }
     },
     orderBy: { createdAt: "desc" },
@@ -90,7 +91,7 @@ accountNotificationsRouter.patch("/notifications/:id/read", validateParams(idPar
 accountNotificationsRouter.post("/notifications/device-token", validateBody(notificationDeviceTokenSchema), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const body = req.body as z.infer<typeof notificationDeviceTokenSchema>;
-  await prisma.user.updateMany({
+  await tenantAccounts(prisma).updateMany({
     where: { id: auth.userId, tenantId: auth.tenantId },
     data: { deviceId: body.fcm_token.trim() }
   });
@@ -99,7 +100,7 @@ accountNotificationsRouter.post("/notifications/device-token", validateBody(noti
 
 accountNotificationsRouter.delete("/notifications/device-token", asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
-  await prisma.user.updateMany({
+  await tenantAccounts(prisma).updateMany({
     where: { id: auth.userId, tenantId: auth.tenantId },
     data: { deviceId: null }
   });

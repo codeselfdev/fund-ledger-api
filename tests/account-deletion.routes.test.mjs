@@ -1,3 +1,4 @@
+import { normalizedAccountRelations } from './helpers/normalized-fixtures.mjs';
 import assert from 'node:assert/strict';
 import { test, before, after } from 'node:test';
 import express from 'express';
@@ -16,8 +17,8 @@ function reset() {
 function tokenFor(userId = 'user-a', tenantId = 'tenant-a') {
   const sessionId = `session-${userId}`;
   const token = signAccessToken({ userId, tenantId, sessionId });
-  sessions.set(sessionId, { id: sessionId, userId, tenantId, tokenHash: hashToken(token),
-    revokedAt: null, expiresAt: new Date(Date.now() + 60000), activeProjectId: 'removed-project', user: { isActive: true, lastActiveAt: new Date() } });
+  sessions.set(sessionId, normalizedAccountRelations({ id: sessionId, userId, tenantId, tokenHash: hashToken(token),
+    revokedAt: null, expiresAt: new Date(Date.now() + 60000), activeProjectId: 'removed-project', user: { isActive: true, lastActiveAt: new Date() } }));
   return token;
 }
 before(async () => {

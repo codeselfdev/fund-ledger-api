@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
-import type { Prisma, Session, User } from '@prisma/client';
+import type { Prisma, Session, User, TenantUser } from '@prisma/client';
 import { prisma } from '../prisma/client.js';
 import { forbidden, notFound, unauthorized } from '../http/api-error.js';
 
@@ -34,10 +34,10 @@ export function validMasterCode(value: string, expected: string) {
 export const masterEmailHash = (email: string) => digest(email).toString('hex');
 
 type Db = Prisma.TransactionClient;
-export function isConfiguredMaster(session: Session & { user: User }, config: NonNullable<ReturnType<typeof impersonationConfig>>) {
-  return !session.impersonatorSessionId && session.user.isActive
+export function isConfiguredMaster(session: Session & { user: TenantUser & { identity: Pick<User, "name" | "email" | "mobile" | "isActive"> } }, config: NonNullable<ReturnType<typeof impersonationConfig>>) {
+  return !session.impersonatorSessionId && session.user.isActive && session.user.identity.isActive
     && session.user.tenantId === session.tenantId
-    && session.user.email?.trim().toLowerCase() === config.email
+    && session.user.identity.email?.trim().toLowerCase() === config.email
     && session.verifiedEmail?.trim().toLowerCase() === config.email
     && (!config.userId || session.userId === config.userId);
 }
@@ -47,18 +47,18 @@ export async function requireMasterSession(req: Request, db: Db = prisma) {
   const session = await db.session.findFirst({ where: {
     id: req.auth.sessionId, userId: req.auth.userId, tenantId: req.auth.tenantId,
     revokedAt: null, expiresAt: { gt: new Date() }
-  }, include: { user: true } });
+  }, include: { user: { include: { identity: { select: { name: true, email: true, mobile: true, isActive: true } } } } } });
   if (!session || !isConfiguredMaster(session, config)) throw notFound();
   if (session.createdAt.getTime() < Date.now() - MASTER_LOGIN_MAX_AGE_MS) throw forbidden('Sign in again with Google or an email code before using support access.');
   return { session, config };
 }
-export async function validateImpersonatedRequest(req: Request, session: Session & { user: User }) {
+export async function validateImpersonatedRequest(req: Request, session: Session & { user: TenantUser & { identity: Pick<User, "name" | "email" | "mobile" | "isActive"> } }) {
   const config = requireImpersonationWeb(req);
   if (!session.impersonatorUserId || !session.impersonatorSessionId || session.impersonationPolicyHash !== config.policyHash) throw unauthorized('Support session is no longer valid.');
   const parent = await prisma.session.findFirst({ where: {
     id: session.impersonatorSessionId, userId: session.impersonatorUserId,
     revokedAt: null, expiresAt: { gt: new Date() }
-  }, include: { user: true } });
+  }, include: { user: { include: { identity: { select: { name: true, email: true, mobile: true, isActive: true } } } } } });
   if (!parent || !isConfiguredMaster(parent, config) || session.user.tenantId !== session.tenantId) throw unauthorized('The master session has ended.');
   const path = req.originalUrl.split('?')[0];
   const permittedPost = req.method === 'POST' && (

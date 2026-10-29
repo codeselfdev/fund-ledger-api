@@ -1,8 +1,11 @@
+import {badRequest} from "../../core/http/api-error.js";
+import { saveSubscription } from "../../core/subscription/subscription.repository.js";
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { settings as instituteSettings } from '../institute/institute.policy.js';
 import { withDefaultMemberDocumentTitles } from "../../core/projects/member-document-titles.js";
 import { assertSignupMobileAvailable, signupMobile } from "../auth/signup-contact.js";
 import { withAvailableOrganizationSlug } from "../../core/onboarding/available-slug.js";
-import { Prisma, TenantPlan, ProjectType } from "@prisma/client";
+import { Prisma, SubscriptionPackage, ProjectType } from "@prisma/client";
 import { prisma } from "../../core/prisma/client.js";
 import { writeAudit } from "../../core/audit/audit.service.js";
 import { createProvisionedOnboardingSeed } from "../../core/onboarding/onboarding.service.js";
@@ -25,7 +28,7 @@ export type ProvisionTenantInput = {
   projectType?: ProjectType;
   instituteSettings?: unknown;
   ownerIsMember?: boolean;
-  plan?: TenantPlan;
+  plan?: SubscriptionPackage;
   trialDays?: number;
   penaltyPolicy?: Prisma.InputJsonValue;
   source?: "provisioning" | "self_signup" | "cli";
@@ -53,12 +56,12 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
 
 async function provisionTenantOnce(input: ProvisionTenantInput): Promise<ProvisionTenantResult> {
   const currency = (input.currency ?? "BDT").toUpperCase();
-  const plan = input.plan ?? TenantPlan.free;
+  if (input.plan && input.plan !== "free") throw badRequest("Paid packages require an approved payment.");
   const projectName = input.projectName?.trim() || "My Project";
   const projectTotalShares = input.projectTotalShares ?? 1;
   const source = input.source ?? "provisioning";
 
-  const existingSlug = await prisma.tenant.findUnique({ where: { slug: input.slug } });
+  const existingSlug = await prisma.tenant.findUnique({  where: { slug: input.slug } });
   if (existingSlug) {
     throw Object.assign(new Error("Tenant slug already exists"), { code: "SLUG_TAKEN" });
   }
@@ -71,10 +74,10 @@ async function provisionTenantOnce(input: ProvisionTenantInput): Promise<Provisi
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${scope}, 0))::text`;
     }
     await assertSignupMobileAvailable(mobile, tx);
-    if (email && await tx.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } }, select: { id: true } })) {
+    if (email && await tx.user.findUnique({ where: { email }, select: { id: true } })) {
       throw Object.assign(new Error("Email already registered"), { code: "EMAIL_TAKEN" });
     }
-    const contact = withDefaultMemberDocumentTitles({ subscription: input.trialDays === undefined ? createOneMonthTrial() : createTrialSubscription(input.trialDays) }, input.projectType ?? "fund_shares");
+    const contact = withDefaultMemberDocumentTitles({}, input.projectType ?? "fund_shares");
     const onboarding = createProvisionedOnboardingSeed({ source });
 
     const tenant = await tx.tenant.create({
@@ -82,11 +85,12 @@ async function provisionTenantOnce(input: ProvisionTenantInput): Promise<Provisi
         name: input.name,
         slug: input.slug,
         currency,
-        plan,
         contact,
         penaltyPolicy: input.penaltyPolicy
       }
     });
+
+    await saveSubscription(tx, tenant.id, input.trialDays === undefined ? createOneMonthTrial() : createTrialSubscription(input.trialDays), { event: 'trial_started' });
 
     const project = await tx.project.create({
       data: {
@@ -99,7 +103,7 @@ async function provisionTenantOnce(input: ProvisionTenantInput): Promise<Provisi
       }
     });
 
-    const user = await tx.user.create({
+    const user = await tenantAccounts(tx).create({
       data: {
         tenantId: tenant.id,
         name: input.adminName,
@@ -111,8 +115,7 @@ async function provisionTenantOnce(input: ProvisionTenantInput): Promise<Provisi
     const ensuredMember = input.ownerIsMember && (!input.projectType || ["fund_shares", "construction"].includes(input.projectType)) ? await ensureUserProjectMember(tx, {
       tenantId: tenant.id,
       projectId: project.id,
-      user: {
-        id: user.id,
+      user: { id: user.id,
         name: user.name,
         mobile: user.mobile,
         email: user.email

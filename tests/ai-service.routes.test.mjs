@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, installAccountReadFixtures, installSubscriptionReadFixtures, normalizedAccountRelations } from './helpers/normalized-fixtures.mjs';
 import assert from 'node:assert/strict';
 import { test, before, after, beforeEach } from 'node:test';
 import { createCipheriv,createHash,randomBytes } from 'node:crypto';
@@ -20,7 +21,7 @@ const token=signAccessToken({sessionId:'session',userId:'user',tenantId:'tenant'
 const activeContact=()=>renewTenantSubscription({subscription:createOneMonthTrial()},new Date(),{package:'business',billing_cycle:'yearly'}).contact;
 function encrypt(text){const iv=randomBytes(12),key=createHash('sha256').update(process.env.WHATSAPP_CREDENTIALS_KEY).digest(),cipher=createCipheriv('aes-256-gcm',key,iv);const b=Buffer.concat([cipher.update(text),cipher.final()]);return[iv,cipher.getAuthTag(),b].map(x=>x.toString('base64')).join('.');}
 before(async()=>{
- prisma.session.findFirst=async({where})=>revoked||where.tokenHash!==hashToken(token)?null:{id:'session',userId:'user',tenantId:'tenant',activeProjectId:'project',user:{id:'user',isActive:active,lastActiveAt:new Date()}};
+ prisma.session.findFirst=async({where})=>revoked||where.tokenHash!==hashToken(token)?null:normalizedAccountRelations({id:'session',userId:'user',tenantId:'tenant',activeProjectId:'project',user:{id:'user',isActive:active,lastActiveAt:new Date()}});
  prisma.projectMembership.findMany=async()=>active?roles.map(role=>({role,memberId:role==='member'?'member':null})):[];
  prisma.projectMembership.findFirst=async()=>roles.includes('accountant')?{role:'accountant'}:null;
  prisma.project.findFirst=async()=>({name:'Project',projectType:'fund_shares'});
@@ -42,12 +43,14 @@ before(async()=>{
  prisma.account.aggregate=async()=>({_sum:{balance:0}});
  prisma.member.count=async()=>0;
  prisma.expense.groupBy=async()=>[];
- prisma.$transaction=async fn=>fn(prisma);
+ prisma.$transaction=async fn=>fn(fixtureTransactionClient(prisma));
  prisma.$queryRaw=async()=>[];
  prisma.assistantReply.findUnique=async({where})=>records.find(r=>r.requestKey===where.tenantId_channel_requestKey.requestKey)??null;
  prisma.assistantReply.count=async()=>records.length;
  prisma.assistantReply.create=async({data})=>{const r={id:'request-'+records.length,...data};records.push(r);return r;};
- const app=express();app.use(express.json());app.use('/v1/ai-service',aiServiceRouter);app.use('/v1/assistant',authenticate,assistantRouter);app.use(errorHandler);server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));base=`http://127.0.0.1:${server.address().port}`;
+ installSubscriptionReadFixtures(prisma);
+const app=express();installAccountReadFixtures(prisma);
+app.use(express.json());app.use('/v1/ai-service',aiServiceRouter);app.use('/v1/assistant',authenticate,assistantRouter);app.use(errorHandler);server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));base=`http://127.0.0.1:${server.address().port}`;
 });
 beforeEach(()=>{roles=['accountant'];active=true;revoked=false;records=[];contact=activeContact();connection={id:'connection',tenantId:'tenant',projectId:'project',wabaId:'waba',phoneNumberId:'phone',groupId:'group',graphApiVersion:'v23.0',encryptedAccessToken:encrypt('provider-secret')};userMatches=[{id:'user',memberships:[{role:'accountant'}]}];});
 after(async()=>{await new Promise(r=>server.close(r));await prisma.$disconnect();await rm(uploadRoot,{recursive:true,force:true});});

@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, normalizedAccountRelations } from './helpers/normalized-fixtures.mjs';
 import assert from 'node:assert/strict';
 import { before, after, beforeEach, test } from 'node:test';
 import { randomUUID } from 'node:crypto';
@@ -61,7 +62,7 @@ function decorate(table, row, include) {
   if (include?.tenant) r.tenant = { currency: 'BDT', contact: null };
   if (include?.allocations) r.allocations = db.allocations.filter(a => table === 'invoices' ? a.invoiceId === row.id : a.paymentId === row.id).map(a => ({ ...copy(a), ...(include.allocations.include?.invoice ? { invoice: copy(db.invoices.find(i => i.id === a.invoiceId)) } : {}) }));
   if (include?.adjustments) r.adjustments = db.adjustments.filter(a => a.invoiceId === row.id).map(copy);
-  return r;
+  return normalizedAccountRelations(r);
 }
 function mutate(row, data) {
   for (const [k, v] of Object.entries(data)) if (v !== undefined) row[k] = v && typeof v === 'object' && 'increment' in v ? row[k] + v.increment : v && typeof v === 'object' && 'decrement' in v ? row[k] - v.decrement : copy(v);
@@ -113,7 +114,7 @@ before(async () => {
   prisma.$transaction = async fn => {
     const previous = queue; let release; queue = new Promise(r => release = r); await previous;
     const snapshot = copy(db);
-    try { if (retry) { retry = false; throw new Prisma.PrismaClientKnownRequestError('serialization', { code: 'P2034', clientVersion: 'test' }); } return await fn(prisma); }
+    try { if (retry) { retry = false; throw new Prisma.PrismaClientKnownRequestError('serialization', { code: 'P2034', clientVersion: 'test' }); } return await fn(fixtureTransactionClient(prisma)); }
     catch (e) { db = snapshot; throw e; } finally { release(); }
   };
   const app = express(); app.use(express.json({ limit: '2mb' })); app.use(authenticate); app.use('/construction', constructionRouter); app.use('/purchases', purchasesRouter); app.use(errorHandler);
@@ -123,7 +124,7 @@ beforeEach(reset);
 after(async () => { await new Promise(r => server.close(r)); await prisma.$disconnect(); });
 function token(role, project, userId) {
   const sessionId = randomUUID(), value = signAccessToken({ sessionId, tenantId: 't', userId });
-  db.sessions.push({ id: sessionId, tenantId: 't', userId, tokenHash: hashToken(value), revokedAt: null, expiresAt: new Date(Date.now() + 60000), activeProjectId: project, user: { isActive: true, lastActiveAt: new Date() } });
+  db.sessions.push(normalizedAccountRelations({ id: sessionId, tenantId: 't', userId, tokenHash: hashToken(value), revokedAt: null, expiresAt: new Date(Date.now() + 60000), activeProjectId: project, user: { isActive: true, lastActiveAt: new Date() } }));
   db.memberships.push({ tenantId: 't', projectId: project, userId, role, isActive: true, memberId: role === 'member' ? 'member' : null }); return value;
 }
 async function request(path, body, role = 'accountant', method = body ? 'POST' : 'GET', project = 'p', userId = `user-${role}`) {

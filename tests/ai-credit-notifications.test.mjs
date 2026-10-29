@@ -1,3 +1,4 @@
+import { installAccountReadFixtures } from './helpers/normalized-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 Object.assign(process.env,{DATABASE_URL:'postgresql://test:test@127.0.0.1:1/no_database',JWT_SECRET:'synthetic-credit-notification-test'});
@@ -6,9 +7,10 @@ const {queueAiCreditNotification,createAiCreditNotifier}=await import('../dist/m
 test('a credit extension queues one primary-owner inbox notification and independent push/email deliveries',async()=>{
  const writes=[];
  const tx={user:{findFirst:async query=>{assert.equal(query.where.tenantId,'org');assert.equal(query.where.isActive,true);assert.equal(query.where.memberships.some.role,'owner');assert.deepEqual(query.orderBy,[{createdAt:'asc'},{id:'asc'}]);return{id:'owner'};}},notification:{create:async query=>writes.push(query)},aiCreditDelivery:{createMany:async query=>writes.push(query)}};
+ installAccountReadFixtures(tx);
  const result=await queueAiCreditNotification(tx,{id:'org',name:'Example organization'},{id:'grant',channel:'ai_chat',credits:25,limit:125,expires_at:'2026-11-01T00:00:00Z'});
  assert.equal(result.notification_id,'ai-credit:grant');assert.equal(writes[0].data.recipientUserId,'owner');assert.equal(writes[0].data.tenantId,'org');assert.match(writes[0].data.body,/25 extra AI chat credits/);assert.match(writes[0].data.body,/125/);assert.match(writes[0].data.body,/1 Nov 2026/);assert.deepEqual(writes[1].data.map(row=>row.channel),['push','email']);
- tx.user.findFirst=async()=>null;assert.deepEqual(await queueAiCreditNotification(tx,{id:'other',name:'No owner'},{id:'next',channel:'ai_chat',credits:1,limit:11,expires_at:'2026-11-01T00:00:00Z'}),{notification_id:null});assert.equal(writes.length,2);
+ tx.tenantUser.findFirst=async()=>null;assert.deepEqual(await queueAiCreditNotification(tx,{id:'other',name:'No owner'},{id:'next',channel:'ai_chat',credits:1,limit:11,expires_at:'2026-11-01T00:00:00Z'}),{notification_id:null});assert.equal(writes.length,2);
 });
 function fixture({emailFails=false,pushFails=false,noDevice=false,noEmail=false,invalidToken=false,unavailable=false,attempts=0,claim=false}={}){
  const rows=['push','email'].map(channel=>({id:channel,channel,tenantId:'org',notificationId:'notice',status:'pending',attempts,nextAttemptAt:new Date(0),leaseUntil:null,leaseToken:null}));
@@ -24,6 +26,7 @@ function fixture({emailFails=false,pushFails=false,noDevice=false,noEmail=false,
  const db={aiCreditDelivery:{findMany:async({where})=>rows.filter(row=>matches(row,where)).map(row=>({...row})),updateMany:async({where,data})=>{
   if(claim&&data.leaseToken)return{count:0};let count=0;for(const row of rows.filter(row=>matches(row,where))){const attempts=row.attempts;Object.assign(row,data);if(typeof data.attempts==='object')row.attempts=attempts+data.attempts.increment;count++;}return{count};
  }},notification:{findFirst:async query=>{queries.push(query);return unavailable?null:{title:'Your AI credits have been extended',body:'Example: 25 extra credits added. Your quota is now 125.',entityId:'grant',recipient:{id:'owner',tenantId:'org',isActive:true,name:'Customer',email:noEmail?null:'owner@example.test',deviceId:noDevice?null:'owner-device'},tenant:{deletionStartedAt:null}};}},user:{updateMany:async query=>{cleared.push(query);return{count:1};}}};
+ installAccountReadFixtures(db);
  const notifier=createAiCreditNotifier(db,{push:async input=>{pushes.push(input);if(pushFails)throw Error('FCM unavailable');return{sent_count:invalidToken?0:1,invalid_tokens:invalidToken?['owner-device']:[]};},email:async input=>{emails.push(input);return!emailFails;}});
  return{rows,pushes,emails,cleared,queries,notifier};
 }

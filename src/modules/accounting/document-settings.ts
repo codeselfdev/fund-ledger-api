@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { itemDetailsSchema, type ItemDetails } from './item-detail-fields.js';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
@@ -12,13 +13,13 @@ export type DocumentSettings = z.infer<typeof settingsSchema>;
 export type DocumentPresentation = { includeItemDescription?: boolean; version: 1; itemDetails?: ItemDetails | null; profile: DocumentSettings['profile']; terms: z.infer<typeof sectionSchema>; disclaimer: z.infer<typeof sectionSchema>; settingsRevision: number; preparedByName: string; preparedBy?: { id: string; name: string; designation: string; mobile: string; email: string }; templateId?: typeof templateIds[number]; accentColor?: string | null; logoFileId?: string | null };
 export type Scope = { tenantId: string; projectId: string; userId?: string };
 export async function getDocumentSettings(db: Prisma.TransactionClient, auth: Scope): Promise<DocumentSettings> {
-  const [project, tenant] = await Promise.all([db.project.findFirst({ where: { id: auth.projectId, tenantId: auth.tenantId } }), db.tenant.findFirst({ where: { id: auth.tenantId } })]);
+  const [project, tenant] = await Promise.all([db.project.findFirst({ where: { id: auth.projectId, tenantId: auth.tenantId } }), db.tenant.findFirst({  where: { id: auth.tenantId } })]);
   if (!project || !tenant) throw notFound('Organization or project not found');
   const raw = project.documentSettings as Partial<DocumentSettings> | null;
   return { itemDetails: raw?.itemDetails ?? null, revision: raw?.revision ?? 0, prefixRevision: tenant.documentPrefixRevision, templateId: raw?.templateId ?? 'classic', accentColor: raw?.accentColor ?? null, prefix: tenant.documentPrefix || tenant.name.replace(/[^a-z0-9]/gi, '').slice(0, 3).toUpperCase() || 'ORG', profile: profileSchema.parse(raw?.profile ?? { name: tenant.name, address: '', phone: '', email: '', website: '', footer: '' }), terms: raw?.terms ?? { enabled: false, text: '' }, disclaimer: raw?.disclaimer ?? { enabled: false, text: '' } };
 }
 export async function nextDocumentNumber(db: Prisma.TransactionClient, auth: Scope, kind: Kind, date: string) {
-  const tenant = await db.tenant.findFirst({ where: { id: auth.tenantId } });
+  const tenant = await db.tenant.findFirst({  where: { id: auth.tenantId } });
   if (!tenant) throw notFound('Organization not found');
   const prefix = tenant.documentPrefix || tenant.name.replace(/[^a-z0-9]/gi, '').slice(0, 3).toUpperCase() || 'ORG';
   const period = date.slice(0, 7).replace('-', '');
@@ -37,7 +38,7 @@ export async function documentPresentation(db: Prisma.TransactionClient, auth: S
     result = { version: 1, itemDetails: settings.itemDetails ?? null, profile: settings.profile, terms: settings.terms, disclaimer: settings.disclaimer, settingsRevision: settings.revision, preparedByName: '', templateId: settings.templateId, accentColor: settings.accentColor, logoFileId: project?.logoFileId ?? null, ...(old?.preparedBy ? { preparedBy: old.preparedBy, preparedByName: old.preparedBy.name } : {}) };
   }
   if (!result.preparedBy) {
-    const user = auth.userId ? await db.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId }, select: { id: true, name: true, mobile: true, email: true, professionalProfile: true } }) : null;
+    const user = auth.userId ? await tenantAccounts(db).findFirst({ where: { id: auth.userId, tenantId: auth.tenantId }, select: { id: true, name: true, mobile: true, email: true, professionalProfile: true } }) : null;
     const profile = user?.professionalProfile as { designation?: string; mobile?: string; email?: string } | null;
     result.preparedBy = { id: user?.id ?? '', name: user?.name ?? '', designation: profile?.designation ?? '', mobile: profile?.mobile ?? user?.mobile ?? '', email: profile?.email ?? user?.email ?? '' };
     result.preparedByName = result.preparedBy.name;

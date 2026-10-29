@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { PrismaClient } from '@prisma/client';
@@ -30,7 +31,7 @@ export async function instituteImport(db: Tx | PrismaClient, a: Access, kind: Ki
     db.instituteGroup.findMany({where:a.scope,orderBy:{id:'asc'}}), db.instituteSubject.findMany({where:a.scope,orderBy:{id:'asc'}}),
     kind==='students'?db.instituteStudent.findMany({where:a.scope,orderBy:{id:'asc'}}):Promise.resolve([]),
     ['teachers','routine'].includes(kind)?db.instituteTeacherAssignment.findMany({where:a.scope,orderBy:{id:'asc'}}):Promise.resolve([]),
-    ['teachers','students','routine'].includes(kind)?db.user.findMany({where:{tenantId:a.scope.tenantId,mobile:{in:body.rows.flatMap(r=>[r.values.mobile,r.values.teacher_mobile].filter(Boolean))}},orderBy:{id:'asc'},select:{id:true,mobile:true,name:true,isActive:true}}):Promise.resolve([]),
+    ['teachers','students','routine'].includes(kind)?tenantAccounts(db).findMany({where:{tenantId:a.scope.tenantId,mobile:{in:body.rows.flatMap(r=>[r.values.mobile,r.values.teacher_mobile].filter(Boolean))}},orderBy:{id:'asc'},select:{id:true,mobile:true,name:true,isActive:true}}):Promise.resolve([]),
   ]);
   const operations: (()=>Promise<unknown>)[] = [], seen = new Set<string>();
   const mobileNames=new Map<string,string>();

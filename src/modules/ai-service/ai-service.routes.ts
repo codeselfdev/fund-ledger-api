@@ -1,3 +1,5 @@
+import { subscriptionContext } from "../../core/subscription/subscription.repository.js";
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { assistantHistoryQuery, assistantHistoryWindow } from '../assistant/assistant-history.js';
 import { retainChatAttachments, chatAttachmentSelection } from './chat-attachments.js';
 import { bulkAssistantRouter } from './bulk.routes.js';
@@ -33,11 +35,11 @@ router.post('/whatsapp/resolve',asyncHandler(async(req,res)=>{
   const connections=await prisma.whatsAppConnection.findMany({where:{wabaId:b.waba_id,phoneNumberId:b.phone_number_id,groupId:b.group_id,isActive:true},take:2});
   if(connections.length!==1)return ok(res,null);
   const c=connections[0]!;
-  const tenant=await prisma.tenant.findUnique({where:{id:c.tenantId}});
-  if(!tenant||tenant.deletionStartedAt||!hasBusinessAssistant(tenant.contact))return ok(res,null);
+  const tenant=await prisma.tenant.findUnique({ include: { subscription: true }, where:{id:c.tenantId}});
+  if(!tenant||tenant.deletionStartedAt||!hasBusinessAssistant(subscriptionContext(tenant)))return ok(res,null);
   const project=await prisma.project.findFirst({where:{id:c.projectId,tenantId:c.tenantId,isActive:true}});
   if(!project)return ok(res,null);
-  const users=await prisma.user.findMany({where:{tenantId:c.tenantId,isActive:true,mobile:{in:[b.sender,`+${b.sender}`]},memberships:{some:{projectId:c.projectId,tenantId:c.tenantId,isActive:true}}},include:{memberships:{where:{projectId:c.projectId,tenantId:c.tenantId,isActive:true}}},take:2});
+  const users=await tenantAccounts(prisma).findMany({where:{tenantId:c.tenantId,isActive:true,mobile:{in:[b.sender,`+${b.sender}`]},memberships:{some:{projectId:c.projectId,tenantId:c.tenantId,isActive:true}}},include:{memberships:{where:{projectId:c.projectId,tenantId:c.tenantId,isActive:true}}},take:2});
   const user=users.length===1?users[0]:null;
   return ok(res,{tenant_id:c.tenantId,project_id:c.projectId,user_id:user?.id??null,permitted:!!user&&permitted(user.memberships.map(m=>m.role)),connection:{graph_api_version:c.graphApiVersion,access_token:await aiServiceWhatsAppCredential(c.id)}});
 }));
@@ -51,22 +53,22 @@ router.post('/telegram/resolve',asyncHandler(async(req,res)=>{
     catch(error) { if(error instanceof TelegramGroupMigratedError)return error.chatId;throw error; }
   });
   if(!connection||!process.env.TELEGRAM_BOT_TOKEN||!process.env.TELEGRAM_BOT_USERNAME)return ok(res,null);
-  const tenant=await prisma.tenant.findUnique({where:{id:connection.tenantId}});
+  const tenant=await prisma.tenant.findUnique({ include: { subscription: true }, where:{id:connection.tenantId}});
   const project=await prisma.project.findFirst({where:{id:connection.projectId,tenantId:connection.tenantId,isActive:true}});
-  if(!tenant||tenant.deletionStartedAt||!hasAssistant(tenant.contact)||!project)return ok(res,null);
+  if(!tenant||tenant.deletionStartedAt||!hasAssistant(subscriptionContext(tenant))||!project)return ok(res,null);
   const identity=await prisma.telegramBotIdentity.findUnique({where:{projectId_telegramUserId:{projectId:connection.projectId,telegramUserId:b.sender}}});
-  const user=identity?.tenantId===connection.tenantId?await prisma.user.findFirst({where:{id:identity.userId,tenantId:connection.tenantId,isActive:true},include:{memberships:{where:{tenantId:connection.tenantId,projectId:connection.projectId,isActive:true}}}}):null;
+  const user=identity?.tenantId===connection.tenantId?await tenantAccounts(prisma).findFirst({where:{id:identity.userId,tenantId:connection.tenantId,isActive:true},include:{memberships:{where:{tenantId:connection.tenantId,projectId:connection.projectId,isActive:true}}}}):null;
   return ok(res,{tenant_id:connection.tenantId,project_id:connection.projectId,user_id:user?.id??null,permitted:!!user&&permitted(user.memberships.map(m=>m.role)),connection:{bot_token:process.env.TELEGRAM_BOT_TOKEN,bot_username:process.env.TELEGRAM_BOT_USERNAME.replace(/^@/,'')}});
 }));
 router.use(authenticate,requireProject,requireRoles('owner','admin','accountant'),requireActiveSubscription);
-router.use(asyncHandler(async(req,_res,next)=>{const a=requireProjectContext(req);const t=await prisma.tenant.findUniqueOrThrow({where:{id:a.tenantId}});if(!hasAssistant(t.contact))throw new ApiError(403,'ASSISTANT_PLAN_REQUIRED','An active eligible plan is required for AI Chat.');next();}));
+router.use(asyncHandler(async(req,_res,next)=>{const a=requireProjectContext(req);const t=await prisma.tenant.findUniqueOrThrow({ include: { subscription: true }, where:{id:a.tenantId}});if(!hasAssistant(subscriptionContext(t)))throw new ApiError(403,'ASSISTANT_PLAN_REQUIRED','An active eligible plan is required for AI Chat.');next();}));
 
 router.use('/bulk',bulkAssistantRouter);
 router.use('/business',businessAssistantRouter);
 router.get('/context',asyncHandler(async(req,res)=>{
   const a=requireProjectContext(req);
   const [user,progress,wa,deposit,tg,identity,project]=await Promise.all([
-    prisma.user.findUniqueOrThrow({where:{id:a.userId},select:{mobile:true}}),
+    tenantAccounts(prisma).findUniqueOrThrow({where:{id:a.userId},select:{mobile:true}}),
     prisma.onboardingProgress.findUnique({where:{tenantId:a.tenantId},select:{incomeApprovalFlow:true,expenseApprovalFlow:true}}),
     prisma.whatsAppConnection.findFirst({where:{tenantId:a.tenantId,projectId:a.projectId,isActive:true},select:{wabaId:true,phoneNumberId:true,groupId:true}}),
     projectDepositRoute(a.tenantId,a.projectId),
@@ -83,13 +85,13 @@ router.post('/usage',rateLimit({windowMs:60000,limit:12,keyGenerator:req=>requir
   const context=await assistantContext(a.tenantId,a.projectId,a.userId);
   const row=await prisma.$transaction(async tx=>{
     await tx.$queryRaw`SELECT id FROM tenants WHERE id=${a.tenantId} FOR NO KEY UPDATE`;
-    const tenant=await tx.tenant.findUniqueOrThrow({where:{id:a.tenantId}});
-    if(!hasAssistant(tenant.contact,channel))throw forbidden('An active eligible plan is required for this assistant channel.');
-    const requestKey=`action:${b.request_key}`,period=allowancePeriod(tenant.contact);
+    const tenant=await tx.tenant.findUniqueOrThrow({ include: { subscription: true }, where:{id:a.tenantId}});
+    if(!hasAssistant(subscriptionContext(tenant),channel))throw forbidden('An active eligible plan is required for this assistant channel.');
+    const requestKey=`action:${b.request_key}`,period=allowancePeriod(subscriptionContext(tenant));
     const old=await tx.assistantReply.findUnique({where:{tenantId_channel_requestKey:{tenantId:a.tenantId,channel,requestKey}}});
     if(old){if(old.userId!==a.userId||old.projectId!==a.projectId||old.promptHash!==b.prompt_hash||old.authorizationHash!==context.authorization_hash)throw conflict('This request key has already been used or your access changed.');return old;}
     const used=await tx.assistantReply.count({where:{tenantId:a.tenantId,channel,periodStart:period.start,status:{not:'cancelled'}}});
-    if(used>=featureLimit(channel,tenant.contact))throw new ApiError(429,'ASSISTANT_QUOTA_EXCEEDED',assistantQuotaMessage(tenant.contact));
+    if(used>=featureLimit(channel,subscriptionContext(tenant)))throw new ApiError(429,'ASSISTANT_QUOTA_EXCEEDED',assistantQuotaMessage(subscriptionContext(tenant)));
     return tx.assistantReply.create({data:{tenantId:a.tenantId,projectId:a.projectId,userId:a.userId,channel,requestKey,promptHash:b.prompt_hash,prompt:'Attachment/action request',reply:'Request processed by Fund Nesta AI service.',authorizationHash:context.authorization_hash,periodStart:period.start,status:'completed'}});
   });
   return ok(res,{request_id:row.id});
@@ -178,7 +180,7 @@ router.post('/telegram/link',asyncHandler(async(req,res)=>{
   await assertTelegramReplyDelivery(requireProjectContext(req));
   return ok(res,await serviceRequest(req,'/telegram/link',{}));
 }));
-router.post('/whatsapp/link',asyncHandler(async(req,res)=>{const t=await prisma.tenant.findUniqueOrThrow({where:{id:requireProjectContext(req).tenantId}});if(!hasBusinessAssistant(t.contact))throw new ApiError(403,'BUSINESS_REQUIRED','WhatsApp Bot requires an active Business plan.');return ok(res,await serviceRequest(req,'/whatsapp/link',{}));}));
+router.post('/whatsapp/link',asyncHandler(async(req,res)=>{const t=await prisma.tenant.findUniqueOrThrow({ include: { subscription: true }, where:{id:requireProjectContext(req).tenantId}});if(!hasBusinessAssistant(subscriptionContext(t)))throw new ApiError(403,'BUSINESS_REQUIRED','WhatsApp Bot requires an active Business plan.');return ok(res,await serviceRequest(req,'/whatsapp/link',{}));}));
 router.get('/drafts/:id',asyncHandler(async(req,res)=>ok(res,await serviceRequest(req,`/drafts/${encodeURIComponent(req.params.id!)}`))));
 router.post('/drafts/:id/revise',asyncHandler(async(req,res)=>{
  const b=z.object({digest:z.string().regex(/^[a-f0-9]{64}$/),fields:z.record(z.unknown()).refine(fields=>!Object.hasOwn(fields,'rows')||z.object({rows:z.array(z.record(z.unknown())).min(1).max(50)}).strict().safeParse(fields).success,'Provide 1 to 50 valid rows.'),request_key:z.string().uuid()}).strict().parse(req.body);

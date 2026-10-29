@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, installAccountReadFixtures, installAccountRelationFixtures, installSubscriptionReadFixtures } from './helpers/normalized-fixtures.mjs';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import express from 'express';
@@ -80,12 +81,15 @@ before(() => {
   };
   prisma.$transaction = async (callback) => {
     transactionCalls += 1;
-    return callback(prisma);
+    return callback(fixtureTransactionClient(prisma));
   };
   prisma.activity.create = async ({ data }) => data;
 
-  const app = express();
-  app.use(express.json());
+  installSubscriptionReadFixtures(prisma);
+installAccountRelationFixtures(prisma);
+const app = express();
+  installAccountReadFixtures(prisma);
+app.use(express.json());
   app.use((req, _res, next) => {
     req.auth = { tenantId: 'tenant', projectId: 'project', userId: 'owner', memberId: null, roles: ['owner'] };
     next();
@@ -165,6 +169,7 @@ test('sign-in does not promote an admin-only user to member', async () => {
     }
   };
   let nextError;
+  installAccountRelationFixtures(prisma);
   await authenticate(req, {}, (error) => { nextError = error; });
 
   assert.equal(nextError, undefined);

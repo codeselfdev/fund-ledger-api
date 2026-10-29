@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { submitDraftExpense } from './expense-submit.service.js';
 import { financialTransaction } from '../accounting/transaction.js';
 import { canReviewExpense } from './expense-review-policy.js';
@@ -62,7 +63,7 @@ async function emailExpenseDecision(input: {
   decision: "approved" | "rejected";
   reason?: string;
 }) {
-  const creator = await prisma.user.findUnique({ where: { id: input.createdById } });
+  const creator = await tenantAccounts(prisma).findUnique({ where: { id: input.createdById } });
   if (!creator?.email) return;
 
   const cc = await getRoleEmails(input.tenantId, input.projectId, ["accountant", "approver"]);

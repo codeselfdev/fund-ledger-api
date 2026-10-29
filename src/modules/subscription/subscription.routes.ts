@@ -1,7 +1,8 @@
+import { subscriptionContext } from "../../core/subscription/subscription.repository.js";
 import multer from 'multer';
 import { billingPaymentSchema, sendBillingReceipt } from './billing-proof.service.js';
 import { forbidden } from "../../core/http/api-error.js";
-import { invoicesFromContact, submitInvoicePayment } from "./billing.service.js";
+import { listInvoices, submitInvoicePayment } from "./billing.service.js";
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../../core/http/async-handler.js";
@@ -38,15 +39,15 @@ router.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const tenant = await prisma.tenant.findUniqueOrThrow({
     where: { id: auth.tenantId },
-    select: { id: true, name: true, plan: true, contact: true }
+    select: { subscription: true,  id: true, name: true,  contact: true }
   });
 
-  const summary = evaluateSubscription(tenant.contact);
+  const summary = evaluateSubscription(subscriptionContext(tenant));
   return ok(res, {
     tenant_id: tenant.id,
     tenant_name: tenant.name,
     can_manage_billing: await isOrganizationOwner(auth.tenantId, auth.userId),
-    plan: packageId(tenant.contact),
+    plan: packageId(subscriptionContext(tenant)),
     ...summary
   });
 }));
@@ -57,8 +58,16 @@ router.post("/trial", asyncHandler(async () => { throw forbidden("Trial periods 
 const paymentUpload = multer({ storage: multer.memoryStorage(), limits: { files: 1, fileSize: 5_000_001, fields: 3, fieldSize: 1000 } }).single('receipt');
 router.get("/invoices", requireRoles("any"), requireOrganizationOwnership, asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
-  const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: auth.tenantId } });
-  return ok(res, invoicesFromContact(tenant.contact));
+  const tenant = await prisma.tenant.findUniqueOrThrow({ include: { subscription: true },  where: { id: auth.tenantId } });
+  return ok(res, await listInvoices(tenant.id));
+}));
+router.get('/history', requireRoles('any'), requireOrganizationOwnership, asyncHandler(async (req, res) => {
+  const auth = requireAuthContext(req);
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+  const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
+  const rows = await prisma.subscriptionHistory.findMany({where:{tenantId:auth.tenantId},orderBy:{revision:'desc'},take:limit + 1,
+    ...(cursor ? {where:{tenantId:auth.tenantId,revision:{lt:z.coerce.number().int().positive().parse(cursor)}}} : {})});
+  return ok(res,{history:rows.slice(0,limit),next_cursor:rows.length>limit?String(rows[limit-1]!.revision):null});
 }));
 router.post("/invoices/:invoiceId/payment", requireRoles("any"), requireOrganizationOwnership, paymentUpload, validateBody(billingPaymentSchema), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);

@@ -32,7 +32,7 @@ export function createAccountSelection(users: LoginUser[], projectId?: string, v
     verifiedEmail,
     users: users.map(user => ({
       id: user.id, tenantId: user.tenantId, email: user.email, mobile: user.mobile,
-      rootId: user.identityRootId ?? user.id
+      rootId: user.userId ?? user.id
     }))
   });
   return {
@@ -57,7 +57,7 @@ export async function completeAccountSelection(ticket: string, accountId: string
   try {
     const user = await getActiveUserForLogin(candidate.id);
     if (!user.isActive || user.tenantId !== candidate.tenantId || user.email !== candidate.email
-      || user.mobile !== candidate.mobile || (user.identityRootId ?? user.id) !== candidate.rootId) {
+      || user.mobile !== candidate.mobile || (user.userId ?? user.id) !== candidate.rootId) {
       throw unauthorized("Your account has changed. Please sign in again.");
     }
     return await issueLoginSession(user, selection.projectId, true, selection.verifiedEmail);

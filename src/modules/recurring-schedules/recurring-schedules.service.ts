@@ -1,3 +1,4 @@
+import { subscriptionContext } from "../../core/subscription/subscription.repository.js";
 import { DepositStatus, Prisma, RecurringFrequency } from "@prisma/client";
 import { prisma } from "../../core/prisma/client.js";
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
@@ -127,13 +128,13 @@ async function processRecurringSchedule(config: {
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: config.tenantId },
-    select: { contact: true }
+    select: { subscription: true,  contact: true }
   });
   if (!tenant) {
     runResult = "failed";
     runMessage = "Tenant not found";
   } else {
-    const subscription = evaluateSubscription(tenant.contact, now);
+    const subscription = evaluateSubscription(subscriptionContext(tenant), now);
     if (!subscription.has_access) {
       runResult = "skipped_subscription";
       runMessage = "Subscription inactive on run date";

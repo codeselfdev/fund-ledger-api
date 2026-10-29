@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, installAccountReadFixtures } from './helpers/normalized-fixtures.mjs';
 import test, { beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import nodemailer from 'nodemailer';
@@ -17,7 +18,7 @@ beforeEach(() => {
   usage = new Map(); sms = []; emails = []; otpRows = []; updates = []; mailFails = false; providerFails = false;
   env.smtp.user = 'test'; env.smtp.pass = 'test';
   nodemailer.createTransport = () => ({ sendMail: async message => { if (mailFails) throw Error('test mail failure'); emails.push(message); } });
-  prisma.$transaction = async fn => { const snapshot = new Map(usage); try { return await fn(prisma); } catch (error) { usage = snapshot; throw error; } };
+  prisma.$transaction = async fn => { const snapshot = new Map(usage); try { return await fn(fixtureTransactionClient(prisma)); } catch (error) { usage = snapshot; throw error; } };
   prisma.$queryRaw = async (_strings, scope, day, limit) => {
     if (_strings.join("").includes("pg_advisory_xact_lock")) return [];
     const key = scope + ':' + day, count = usage.get(key) ?? 0;
@@ -35,6 +36,7 @@ beforeEach(() => {
     if (providerFails) throw Error('test timeout');
     return Response.json({ sessionInfo:'firebase-verification-id' });
   };
+installAccountReadFixtures(prisma);
 });
 after(async () => { globalThis.fetch = nativeFetch; nodemailer.createTransport = originalTransport; await prisma.$disconnect(); });
 const request = (extra={}) => requestLoginOtp({mobile:'+8801711000001',users:[user],...extra});

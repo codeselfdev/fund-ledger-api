@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { prisma } from '../../core/prisma/client.js';
 import { notFound, conflict } from '../../core/http/api-error.js';
 import { customerDetails } from './customers.service.js';
@@ -42,7 +43,7 @@ export async function reviewDeletionRequest(id: string, input: { status: 'in_rev
 }
 
 async function deletionScope(tx: PrismaTypes.TransactionClient, tenantId: string, userId: string) {
-  const user = await tx.user.findFirst({ where: { id: userId, tenantId } });
+  const user = await tenantAccounts(tx).findFirst({ where: { id: userId, tenantId } });
   if (!user) throw conflict('Account not found. Check whether deletion was already completed outside this workflow.');
   const members = await tx.member.findMany({ where: { tenantId, OR: [{ userId }, { memberships: { some: { userId } } }] }, select: { id: true } });
   const memberships = await tx.projectMembership.findMany({ where: { userId, isActive: true, role: 'owner' } });
@@ -50,7 +51,6 @@ async function deletionScope(tx: PrismaTypes.TransactionClient, tenantId: string
   for (const membership of memberships) {
     if (!await tx.projectMembership.count({ where: { projectId: membership.projectId, userId: { not: userId }, role: 'owner', isActive: true, user: { isActive: true } } })) blockers.push('Transfer ownership of project ' + membership.projectId + ' before deleting its last owner.');
   }
-  if (await tx.user.count({ where: { identityRootId: userId } })) blockers.push('This account is the login root for other organization accounts. Relink them before deletion.');
   if (await tx.projectMembership.count({ where: { userId, tenantId: { not: tenantId } } }) || await tx.member.count({ where: { userId, tenantId: { not: tenantId } } })) blockers.push('Resolve account links to another organization before deletion.');
   const memberIds = members.map(member => member.id);
   const uploads = await tx.upload.findMany({ where: { tenantId, OR: memberIds.flatMap(id => [{ purpose: 'member_photo:' + id }, { purpose: { startsWith: 'member_document:' + id + ':' } }]) }, select: { id: true, storageKey: true } });
@@ -58,7 +58,7 @@ async function deletionScope(tx: PrismaTypes.TransactionClient, tenantId: string
   const assistant = await tx.assistantAttachment.findMany({ where: { tenantId, reply: { userId } }, select: { id: true, storageKey: true } });
   const objects = [...uploads.map(row => ({ ...row, model: 'upload' as const })), ...support.map(row => ({ ...row, model: 'supportAttachment' as const })), ...assistant.map(row => ({ ...row, model: 'assistantAttachment' as const }))];
   if (objects.some(object => !object.storageKey.startsWith(tenantId + '/'))) blockers.push('Personal files have legacy storage paths. Migrate them into this organization before deletion.');
-  const sharedIdentity = await tx.user.count({ where: { id: { not: userId }, OR: [{ mobile: user.mobile }, ...(user.email ? [{ email: { equals: user.email, mode: 'insensitive' as const } }] : [])] } });
+  const sharedIdentity = await tx.tenantUser.count({where:{userId:user.userId,id:{not:userId}}});
   return { user, memberIds, objects, blockers, sharedIdentity: sharedIdentity > 0 };
 }
 
@@ -101,7 +101,7 @@ export async function executeAccountDeletion(id: string, input: { confirmation: 
     if (request.processingLeaseUntil && request.processingLeaseUntil > new Date()) throw conflict('Deletion is already running. Refresh its status.');
     const scope = await deletionScope(tx, request.tenantId, request.userId);
     if (scope.blockers.length) throw conflict(scope.blockers.join(' '));
-    await tx.user.update({ where: { id: request.userId }, data: { isActive: false, deviceId: null } });
+    await tenantAccounts(tx).update({ where: { id: request.userId }, data: { isActive: false, deviceId: null } });
     await tx.session.updateMany({ where: { userId: request.userId }, data: { revokedAt: new Date() } });
     await tx.assistantReply.updateMany({ where: { tenantId: request.tenantId, userId: request.userId }, data: { status: 'failed', leaseUntil: null, errorCode: 'ACCOUNT_DELETION' } });
     await tx.accountDeletionRequest.update({ where: { id }, data: { status: 'processing', processingLeaseUntil: lease, processingError: null, resolutionNote: input.retention_note } });
@@ -142,7 +142,8 @@ export async function executeAccountDeletion(id: string, input: { confirmation: 
       await tx.telegramLink.deleteMany({ where: { tenantId: request.tenantId, userId: request.userId } });
       await tx.invitation.deleteMany({ where: { tenantId: request.tenantId, mobile: final.user.mobile } });
       if (!final.sharedIdentity) await tx.otpCode.deleteMany({ where: { mobile: final.user.mobile } });
-      await tx.user.delete({ where: { id: request.userId } });
+      await tenantAccounts(tx).delete({ where: { id: request.userId } });
+      if (!final.sharedIdentity) await tx.user.delete({ where: { id: final.user.userId } });
       await tx.internalAudit.create({ data: { tenantId: request.tenantId, actor, action: 'account_deletion.completed', metadata: { request_id: id, user_id: request.userId, note: input.retention_note, shared_authentication_retained: final.sharedIdentity } } });
       return tx.accountDeletionRequest.update({ where: { id }, data: { status: 'completed', completedAt: new Date(), processingLeaseUntil: null, processingError: null } });
     }, { isolationLevel: 'Serializable', timeout: 30000 });

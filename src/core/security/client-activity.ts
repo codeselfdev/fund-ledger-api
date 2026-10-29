@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../identity/tenant-accounts.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { RequestHandler } from "express";
 import { prisma } from "../prisma/client.js";
@@ -19,7 +20,7 @@ export const clientActivityContext: RequestHandler = (req, _res, next) => {
 
 export async function recordUserLogin(userId: string) {
   const now = new Date();
-  await prisma.user.update({ where: { id: userId }, data: {
+  await tenantAccounts(prisma).update({ where: { id: userId }, data: {
     lastLoginAt: now, lastLoginPlatform: clients.getStore() ?? "unknown", lastActiveAt: now
   } });
 }
@@ -29,7 +30,7 @@ export async function recordUserActivity(userId: string, lastActiveAt?: Date | n
   const now = new Date();
   const before = new Date(now.getTime() - 60_000);
   if (lastActiveAt && lastActiveAt > before) return;
-  await prisma.user.updateMany({ where: { id: userId, OR: [
+  await tenantAccounts(prisma).updateMany({ where: { id: userId, OR: [
     { lastActiveAt: null }, { lastActiveAt: { lte: before } }
   ] }, data: { lastActiveAt: now } });
 }

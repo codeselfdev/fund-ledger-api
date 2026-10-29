@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import { tenantAccounts } from '../dist/core/identity/tenant-accounts.js';
 import { hash } from '../dist/modules/billing/billing.policy.js';
 
 export const DEMO_NAME = 'Sunrise Heights · Demo';
@@ -16,7 +17,7 @@ const materialData = [
 ];
 export async function seedConstructionDemo(db, {mobile, projectId, apply=false, date='2026-10-21'}) {
  if (!mobile || !projectId) throw new Error('Pass both --mobile and --project-id.');
- const users=await db.user.findMany({where:{mobile,isActive:true},include:{tenant:true}});
+ const users=await tenantAccounts(db).findMany({where:{mobile,isActive:true},include:{tenant:true}});
  const project=await db.project.findFirst({where:{id:projectId,isActive:true,projectType:'construction'}});
  const user=users.find(u=>u.tenantId===project?.tenantId);
  if (!project || !user || project.name!==DEMO_NAME || !/demo|review/i.test(user.tenant.name)) throw new Error('Only the named construction demo project in a demo/review organization may be seeded.');

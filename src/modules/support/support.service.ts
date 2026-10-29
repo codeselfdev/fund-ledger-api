@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { queueSupportReply } from "./support-reply-notifications.service.js";
 import { customerDetails } from "../internal/customers.service.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -21,7 +22,7 @@ export async function supportTicket(id: string, owner?: SupportOwner) {
 }
 export async function listTickets(owner: SupportOwner | undefined, offset: number, status?: string, tenantId?: string) {
   const rows = await prisma.supportTicket.findMany({ where: { ...(owner ? { tenantId: owner.tenantId, requesterId: owner.userId } : tenantId ? { tenantId } : {}), ...(status ? { status } : {}) },
-    include: owner ? undefined : { tenant: { select: { name: true } }, requester: { select: { id:true, name: true, email: true, mobile:true } } }, orderBy: [{ lastMessageAt: "desc" }, { id: "desc" }], skip: offset, take: 31 });
+    include: owner ? undefined : { tenant: { select: { name: true } }, requester: { select: { id:true, identity: {select: {name: true, email: true, mobile:true}} } } }, orderBy: [{ lastMessageAt: "desc" }, { id: "desc" }], skip: offset, take: 31 });
   return { tickets: rows.slice(0, 30), next_offset: rows.length > 30 ? offset + 30 : null };
 }
 export async function ticketMessages(id: string, owner: SupportOwner | undefined, offset: number) {
@@ -48,7 +49,7 @@ export async function sendSupport(input: { owner?: SupportOwner; actor?: string;
     }
     const result = await prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR NO KEY UPDATE`;
-      const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+      const tenant = await tx.tenant.findUniqueOrThrow({  where: { id: tenantId } });
       if (tenant.deletionStartedAt) throw conflict("Organization cleanup has started");
       let ticket = existingTicket ? await tx.supportTicket.findUniqueOrThrow({ where: { id: existingTicket.id } }) : await tx.supportTicket.findUnique({ where: { tenantId_requesterId_requestKey: { tenantId, requesterId: input.owner!.userId, requestKey: input.requestKey } } });
       if (!ticket) ticket = await tx.supportTicket.create({ data: { tenantId, requesterId: input.owner!.userId, requestKey: input.requestKey, subject: input.subject! } });
@@ -58,7 +59,7 @@ export async function sendSupport(input: { owner?: SupportOwner; actor?: string;
         return { ticket, message: old, replayed: true };
       }
       const sender = input.owner ? "user" : "team";
-      const author = input.owner ? (await tx.user.findUniqueOrThrow({ where: { id: input.owner.userId } })).name : "Fund Nesta team";
+      const author = input.owner ? (await tenantAccounts(tx).findUniqueOrThrow({ where: { id: input.owner.userId } })).name : "Fund Nesta team";
       const message = await tx.supportMessage.create({ data: { tenantId, ticketId: ticket.id, requestKey: input.requestKey, payloadHash, sender, author, body: input.body,
         attachments: { create: fileInfo.map((info, i) => ({ tenantId, fileName: info.file.originalname.slice(0, 180), mimeType: info.mime, size: info.file.size, storageKey: keys[i]! })) } }, include: messageInclude });
       const updated = await tx.supportTicket.update({ where: { id: ticket.id }, data: { status: "open", lastSender: sender, lastMessageAt: message.createdAt, ...(input.owner ? { userReadAt: message.createdAt } : {}) } });

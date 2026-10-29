@@ -1,3 +1,4 @@
+import { installAccountReadFixtures, installSubscriptionReadFixtures } from './helpers/normalized-fixtures.mjs';
 import assert from 'node:assert/strict';
 import {test,beforeEach,after} from 'node:test';
 Object.assign(process.env,{DATABASE_URL:'postgresql://test:test@127.0.0.1:1/test',JWT_SECRET:'isolated-billing-alerts',SMTP_HOST:'smtp.example.test',SMTP_USER:'test-user',SMTP_PASS:'test-pass',PLATFORM_ALERT_EMAILS:'admin@example.test',PLATFORM_ALERT_TELEGRAM_CHAT_ID:'test-chat',TELEGRAM_BOT_TOKEN:'test-token',ADMIN_WEB_URL:'https://admin.example.test'});
@@ -24,6 +25,11 @@ beforeEach(()=>{
  prisma.tenant.findUnique=async()=>({id:'org',name:'Example Fund',contact:{billing:{invoices:[{id:'invoice',package:'business',billing_cycle:'monthly',amount:5000,currency:'BDT',status:'submitted',payment_amount:5000,payment_reference:'BANK-123',receipt:{file_name:'bank-receipt.pdf'}}]}}});
  prisma.user.findFirst=async()=>({id:'customer',name:'Synthetic Customer',mobile:'+8801700000000',email:'customer@example.test'});
  prisma.member.findMany=async()=>[];
+ prisma.subscriptionInvoice.findMany=async()=>[{tenantId:'org',id:'invoice',package:'business',billingCycle:'monthly',amount:5000,currency:'BDT',status:'submitted',instructions:'Pay',issuedAt:new Date(),paymentAmount:5000,paymentReference:'BANK-123',paymentRequestKey:null,receiptId:'proof',submittedAt:new Date(),approvedAt:null,rejectionReason:null,periodEndsAt:null}];
+ prisma.subscriptionPaymentReceipt.findMany=async()=>[{id:'proof',tenantId:'org',invoiceId:'invoice',fileName:'bank-receipt.pdf',mimeType:'application/pdf',size:10}];
+
+installAccountReadFixtures(prisma);
+installSubscriptionReadFixtures(prisma);
 });
 after(async()=>{globalThis.fetch=originalFetch;nodemailer.createTransport=originalTransport;await prisma.$disconnect();});
 test('billing requests appear unread in the portal and include invoice navigation and delivery readiness',async()=>{const page=await platformAlerts();assert.equal(page.unread,2);assert.equal(page.alerts[0].invoice_id,'invoice');assert.equal(page.alerts[0].delivery.email,'pending');assert.equal(page.delivery_configured.telegram,true);});

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { Prisma, TenantPlan } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { badRequest } from "../../core/http/api-error.js";
 import { created, ok } from "../../core/http/response.js";
@@ -26,7 +26,7 @@ const provisionTenantSchema = z.object({
   admin_name: z.string().min(2),
   admin_mobile: z.string().min(6),
   admin_email: z.string().email().optional(),
-  plan: z.nativeEnum(TenantPlan).default("free"),
+  plan: z.literal("free").default("free"),
   trial_days: z.number().int().min(0).max(365).optional(),
   penalty_policy: optionalPenaltyPolicySchema
 });
@@ -84,12 +84,11 @@ router.get("/current", authenticate, requireActiveSubscription, asyncHandler(asy
   const auth = requireAuthContext(req);
   const tenant = await prisma.tenant.findUniqueOrThrow({
     where: { id: auth.tenantId },
-    select: {
+    select: { subscription: true,
       id: true,
       name: true,
       slug: true,
       currency: true,
-      plan: true,
       branding: true,
       contact: true,
       penaltyPolicy: true
@@ -114,8 +113,8 @@ router.patch(
     const body = req.body as z.infer<typeof updateTenantSchema>;
     if (Object.keys(body).length === 0) throw badRequest("No fields to update");
 
-    const before = await prisma.tenant.findUniqueOrThrow({ where: { id: auth.tenantId } });
-    const tenant = await prisma.tenant.update({
+    const before = await prisma.tenant.findUniqueOrThrow({ include: { subscription: true },  where: { id: auth.tenantId } });
+    const tenant = await prisma.tenant.update({ include: { subscription: true },
       where: { id: auth.tenantId, updatedAt: before.updatedAt },
       data: {
         name: body.name,

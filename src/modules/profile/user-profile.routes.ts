@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../core/prisma/client.js';
@@ -13,19 +14,20 @@ export function professionalProfile(user: { name: string; mobile: string; email:
   return { revision: p?.revision ?? 0, name: user.name, designation: p?.designation ?? '', mobile: p?.mobile ?? user.mobile, email: p?.email ?? user.email ?? '' };
 }
 router.get('/', asyncHandler(async (req, res) => {
-  const auth = requireAuthContext(req), user = await prisma.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId, isActive: true } });
+  const auth = requireAuthContext(req), user = await tenantAccounts(prisma).findFirst({ where: { id: auth.userId, tenantId: auth.tenantId, isActive: true } });
   if (!user) throw notFound('Profile not found');
   return ok(res, professionalProfile(user));
 }));
 router.patch('/', asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req), body = professionalProfileSchema.parse(req.body);
   const result = await financialTransaction(async tx => {
-    const user = await tx.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId, isActive: true } });
+    const user = await tenantAccounts(tx).findFirst({ where: { id: auth.userId, tenantId: auth.tenantId, isActive: true } });
     if (!user) throw notFound('Profile not found');
     const before = professionalProfile(user);
     if (body.revision !== before.revision) throw conflict('Your profile changed. Reload before saving.');
+    await tx.user.update({where:{id:user.userId},data:{name:body.name}});
     const profile = { revision: body.revision + 1, designation: body.designation, mobile: body.mobile, email: body.email };
-    const updated = await tx.user.update({ where: { id: user.id }, data: { name: body.name, professionalProfile: profile } });
+    const updated = await tenantAccounts(tx).update({ where: { id: user.id }, data: { professionalProfile: profile } });
     const after = professionalProfile(updated);
     await tx.activity.create({ data: { tenantId: auth.tenantId, actorUserId: auth.userId, action: 'user.professional_profile.updated', entityType: 'user', entityId: user.id, before, after } });
     return after;

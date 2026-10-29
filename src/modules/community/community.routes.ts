@@ -252,7 +252,7 @@ pollsRouter.get("/:id/analytics", requireProject, requireRoles("owner", "admin")
     where: { id, tenantId: auth.tenantId, projectId: auth.projectId },
     include: {
       ...pollDetailsInclude,
-      votes: { include: { user: { select: { id: true, name: true } }, option: { select: { id: true, label: true } } } },
+      votes: { include: { user: { select: { id: true, identity: {select: {name: true}} } }, option: { select: { id: true, label: true } } } },
     },
   });
   if (!poll) throw notFound("Poll not found");
@@ -275,7 +275,7 @@ pollsRouter.get("/:id/analytics", requireProject, requireRoles("owner", "admin")
     response_rate: eligibleCount === 0 ? 0 : Math.round((totalVotes / eligibleCount) * 100),
     voters: poll.votes.map((vote) => ({
       user_id: vote.user.id,
-      user_name: vote.user.name,
+      user_name: vote.user.identity.name,
       option_id: vote.option.id,
       option_label: vote.option.label,
       voted_at: vote.updatedAt,

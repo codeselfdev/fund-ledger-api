@@ -1,3 +1,4 @@
+import { subscriptionContext } from "../../core/subscription/subscription.repository.js";
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
@@ -11,7 +12,7 @@ import { notFound } from '../../core/http/api-error.js';
 import { internalActor } from '../../core/security/internal-api-key.middleware.js';
 import { buildSupportRouter } from '../support/support.routes.js';
 import { billingRequests, billingRequestCounts } from '../internal/billing-requests.service.js';
-import { invoicesFromContact, reviewInvoicePayment } from '../subscription/billing.service.js';
+import { listInvoices, reviewInvoicePayment } from '../subscription/billing.service.js';
 import { sendBillingReceipt } from '../subscription/billing-proof.service.js';
 import { broadcastDraftSchema, broadcastSendSchema, createPlatformBroadcasts } from '../internal/platform-broadcasts.service.js';
 
@@ -41,15 +42,15 @@ router.get('/billing-requests', asyncHandler(async (req, res) => {
   return ok(res, await billingRequests(q.offset, q.status, q.search));
 }));
 router.get('/billing/:tenantId/invoices/:invoiceId', asyncHandler(async (req, res) => {
-  const tenant = await prisma.tenant.findFirst({ where: { id: String(req.params.tenantId), deletionStartedAt: null } });
-  const invoice = tenant && invoicesFromContact(tenant.contact).find(row => row.id === String(req.params.invoiceId));
+  const tenant = await prisma.tenant.findFirst({ include: { subscription: true },  where: { id: String(req.params.tenantId), deletionStartedAt: null } });
+  const invoice = tenant && (await listInvoices(tenant.id)).find(row => row.id === String(req.params.invoiceId));
   if (!tenant || !invoice) throw notFound('Billing request not found.');
   return ok(res, { tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug }, invoice });
 }));
 router.post('/billing/:tenantId/invoices/:invoiceId/review', asyncHandler(async (req, res) => {
   const body = z.object({ decision: z.enum(['approve', 'reject']), reason: z.string().trim().max(500).optional(), expected_payment_request_key: z.string().uuid() }).strict().parse(req.body);
   await prisma.internalAudit.create({ data: { actor: internalActor(req), tenantId: String(req.params.tenantId), action: 'billing.payment_review_requested', metadata: { invoice_id: String(req.params.invoiceId), decision: body.decision, payment_request_key: body.expected_payment_request_key } } });
-  return ok(res, await reviewInvoicePayment(String(req.params.tenantId), String(req.params.invoiceId), body.decision, body.reason, body.expected_payment_request_key));
+  return ok(res, await reviewInvoicePayment(String(req.params.tenantId), String(req.params.invoiceId), body.decision, body.reason, body.expected_payment_request_key, internalActor(req)));
 }));
 router.get('/billing/:tenantId/invoices/:invoiceId/receipts/:receiptId', asyncHandler(async (req, res) =>
   sendBillingReceipt(req, res, String(req.params.tenantId), String(req.params.invoiceId), String(req.params.receiptId))));

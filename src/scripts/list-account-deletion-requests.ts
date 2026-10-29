@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../core/identity/tenant-accounts.js";
 import { prisma } from "../core/prisma/client.js";
 
 // Run only in an authorized server terminal. This prints personal information.
@@ -5,7 +6,7 @@ async function main() {
   const requests = await prisma.accountDeletionRequest.findMany({
     where: { status: "pending" }, orderBy: { dueAt: "asc" }
   });
-  const users = await prisma.user.findMany({
+  const users = await tenantAccounts(prisma).findMany({
     where: { id: { in: requests.map(request => request.userId) } },
     select: { id: true, tenantId: true, name: true, email: true, mobile: true }
   });

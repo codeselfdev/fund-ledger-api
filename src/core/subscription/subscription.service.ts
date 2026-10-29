@@ -13,6 +13,7 @@ type StoredSubscription = {
   current_period_end_at: string | null;
   renewal_term_years: number;
   updated_at: string;
+  quota_reset_at?: string | null;
 };
 
 const DEFAULT_RENEWAL_TERM_YEARS = 1;
@@ -69,6 +70,7 @@ export function getStoredSubscription(contact: unknown): StoredSubscription | nu
     trial_ends_at: typeof raw.trial_ends_at === "string" ? raw.trial_ends_at : null,
     current_period_start_at: typeof raw.current_period_start_at === "string" ? raw.current_period_start_at : null,
     current_period_end_at: typeof raw.current_period_end_at === "string" ? raw.current_period_end_at : null,
+    quota_reset_at: typeof raw.quota_reset_at === "string" ? raw.quota_reset_at : null,
     renewal_term_years: renewalTermYears,
     updated_at: typeof raw.updated_at === "string" ? raw.updated_at : new Date().toISOString()
   };
@@ -148,6 +150,7 @@ export function renewTenantSubscription(contact: unknown, now = new Date(), sele
 
   const stored: StoredSubscription = {
     status: "active",
+    quota_reset_at: existing?.quota_reset_at ?? null,
     package: selectedPackage,
     billing_cycle: cycle,
     trial_starts_at: existing?.trial_starts_at ?? null,

@@ -1,3 +1,4 @@
+import { subscriptionContext } from "../../core/subscription/subscription.repository.js";
 import cron, { type ScheduledTask } from 'node-cron';
 import { prisma } from '../../core/prisma/client.js';
 import { sendMail } from '../../core/mail/mailer.service.js';
@@ -6,8 +7,8 @@ import { processRun } from './billing.service.js';
 let task: ScheduledTask | null = null;
 let running = false;
 async function allowed(tenantId: string, projectId: string, userId?: string) {
-    const project = await prisma.project.findFirst({ where: { id: projectId, tenantId, isActive: true, projectType: 'billing' }, include: { tenant: true } });
-    if (!project || !evaluateSubscription(project.tenant.contact).has_access)
+    const project = await prisma.project.findFirst({ where: { id: projectId, tenantId, isActive: true, projectType: 'billing' }, include: { tenant: { include: { subscription: true } } } });
+    if (!project || !evaluateSubscription(subscriptionContext(project.tenant)).has_access)
         return false;
     if (userId && !await prisma.projectMembership.findFirst({ where: { tenantId, projectId, userId, isActive: true, role: { in: ['owner', 'admin', 'accountant'] }, user: { isActive: true } } }))
         return false;

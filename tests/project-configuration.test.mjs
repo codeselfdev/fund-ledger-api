@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, installAccountRelationFixtures, installNormalizedFixtures, installSubscriptionReadFixtures, normalizedAccountRelations } from './helpers/normalized-fixtures.mjs';
 import assert from 'node:assert/strict';
 import { before, after, beforeEach, test } from 'node:test';
 import express from 'express';
@@ -10,11 +11,12 @@ import { provisionTenant } from '../dist/modules/tenants/tenants.service.js';
 import { signAccessToken } from '../dist/core/security/jwt.js';
 import { createTrialSubscription } from '../dist/core/subscription/subscription.service.js';
 import { normalizePortalSettings, portalSettingsSchema } from '../dist/core/projects/project-settings.js';
-let server, url, project, members, roles, deposits, due, account, receipts, progress, notifications, scopeQueries;
-const owner = { id: 'owner', tenantId: 'tenant', name: 'Owner', mobile: 'e:owner', email: null, isActive: true };
+let fixtureUsers,fixtureTenants,server, url, project, members, roles, deposits, due, account, receipts, progress, notifications, scopeQueries;
+const owner = { id: 'owner', tenantId: 'tenant', name: 'Owner', mobile: '+8801711000001', email: 'owner@example.test', isActive: true };
 const matches = (row, where) => row && Object.entries(where).every(([key, val]) => val === undefined || (typeof val === 'object' && val !== null ? key === 'role' ? val.in.includes(row[key]) : true : row[key] === val));
 const clean = data => Object.fromEntries(Object.entries(data).filter(([, val]) => val !== undefined));
 function reset() {
+ fixtureUsers=[{...owner}];fixtureTenants=[{id:"tenant",name:"Business",slug:"business",contact:{},subscription:createTrialSubscription(182)}];
  project = { id: 'project', tenantId: 'tenant', name: 'Fund', totalShares: 10, projectType: 'fund_shares', portalSettings: null, isActive: true, logoFileId: null };
  members = []; roles = [{ id:'owner-role', projectId:'project', tenantId:'tenant', userId:'owner', role:'owner', isActive:true, memberId:null }]; deposits=[]; receipts=[]; notifications=[]; scopeQueries=[];
  account={ id:'account', tenantId:'tenant', projectId:'project', balance:0 };
@@ -24,7 +26,7 @@ function reset() {
 before(async () => {
  prisma.upload.count=async()=>0; prisma.project.count=async()=>1;
  prisma.$queryRaw=async()=>[];
- prisma.$transaction=async fn=>fn(prisma);
+ prisma.$transaction=async fn=>fn(fixtureTransactionClient(prisma));
  prisma.project.findFirst=async ({where})=>matches(project,where)?structuredClone(project):null;
  prisma.project.findFirstOrThrow=async ({where})=>{scopeQueries.push(where);if(!matches(project,where)) throw new Error('Project not found');return structuredClone(project);};
  prisma.project.create=async ({data})=>(project={...project,...clean(data),id:'project'});
@@ -41,7 +43,7 @@ before(async () => {
  prisma.user.upsert=async ({create})=>({id:'accountant',isActive:true,...create});
  prisma.user.findMany=async()=>[];
  prisma.session.create=async ({data})=>({id:'session',...data});prisma.session.update=async()=>({});
- prisma.session.findFirst=async({where})=>({id:'session',tenantId:'tenant',userId:where.userId,activeProjectId:'project',user:{...owner,id:where.userId,lastActiveAt:new Date()}});
+ prisma.session.findFirst=async({where})=>(normalizedAccountRelations({id:'session',tenantId:'tenant',userId:where.userId,activeProjectId:'project',user:{...owner,id:where.userId,lastActiveAt:new Date()}}));
  prisma.onboardingProgress.create=async ({data})=>(progress={...data});
  prisma.onboardingProgress.findUnique=async()=>structuredClone(progress);
  prisma.onboardingProgress.update=async ({data})=>(progress={...progress,...clean(data)});
@@ -78,7 +80,12 @@ before(async () => {
  prisma.whatsAppConnection.findFirst=async()=>null;
  prisma.activity.create=async({data})=>data;
  prisma.notification.createMany=async({data})=>{notifications.push(...data);return{count:data.length};};
- const app=express();app.use(express.json());app.use((req,_res,next)=>{req.auth={tenantId:'tenant',projectId:'project',userId:req.header('x-role')==='member'?'member-user':'owner',roles:[req.header('x-role')??'admin'],memberId:'member'};next();});
+ installSubscriptionReadFixtures(prisma);
+installAccountRelationFixtures(prisma);
+const app=express();installNormalizedFixtures(prisma,{users:()=>fixtureUsers,tenants:()=>fixtureTenants,memberships:()=>roles,projects:()=>[project],
+ createAccount:async data=>{const row={id:`fixture-user-${fixtureUsers.length}`,isActive:true,...data};if(!row.id)row.id=`fixture-user-${fixtureUsers.length}`;fixtureUsers.push(row);return row;},
+ updateAccount:async(where,data)=>Object.assign(fixtureUsers.find(row=>row.id===where.id),data)});
+app.use(express.json());app.use((req,_res,next)=>{req.auth={tenantId:'tenant',projectId:'project',userId:req.header('x-role')==='member'?'member-user':'owner',roles:[req.header('x-role')??'admin'],memberId:'member'};next();});
  app.use('/memberships',membershipsRouter);app.use('/projects',projectsRouter);app.use('/deposits',depositsRouter);app.use('/onboarding',onboardingRouter);
  app.use((error,_req,res,_next)=>res.status(error.statusCode??500).json({error:error.message}));
  server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));url=`http://127.0.0.1:${server.address().port}`;
@@ -97,10 +104,10 @@ test('project creation explicitly links the owner only when selected',async()=>{
  assert.equal((await request('/projects',{name:'Fund',total_shares:10,owner_is_member:true})).status,201);assert.equal(members.length,1);assert.equal(members[0].shares,1);assert.ok(roles.some(row=>row.role==='member'));
 });
 for(const type of ['accounting','billing'])test(`${type} persists without a financial member or Fund shareholder onboarding`,async()=>{
- await provisionTenant({name:'Business',slug:'business',adminName:'Owner',adminMobile:'e:owner',projectType:type,ownerIsMember:true,source:'self_signup'});assert.equal(project.projectType,type);assert.equal(members.length,0);assert.equal(progress.shareholdersStepStatus,'skipped');
+ await provisionTenant({name:'Business',slug:'business',adminName:'Owner',adminMobile:'+8801711000099',projectType:type,ownerIsMember:true,source:'self_signup'});assert.equal(project.projectType,type);assert.equal(members.length,0);assert.equal(progress.shareholdersStepStatus,'skipped');
 });
 test('owner provisioning without opt-in does not seed a Member',async()=>{
- await provisionTenant({name:'Business',slug:'business',adminName:'Owner',adminMobile:'e:owner',source:'self_signup'});assert.equal(members.length,0);assert.equal(roles.at(-1).memberId,null);
+ await provisionTenant({name:'Business',slug:'business',adminName:'Owner',adminMobile:'+8801711000099',source:'self_signup'});assert.equal(members.length,0);assert.equal(roles.at(-1).memberId,null);
 });
 test('project settings are scoped and only management can change them',async()=>{
  assert.equal((await request('/projects/project',{portal_settings:settings},'member','PATCH')).status,403);
@@ -120,9 +127,9 @@ test('skipping accountant never silently removes an existing assigned accountant
  roles.push({id:'acc',tenantId:'tenant',projectId:'project',role:'accountant',isActive:true,userId:'accountant',memberId:null});assert.equal((await request('/onboarding/skip',{step:'accounting'})).status,400);assert.equal(progress.accountantStepStatus,'pending');
 });
 test('accountant onboarding has independent optional member linking',async()=>{
- const body={accountant:{name:'Accountant',mobile:'e:accountant'},approval_flow:{income:'accountant_and_approver',expense:'accountant_only'}};
+ const body={accountant:{name:'Accountant',mobile:'+8801711000098'},approval_flow:{income:'accountant_and_approver',expense:'accountant_only'}};
  assert.equal((await request('/onboarding/accounting',body)).status,200);assert.equal(members.length,0);
- reset();assert.equal((await request('/onboarding/accounting',{...body,accountant_is_member:true})).status,200);assert.equal(members.length,1);assert.equal(members[0].shares,0);assert.ok(roles.some(row=>row.role==='member'&&row.userId==='accountant'));
+ reset();assert.equal((await request('/onboarding/accounting',{...body,accountant_is_member:true})).status,200);assert.equal(members.length,1);assert.equal(members[0].shares,0);assert.ok(roles.some(row=>row.role==='member'&&row.userId!=='owner'));
 });
 const payment={member_id:'member',schedule_ids:['schedule'],account_id:'account',amount:1000,method:'cash',proof_file_id:'proof'};
 for(const kind of ['ordinary','advance'])test(`${kind} member submission without accountant routes to admin without financial posting until approved`,async()=>{

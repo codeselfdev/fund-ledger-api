@@ -1,3 +1,4 @@
+import { installNormalizedFixtures } from './helpers/normalized-fixtures.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 process.env.DATABASE_URL='postgresql://unused:unused@localhost:55439/payroll_test';process.env.JWT_SECRET='disposable-employee-tests';
@@ -9,13 +10,17 @@ const {summarizeProjectMemberships}=await import('../dist/core/security/project-
 const owner={tenantId:'tenant',projectId:'project',userId:'admin',roles:['admin'],builtinRoles:['admin']};
 const draft={name:'Sadia',mobile:'01711482930',email:'sadia@example.test',nationalId:'',birthDate:null,bloodGroup:'',address:'',emergencyContact:'',bankAccount:'',reportsToId:null,departmentId:null,designationId:null,workLocation:'office',locationRequired:false,revision:0,employeeRevision:0,request_key:'01234567-89ab-4cde-8123-456789abcdef'};
 function harness(options={}){
- const data={users:structuredClone(options.users??[]),memberships:[],activities:[],profile:null,person:{id:'person',tenantId:'tenant',projectId:'project',userId:options.userId??null,name:'Sadia',mobile:draft.mobile,revision:0,status:options.inactive?'inactive':'active',basic:20000,medical:0,transport:0,pfMember:false,joiningDate:new Date('2021-01-01')},writes:0,emails:0};
+ const data={users:structuredClone(options.users??[]).map(row=>({name:'Existing',mobile:draft.mobile,email:draft.email,isActive:true,...row,tenantId:'tenant'})),memberships:[],activities:[],profile:null,person:{id:'person',tenantId:'tenant',projectId:'project',userId:options.userId??null,name:'Sadia',mobile:draft.mobile,revision:0,status:options.inactive?'inactive':'active',basic:20000,medical:0,transport:0,pfMember:false,joiningDate:new Date('2021-01-01')},writes:0,emails:0};
  const tx={project:{findFirst:async({where})=>where.id==='project'&&where.tenantId==='tenant'?{id:'project',projectType:'payroll_pf'}:null,findFirstOrThrow:async()=>({name:'Office'})},
  payrollEmployee:{findFirst:async({where})=>where.id?.not?null:where.id===data.person.id&&where.tenantId===data.person.tenantId&&where.projectId===data.person.projectId?structuredClone(data.person):null,update:async({data:changes})=>{data.writes++;Object.assign(data.person,{...changes,revision:changes.revision?data.person.revision+changes.revision.increment:data.person.revision});return data.person;}},
  user:{findMany:async()=>data.users,findFirstOrThrow:async()=>({name:'Admin'}),create:async({data:user})=>{data.writes++;const row={...user,id:'login',isActive:true};data.users.push(row);return row;},update:async({where,data:changes})=>{data.writes++;const user=data.users.find(u=>u.id===where.id);Object.assign(user,changes);return user;}},
  projectMembership:{upsert:async({create})=>{data.writes++;data.memberships.push(create);return create;}},
  activity:{findUnique:async({where})=>data.activities.find(x=>x.id===where.id)??null,findFirst:async()=>data.activities.find(x=>x.action==='payroll.employee.email_invitation')??null,create:async({data:row})=>{data.activities.push(row);return row;},update:async({where,data:changes})=>{Object.assign(data.activities.find(x=>x.id===where.id),changes);}},
  $queryRaw:async(strings,...values)=>{const sql=strings.join('?');if(sql.includes('FOR UPDATE'))return[{id:'person'}];if(sql.startsWith('SELECT'))return data.profile?[structuredClone(data.profile)]:[];if(sql.startsWith('INSERT')){data.profile={id:'profile',record_key:'person',revision:0,data:JSON.parse(values[6])};return[data.profile];}throw Error(sql);}};
+ installNormalizedFixtures(tx,{users:()=>data.users,tenants:()=>[{id:'tenant',contact:{}}],memberships:()=>data.memberships,projects:()=>[{id:'project',isActive:true}],
+ createAccount:async user=>{data.writes++;const row={...user,id:'login',isActive:true};data.users.push(row);return row;},
+ updateAccount:async(where,changes)=>{data.writes++;return Object.assign(data.users.find(user=>user.id===where.id),changes);}});
+ const accountLookup=tx.tenantUser.findFirst;tx.tenantUser.findFirst=async args=>args.where.id==='admin'?{id:'admin',userId:'global-admin',tenantId:'tenant',isActive:true,identity:{name:'Admin',isActive:true}}:accountLookup(args);
  prisma.$transaction=async fn=>{const previous=structuredClone(data);try{return await fn(tx);}catch(e){Object.assign(data,previous);throw e;}};prisma.activity.update=tx.activity.update;
  const send=async input=>{data.emails++;data.sent=input;if(options.throwMail)throw Error('SMTP offline');return options.mailSuccess!==false;};
  return{data,tx,send,invite:(body=draft,a=owner,id='person')=>inviteEmployee(a,id,body,undefined,send)};

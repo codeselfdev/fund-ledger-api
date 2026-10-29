@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import type { Prisma } from '@prisma/client';
 import type { Request } from 'express';
 import { prisma } from '../../core/prisma/client.js';
@@ -7,9 +8,9 @@ import { IMPERSONATION_TTL_MS, MASTER_LOGIN_MAX_AGE_MS, masterEmailHash, require
 import { summarizeProjectMemberships } from '../../core/security/project-access.js';
 
 type Db = Prisma.TransactionClient;
-const membershipInclude = { memberships: { where: { isActive: true, project: { isActive: true } }, include: { project: true } }, tenant: true } as const;
+const membershipInclude = { memberships: { where: { isActive: true, project: { isActive: true } }, include: { project: true } }, tenant: { include: { subscription: true } } } as const;
 async function targetUser(db: Db, id: string) {
-  const user = await db.user.findFirst({ where: { id, isActive: true, email: { not: null } }, include: membershipInclude });
+  const user = await tenantAccounts(db).findFirst({ where: { id, isActive: true, email: { not: null } }, include: membershipInclude });
   if (!user) throw notFound('This account is unavailable.');
   return user;
 }

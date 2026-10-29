@@ -1,3 +1,4 @@
+import { installSubscriptionReadFixtures } from './helpers/normalized-fixtures.mjs';
 import test, { beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
@@ -50,6 +51,7 @@ beforeEach(()=>{
   if(early)await receiveManagedGroupLifecycle(event());
   return Response.json(providerError ?? {request_id:`request-${calls.length}`},{status:responseStatus});
  };
+installSubscriptionReadFixtures(prisma);
 });
 after(async()=>{globalThis.fetch=originalFetch;await prisma.$disconnect();});
 test('shared account creates once for concurrent taps and waits for signed confirmation',async()=>{

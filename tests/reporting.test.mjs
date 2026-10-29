@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, installAccountRelationFixtures, normalizedTenantProjection } from './helpers/normalized-fixtures.mjs';
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -43,6 +44,7 @@ beforeEach(()=>{
  link={id:'link',tenantId:'tenant',projectId:'project',userId:'admin',chatId:null,expiresAt:new Date(Date.now()+60000),consumedAt:null};
  prisma.telegramLink.findUnique=async()=>link;
  prisma.telegramLink.findFirst=async()=>link;
+installAccountRelationFixtures(prisma);
 });
 async function request(path,body,role='admin') { const response=await originalFetch(`${base}${path}`,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','x-test-role':role},body:body===undefined?undefined:JSON.stringify(body)});return {status:response.status,json:await response.json()}; }
 test('configuration and all mutations are admin only',async()=>{
@@ -98,7 +100,7 @@ test('workbook uses correct transfer flows, waivers and penalties and preserves 
  const dues=[{memberId:'m',amount:100,waivedAmount:20,paidAmount:40,penaltyDue:10,penaltyPaid:3}];
  const todayTx=[{id:'a',accountId:'bank',direction:'transfer',referenceId:'transfer',referenceType:'transfer',amount:30,createdAt:now},{id:'b',accountId:'cash',direction:'transfer',referenceId:'transfer',referenceType:'transfer',amount:30,createdAt:now},{id:'c',accountId:'cash',direction:'money_in',referenceType:'deposit',amount:100,createdAt:now}];
  let txCalls=0;
- prisma.$transaction=async(fn,opts)=>{assert.equal(opts.isolationLevel,'RepeatableRead');return fn(prisma);};
+ prisma.$transaction=async(fn,opts)=>{assert.equal(opts.isolationLevel,'RepeatableRead');return fn(fixtureTransactionClient(prisma));};
  prisma.project.findFirst=async()=>({name:'Committee'});
  prisma.account.findMany=async()=>[{id:'bank',name:'Bank',type:'bank',balance:70},{id:'cash',name:'Cash',type:'cash',balance:130}];
  prisma.due.findMany=async()=>dues;
@@ -143,7 +145,7 @@ test('a verified group command binds only an unclaimed non-expired pairing reque
 test('scheduler respects local weekdays and author access and skips an existing daily slot',async()=>{
  process.env.REPORTS_AUTOMATION_ENABLED='true';let slots=[];
  const s={...scope,updatedById:'admin',updatedAt:new Date('2026-10-14T10:00:00Z'),enabled:true,time:'21:00',timezone:'Asia/Dhaka',days:[4],project:{tenant:{contact:{}},isActive:true}};
- prisma.reportSchedule.findMany=async()=>[s];
+ prisma.reportSchedule.findMany=async()=>normalizedTenantProjection([s]);
  prisma.projectMembership.findFirst=async()=>({role:'admin'});
  prisma.reportExport.findUnique=async({where})=>{slots.push(where.scheduleSlot);return{id:'already-generated'};};
  prisma.telegramConnection.findMany=async()=>[];

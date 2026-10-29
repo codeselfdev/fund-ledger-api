@@ -1,13 +1,15 @@
+import { subscriptionContext } from "../../core/subscription/subscription.repository.js";
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { prisma } from "../../core/prisma/client.js";
 import { Prisma } from "@prisma/client";
 import { evaluateSubscription, getStoredSubscription } from "../../core/subscription/subscription.service.js";
 import { packageId } from "../../core/subscription/packages.js";
-import { invoicesFromContact } from "../subscription/billing.service.js";
+import { listInvoices } from "../subscription/billing.service.js";
 
 import { organizationAiUsage } from './ai-usage.service.js';
 
 const counters: Record<string, [string, Record<string, unknown>]> = {
-  projects: ["project", {}], members: ["member", {}], users: ["user", {}], expenses: ["expense", {}],
+  projects: ["project", {}], members: ["member", {}], users: ["tenantUser", {}], expenses: ["expense", {}],
   income_rows: ["accountTransaction", { referenceType: "income", direction: "money_in" }], fixed_assets: ["fixedAsset", {}], deposits: ["deposit", {}],
   notices: ["projectNotice", {}], polls: ["poll", {}], votes: ["pollVote", {}], events: ["projectEvent", {}],
   notification_campaigns: ["notificationCampaign", {}], inbox_notifications: ["notification", {}],
@@ -30,10 +32,10 @@ export async function overallUsage() {
 }
 export async function tenantSummaries(offset: number, search?: string) {
   const where = search ? { OR: [{ name: { contains: search, mode: "insensitive" as const } }, { slug: { contains: search, mode: "insensitive" as const } }] } : {};
-  const tenants = await prisma.tenant.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: offset, take: 51 });
+  const tenants = await prisma.tenant.findMany({ include: { subscription: true },  where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: offset, take: 51 });
   return { tenants: await summariesFor(tenants.slice(0, 50)), next_offset: tenants.length > 50 ? offset + 50 : null };
 }
-export async function summariesFor(tenants: Awaited<ReturnType<typeof prisma.tenant.findMany>>) {
+export async function summariesFor(tenants: Array<import("@prisma/client").Tenant & {subscription:import("@prisma/client").TenantSubscription|null}>) {
   if (!tenants.length) return [];
   const ids = tenants.map(t => t.id), scope = { tenantId: { in: ids } };
   const usage: Record<string,{tenantId:string;_count:number}[]> = Object.fromEntries(await Promise.all(Object.entries(counters).map(async ([key, [model, where]]) => [key, await models[model]!.groupBy({ by: ["tenantId"], where: { ...where, ...scope }, _count: true })])));
@@ -42,15 +44,15 @@ export async function summariesFor(tenants: Awaited<ReturnType<typeof prisma.ten
     prisma.platformPayment.groupBy({ by: ["tenantId"], where: scope, _max: { paidAt: true } }),
     prisma.upload.groupBy({ by: ["tenantId"], where: { ...scope, deletedAt: null }, _sum: { size: true } }),
     prisma.$queryRaw<{ tenant_id: string; channel: string; count: bigint }[]>`SELECT c.tenant_id, d.channel, count(*) FROM notification_deliveries d JOIN notification_campaigns c ON c.id=d.campaign_id WHERE c.tenant_id IN (${Prisma.join(ids)}) AND d.status='sent' GROUP BY c.tenant_id,d.channel`,
-    prisma.user.findMany({ where: { ...scope, isActive: true, memberships: { some: { role: "owner", isActive: true } } },
+    tenantAccounts(prisma).findMany({ where: { ...scope, isActive: true, memberships: { some: { role: "owner", isActive: true } } },
       select: { id: true, tenantId: true, name: true, email: true, mobile: true, lastLoginAt: true, lastLoginPlatform: true },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
-    prisma.user.groupBy({ by: ["tenantId"], where: scope, _max: { lastActiveAt: true } }),
+    tenantAccounts(prisma).groupBy({ by: ["tenantId"], where: scope, _max: { lastActiveAt: true } }),
     organizationAiUsage(tenants),
   ]);
-  return tenants.map(tenant => {
-    const subscription = getStoredSubscription(tenant.contact), app = seen.find(s => s.tenantId === tenant.id);
-    const dates = [paid.find(p => p.tenantId === tenant.id)?._max.paidAt?.toISOString(), ...invoicesFromContact(tenant.contact).filter(i => i.status === "approved").map(i => i.approved_at)].filter((d): d is string => !!d).sort();
+  return Promise.all(tenants.map(async tenant => {
+    const subscription = getStoredSubscription(subscriptionContext(tenant)), app = seen.find(s => s.tenantId === tenant.id);
+    const dates = [paid.find(p => p.tenantId === tenant.id)?._max.paidAt?.toISOString(), ...(await listInvoices(tenant.id)).filter(i => i.status === "approved").map(i => i.approved_at)].filter((d): d is string => !!d).sort();
     const owner = owners.find(user => user.tenantId === tenant.id);
     return { owner: owner ? { id: owner.id, name: owner.name, email: owner.email,
         mobile: /^\+?\d{6,15}$/.test(owner.mobile) ? owner.mobile : null,
@@ -58,7 +60,7 @@ export async function summariesFor(tenants: Awaited<ReturnType<typeof prisma.ten
       ai_usage: aiUsage.get(tenant.id),
       last_active_at: activity.find(row => row.tenantId === tenant.id)?._max.lastActiveAt ?? null,
       id: tenant.id, name: tenant.name, slug: tenant.slug, currency: tenant.currency, created_at: tenant.createdAt,
-      package: packageId(tenant.contact), subscription: evaluateSubscription(tenant.contact), trial_expires_at: subscription?.trial_ends_at ?? null,
+      package: packageId(subscriptionContext(tenant)), subscription: evaluateSubscription(subscriptionContext(tenant)), trial_expires_at: subscription?.trial_ends_at ?? null,
       paid_period_expires_at: subscription?.current_period_end_at ?? null, last_payment_at: dates.at(-1) ?? null,
       install_date: null, first_app_seen_at: app?._min.firstSeenAt ?? null, last_app_seen_at: app?._max.lastSeenAt ?? null,
       deletion_started_at: tenant.deletionStartedAt,
@@ -66,5 +68,5 @@ export async function summariesFor(tenants: Awaited<ReturnType<typeof prisma.ten
       active_document_bytes: storage.find(s => s.tenantId === tenant.id)?._sum.size ?? 0,
       sent_notifications: Object.fromEntries(sent.filter(s => s.tenant_id === tenant.id).map(s => [s.channel, Number(s.count)])),
     };
-  });
+  }));
 }

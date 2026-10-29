@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../../core/http/async-handler.js";
@@ -37,7 +38,7 @@ router.get("/deposit-delegates", requireProject, requireRoles("owner", "admin"),
   const permissions = listDepositDelegatePermissions(tenant.contact, auth.projectId);
   const userIds = [...new Set(permissions.map((permission) => permission.user_id))];
   const users = userIds.length > 0
-    ? await prisma.user.findMany({
+    ? await tenantAccounts(prisma).findMany({
       where: { tenantId: auth.tenantId, id: { in: userIds } },
       select: { id: true, name: true, mobile: true, email: true, isActive: true }
     })
@@ -139,7 +140,7 @@ router.post("/deposit-delegates", requireProject, requireRoles("owner", "admin")
       ...(body.user_id ? { userId: body.user_id } : {}),
       ...(body.payer_member_id ? { memberId: body.payer_member_id } : {})
     },
-    include: { member: true, user: true }
+    include: { member: true, user: { include: { identity: { select: { name: true, email: true, mobile: true, isActive: true } } } } }
   });
   if (!membership || !membership.user.isActive || membership.member?.status !== "active") {
     throw badRequest("Delegate permission can only be granted to an active member user in this project");
@@ -200,7 +201,7 @@ router.patch("/deposit-delegates/:id", requireProject, requireRoles("owner", "ad
     const [payerMembership, beneficiary] = await Promise.all([
       prisma.projectMembership.findFirst({
         where: { tenantId: auth.tenantId, projectId: auth.projectId, userId: target.user_id, role: "member", isActive: true },
-        include: { member: true, user: true }
+        include: { member: true, user: { include: { identity: { select: { name: true, email: true, mobile: true, isActive: true } } } } }
       }),
       prisma.member.findFirst({
         where: { id: target.beneficiary_member_id!, tenantId: auth.tenantId, projectId: auth.projectId, status: "active" }

@@ -46,7 +46,7 @@ test('provider sends only public instructions and a redacted question, with no t
 });
 let memberships=[{role:'owner',customRoleId:null}], root='identity-root', rows=new Map(), providerCalls=0,fail=false,changeRole=false;
 const key=(identity,request)=>`${identity}:${request}`;
-prisma.user.findFirst=async({where,select})=>{assert.equal(where.isActive,true);assert.deepEqual(Object.keys(select).sort(),['id','identityRoot','identityRootId']);return {id:where.id,identityRootId:root,identityRoot:{isActive:true}};};
+prisma.tenantUser.findFirst=async({where,select})=>{assert.equal(where.isActive,true);assert.equal(select.userId,true);return {id:where.id,userId:root,tenantId:where.tenantId,isActive:true,identity:{isActive:true}};};
 prisma.project.findFirst=async({where,select})=>{assert.equal(where.isActive,true);assert.deepEqual(select,{projectType:true});return {projectType:'accounting'};};
 prisma.projectMembership.findMany=async({where})=>{assert.equal(where.isActive,true);return memberships;};
 function execute(strings,...v){

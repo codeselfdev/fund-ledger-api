@@ -1,8 +1,9 @@
+import { subscriptionContext } from "../../core/subscription/subscription.repository.js";
 import { masterAlertIdentity, MASTER_ALERT_KINDS } from './master-alerts.service.js';
 import { getFirebaseAdminApp } from '../../core/firebase/admin.js';
 import { notFound } from '../../core/http/api-error.js';
 import { env } from '../../config/env.js';
-import { invoicesFromContact } from '../subscription/billing.service.js';
+import { listInvoices } from '../subscription/billing.service.js';
 import { prisma } from "../../core/prisma/client.js";
 import { sendMail } from "../../core/mail/mailer.service.js";
 import { customerDetails } from "./customers.service.js";
@@ -36,10 +37,10 @@ async function alertText(row: {
     kind: string;
     eventKey: string;
 }) {
-    const [customer, tenant] = await Promise.all([customerDetails(row.tenantId, row.userId), prisma.tenant.findUnique({ where: { id: row.tenantId } })]);
+    const [customer, tenant] = await Promise.all([customerDetails(row.tenantId, row.userId), prisma.tenant.findUnique({ include: { subscription: true },  where: { id: row.tenantId } })]);
     if (!tenant)
         return null;
-    const invoiceId = billingAlertInvoiceId(row), invoice = invoiceId ? invoicesFromContact(tenant.contact).find(i => i.id === invoiceId) : null;
+    const invoiceId = billingAlertInvoiceId(row), invoice = invoiceId ? (await listInvoices(tenant.id)).find(i => i.id === invoiceId) : null;
     const requestId = row.kind === 'account_deletion' ? row.eventKey.slice('account_deletion:'.length) : null;
     const request = requestId ? await prisma.accountDeletionRequest.findUnique({ where: { id: requestId } }) : null;
     const root = process.env.ADMIN_WEB_URL?.replace(/\/$/, ''), query = invoiceId ? 'billing&organization=' + encodeURIComponent(row.tenantId) + '&invoice=' + encodeURIComponent(invoiceId) : requestId ? 'deletions&request=' + encodeURIComponent(requestId) : row.ticketId ? 'support&ticket=' + encodeURIComponent(row.ticketId) : 'organizations&organization=' + encodeURIComponent(row.tenantId);

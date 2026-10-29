@@ -57,7 +57,7 @@ router.get('/customers/:id/ledger', validateQuery(rangeSchema), asyncHandler(asy
 router.get('/customers/:id/statement.pdf', validateQuery(rangeSchema), asyncHandler(async (req, res) => {
     const a = requireProjectContext(req), q = rangeSchema.parse(req.query);
     const result = await ledger(a, req.params.id, q.from, q.to);
-    const p = await prisma.project.findFirstOrThrow({ where: { id: a.projectId, tenantId: a.tenantId }, include: { tenant: true } });
+    const p = await prisma.project.findFirstOrThrow({ where: { id: a.projectId, tenantId: a.tenantId }, include: { tenant: { include: { subscription: true } } } });
     const buffer = await buildBillingPdf('Customer Statement', p.name, p.tenant.currency, result.customer.name, [
         `Opening balance: ${result.opening_balance}`, ...result.entries.map(e => `${e.date} | ${e.type} | ${e.reference} | ${e.amount} | Balance ${e.balance}`),
         `Closing balance: ${result.closing_balance}`, `Current outstanding: ${result.outstanding}; current advance: ${result.advance}`
@@ -113,7 +113,7 @@ router.patch('/units/:id', write, validateBody(unitSchema), asyncHandler(async (
 }));
 router.get('/assignments', validateQuery(listSchema), asyncHandler(async (req, res) => {
     const a = requireProjectContext(req), q = listSchema.parse(req.query);
-    return ok(res, await prisma.billingAssignment.findMany({ where: { ...scope(a), customerId: q.customer_id }, include: { plan: true, unit: true }, orderBy: { createdAt: 'desc' }, take: q.limit, skip: q.offset }));
+    return ok(res, await prisma.billingAssignment.findMany({ where: { ...scope(a), customerId: q.customer_id }, include: {  unit: true }, orderBy: { createdAt: 'desc' }, take: q.limit, skip: q.offset }));
 }));
 router.post('/assignments', write, validateBody(assignmentSchema), asyncHandler(async (req, res) => {
     const a = requireProjectContext(req), b = assignmentSchema.parse(req.body);
@@ -205,7 +205,7 @@ router.get('/payments/:id/receipt.pdf', asyncHandler(async (req, res) => {
     const p = await prisma.billingPayment.findFirst({ where: { id: req.params.id, ...scope(a) }, include: { customer: true, allocations: { include: { invoice: true } } } });
     if (!p)
         throw notFound('Payment not found');
-    const project = await prisma.project.findFirstOrThrow({ where: { id: a.projectId, tenantId: a.tenantId }, include: { tenant: true } });
+    const project = await prisma.project.findFirstOrThrow({ where: { id: a.projectId, tenantId: a.tenantId }, include: { tenant: { include: { subscription: true } } } });
     const buffer = await buildBillingPdf('Payment Receipt', project.name, project.tenant.currency, p.customer.name, [`Receipt: ${p.id}`, `Date: ${day(p.paymentDate)}`, `Method: ${p.method}`, `Reference: ${p.reference ?? '-'}`, `Amount received: ${p.amount}`, ...p.allocations.map(v => `${v.invoice.number}: ${v.amount}${v.releasedAt ? ' (released after cancellation)' : ''}`), `Unallocated credit: ${p.remainingAmount}`, `Refunded: ${p.refundedAmount}`]);
     res.type('pdf').setHeader('Content-Disposition', 'inline; filename="billing-receipt.pdf"');
     return res.send(buffer);
@@ -226,7 +226,7 @@ export { router as billingRouter };
 
 router.get('/invoices/:id/invoice.pdf', asyncHandler(async (req, res) => {
   const a = requireProjectContext(req), i = await invoice(prisma, a, req.params.id);
-  const project = await prisma.project.findFirstOrThrow({ where: { id: a.projectId, tenantId: a.tenantId }, include: { tenant: true } });
+  const project = await prisma.project.findFirstOrThrow({ where: { id: a.projectId, tenantId: a.tenantId }, include: { tenant: { include: { subscription: true } } } });
   const rows = i.lines as { description: string; quantity: number; unit_price: number; line_total: number }[];
   const buffer = await buildBillingPdf(`Invoice ${i.number}`, project.name, project.tenant.currency, (i.customerSnapshot as { name: string }).name, [
     `Date: ${day(i.invoiceDate)} | Due: ${day(i.dueDate)} | Status: ${i.status}`,

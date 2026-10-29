@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { readObject, StorageObjectNotFoundError } from '../../core/storage/object-storage.service.js';
 import { prisma } from '../../core/prisma/client.js';
 import { badRequest, conflict, notFound } from '../../core/http/api-error.js';
@@ -30,7 +31,7 @@ const staffRoles = ['owner', 'admin', 'accountant', 'approver', 'auditor', 'cash
 async function loadPeople(scope: Scope): Promise<Recipient[]> {
   const [members, memberships, dues] = await Promise.all([
     db.member.findMany({ where: { tenantId: scope.tenantId, projectId: scope.projectId, status: 'active' }, orderBy: { name: 'asc' } }),
-    db.projectMembership.findMany({ where: { tenantId: scope.tenantId, projectId: scope.projectId, isActive: true, user: { isActive: true } }, include: { user: true } }),
+    db.projectMembership.findMany({ where: { tenantId: scope.tenantId, projectId: scope.projectId, isActive: true, user: { isActive: true } }, include: { user: { include: { identity: { select: { name: true, email: true, mobile: true, isActive: true } } } } } }),
     db.due.findMany({ where: { tenantId: scope.tenantId, projectId: scope.projectId, status: { notIn: ['paid', 'waived'] } }, select: { memberId: true, amount: true, paidAmount: true, waivedAmount: true, penaltyDue: true, penaltyPaid: true } }),
   ]);
   const balances = new Map<string, number>();
@@ -47,13 +48,13 @@ async function loadPeople(scope: Scope): Promise<Recipient[]> {
       continue;
     }
     if (user) users.add(user.id);
-    people.push({ id: member.id, memberId: member.id, userId: user?.id ?? null, name: member.name, email: member.email || user?.email || null,
+    people.push({ id: member.id, memberId: member.id, userId: user?.id ?? null, name: member.name, email: member.email || user?.identity.email || null,
       push: !!user?.deviceId, due: balances.get(member.id) ?? 0, staff: links.some(m => staffRoles.includes(m.role)) });
   }
   for (const link of memberships) {
     if (users.has(link.userId)) continue;
     users.add(link.userId);
-    people.push({ id: `user:${link.userId}`, memberId: null, userId: link.userId, name: link.user.name, email: link.user.email,
+    people.push({ id: `user:${link.userId}`, memberId: null, userId: link.userId, name: link.user.identity.name, email: link.user.identity.email,
       push: !!link.user.deviceId, due: 0, staff: memberships.some(m => m.userId === link.userId && staffRoles.includes(m.role)) });
   }
   return people;
@@ -94,7 +95,7 @@ async function createCampaign(scope: Scope, draft: Draft, requestId: string, tok
   }
 }
 async function campaignSummary(scope: Scope, id: string) {
-  const campaign = await db.notificationCampaign.findFirst({ where: { id, tenantId: scope.tenantId, projectId: scope.projectId }, include: { createdBy: { select: { name: true } } } });
+  const campaign = await db.notificationCampaign.findFirst({ where: { id, tenantId: scope.tenantId, projectId: scope.projectId }, include: { createdBy: { select: { identity: {select: {name: true}} } } } });
   if (!campaign) throw notFound('Notification campaign not found');
   const groups = await db.notificationDelivery.groupBy({ by: ['channel', 'status'], where: { campaignId: id }, _count: true });
   const channels = ['inbox', ...(campaign.push ? ['push'] : []), ...(campaign.email ? ['email'] : [])].map(channel => {
@@ -103,7 +104,7 @@ async function campaignSummary(scope: Scope, id: string) {
     return { channel, total: accepted + failed + pending, sent: accepted, failed, pending, skipped };
   });
   return { id, image_file_id: campaign.imageFileId ?? null, project_id: campaign.projectId, title: campaign.title, body: campaign.body, audience: campaign.audience, audience_label: audienceLabels[campaign.audience as Draft['audience']],
-    recipient_count: campaign.recipientCount, destination: campaign.destination, created_at: campaign.createdAt, created_by: campaign.createdBy?.name ?? 'Former admin', channels };
+    recipient_count: campaign.recipientCount, destination: campaign.destination, created_at: campaign.createdAt, created_by: campaign.createdBy?.identity.name ?? 'Former admin', channels };
 }
 async function retryCampaign(scope: Scope, id: string) {
   await campaignSummary(scope, id);
@@ -125,7 +126,7 @@ async function processCampaignQueue() {
       const c = row.campaign;
       try {
         const project = await db.project.findFirst({ where: { id: c.projectId, tenantId: c.tenantId, isActive: true }, select: { id: true, name: true } });
-        const user = row.userId ? await db.projectMembership.findFirst({ where: { tenantId: c.tenantId, projectId: c.projectId, userId: row.userId, isActive: true, user: { isActive: true } }, include: { user: true } }) : null;
+        const user = row.userId ? await db.projectMembership.findFirst({ where: { tenantId: c.tenantId, projectId: c.projectId, userId: row.userId, isActive: true, user: { isActive: true } }, include: { user: { include: { identity: { select: { name: true, email: true, mobile: true, isActive: true } } } } } }) : null;
         const member = row.memberId ? await db.member.findFirst({ where: { id: row.memberId, tenantId: c.tenantId, projectId: c.projectId, status: 'active' } }) : null;
         if (!project || (row.memberId && !member) || (!row.memberId && !user) || (row.channel !== 'email' && !user)) {
           await db.notificationDelivery.update({ where: { id: row.id }, data: { status: 'skipped', error: 'Recipient no longer has project access', lockedAt: null } });
@@ -143,11 +144,11 @@ async function processCampaignQueue() {
           if (!user?.user.deviceId) throw new Error('No registered push device');
           const token = user.user.deviceId;
           const push = await transports.sendPush({ tokens: [token], title: row.title, body: row.body, data: { type: 'announcement.manual', tenant_id: c.tenantId, project_id: c.projectId, entity_type: 'announcement', entity_id: c.id, destination: c.destination, ...(c.imageFileId ? { image_url: `/v1/notifications/campaigns/${c.id}/image` } : {}) } });
-          if (push.invalid_tokens.length) await db.user.updateMany({ where: { id: row.userId!, tenantId: c.tenantId, deviceId: token }, data: { deviceId: null } });
+          if (push.invalid_tokens.length) await tenantAccounts(db).updateMany({ where: { id: row.userId!, tenantId: c.tenantId, deviceId: token }, data: { deviceId: null } });
           if (push.sent_count !== 1) throw new Error(push.reason ?? 'Push provider rejected the notification');
         } else {
           // Re-resolve current address; never send to an address removed after composition.
-          const email = member?.email || user?.user.email;
+          const email = member?.email || user?.user.identity.email;
           if (!email) throw new Error('No email address');
           const link = c.destination === 'none' ? '' : `\n\nOpen in FundLedger: fundnesta://notification?project_id=${encodeURIComponent(c.projectId)}&tenant_id=${encodeURIComponent(c.tenantId)}&destination=${c.destination}`;
           const image = c.imageFileId ? await imageContent({ tenantId: c.tenantId, projectId: c.projectId, userId: c.createdById ?? '' }, c.imageFileId) : null;

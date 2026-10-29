@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { z } from 'zod';
 import { badRequest, conflict } from '../../core/http/api-error.js';
 import { json } from '../billing/billing.policy.js';
@@ -15,7 +16,7 @@ export async function importOpening(a: PayrollAuth, b: z.infer<typeof openingSch
   return mutate(a, 'import.opening', b, async tx => {
     const allowance = (await attendanceConfig(tx, a)).leaveAllowance;
     fail(b.rows.flatMap(row => openingIssues(row, b.as_of, allowance)));
-    const users = await tx.user.findMany({ where: { tenantId: a.tenantId, isActive: true }, select: { id: true, mobile: true } });
+    const users = await tenantAccounts(tx).findMany({ where: { tenantId: a.tenantId, isActive: true }, select: { id: true, mobile: true } });
     const issues: string[] = [];
     let added = 0, updated = 0, pfTotal = 0;
     for (const row of b.rows) {

@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, normalizedAccountRelations } from './helpers/normalized-fixtures.mjs';
 import assert from 'node:assert/strict';
 import { before, after, beforeEach, test } from 'node:test';
 import express from 'express';
@@ -9,8 +10,8 @@ let server, url, rows, transactions, progress, writes, scopeQueries;
 const bank = { type: 'bank', bank_name: ' City Bank ', account_name: ' Sunrise Foundation ', account_number: ' 001234567890 ', branch_name: ' Mirpur ' };
 const matches = (row, where) => Object.entries(where ?? {}).every(([key,value]) => typeof value === 'object' || row[key] === value);
 before(async () => {
-  prisma.$transaction = async fn => { const snapshot = structuredClone({ rows, transactions, progress }); try { return await fn(prisma); } catch (e) { ({ rows, transactions, progress } = snapshot); throw e; } };
-  prisma.session.findFirst = async ({ where }) => ({ id: 'session', userId: where.userId, tenantId: 'tenant', activeProjectId: 'project', user: { id: where.userId, isActive: true, lastActiveAt: new Date() } });
+  prisma.$transaction = async fn => { const snapshot = structuredClone({ rows, transactions, progress }); try { return await fn(fixtureTransactionClient(prisma)); } catch (e) { ({ rows, transactions, progress } = snapshot); throw e; } };
+  prisma.session.findFirst = async ({ where }) => (normalizedAccountRelations({ id: 'session', userId: where.userId, tenantId: 'tenant', activeProjectId: 'project', user: { id: where.userId, isActive: true, lastActiveAt: new Date() } }));
   prisma.projectMembership.findMany = async ({ where }) => [{ role: where.userId, memberId: null }];
   prisma.onboardingProgress.findUnique = async () => structuredClone(progress);
   prisma.onboardingProgress.update = async ({ data }) => { writes++; return Object.assign(progress, data); };

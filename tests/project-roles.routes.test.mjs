@@ -1,3 +1,4 @@
+import { installAccountRelationFixtures } from './helpers/normalized-fixtures.mjs';
 import test, { before, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -22,7 +23,8 @@ before(async () => {
   prisma.projectMembership.updateMany = async () => ({ count: 0 });
   prisma.activity.create = async ({ data }) => { audits.push(data); return data; };
   prisma.$transaction = async operation => { const previous = structuredClone({ rows, assignments, audits }); try { return await operation(prisma); } catch (error) { ({ rows, assignments, audits } = previous); throw error; } };
-  const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { tenantId: 'tenant', projectId: req.header('x-project') ?? 'project', userId: 'owner', roles: [req.header('x-role') ?? 'owner'] }; next(); }); app.use('/roles', projectRolesRouter); app.use(errorHandler);
+  installAccountRelationFixtures(prisma);
+const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.auth = { tenantId: 'tenant', projectId: req.header('x-project') ?? 'project', userId: 'owner', roles: [req.header('x-role') ?? 'owner'] }; next(); }); app.use('/roles', projectRolesRouter); app.use(errorHandler);
   await new Promise(resolve => { server = app.listen(0, '127.0.0.1', () => { base = `http://127.0.0.1:${server.address().port}/roles`; resolve(); }); });
 });
 after(async () => { await new Promise(resolve => server.close(resolve)); await prisma.$disconnect(); });

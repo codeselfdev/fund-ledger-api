@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, normalizedAccountRelations } from './helpers/normalized-fixtures.mjs';
 import assert from 'node:assert/strict';
 import { before,after,beforeEach,test } from 'node:test';
 import express from 'express';
@@ -28,12 +29,12 @@ function model(table){return {
 before(async()=>{
  prisma.member.findMany=async({where})=>db.memberships.filter(row=>row.tenantId===where.tenantId&&row.projectId===where.projectId&&row.userId===where.userId&&row.role==='member'&&row.isActive).map(row=>({id:row.memberId}));
  for(const[name,table]of Object.entries({project:'projects',shortcutPreference:'preferences',projectMembership:'memberships',session:'sessions'}))Object.assign(prisma[name],model(table));
- prisma.$transaction=async fn=>{const previous=queue;let release;queue=new Promise(r=>release=r);await previous;const snapshot=clone(db);try{return await fn(prisma);}catch(e){db=snapshot;throw e;}finally{release();}};
+ prisma.$transaction=async fn=>{const previous=queue;let release;queue=new Promise(r=>release=r);await previous;const snapshot=clone(db);try{return await fn(fixtureTransactionClient(prisma));}catch(e){db=snapshot;throw e;}finally{release();}};
  const app=express();app.use(express.json());app.use(authenticate);app.use('/v1/shortcuts',shortcutsRouter);app.use(errorHandler);server=app.listen(0,'127.0.0.1');await new Promise((resolve,reject)=>{server.once('listening',resolve);server.once('error',reject);});base=`http://127.0.0.1:${server.address().port}/v1/shortcuts`;
 });
 beforeEach(()=>{counter=0;db={preferences:[],sessions:[],memberships:[],projects:[{id:'p',tenantId:'t',projectType:'fund_shares',isActive:true,portalSettings:null},{id:'accounting',tenantId:'t',projectType:'accounting',isActive:true,portalSettings:null},{id:'billing',tenantId:'t',projectType:'billing',isActive:true,portalSettings:null},{id:'construction',tenantId:'t',projectType:'construction',isActive:true,portalSettings:null},{id:'payroll',tenantId:'t',projectType:'payroll_pf',isActive:true,portalSettings:null},{id:'foreign',tenantId:'other',projectType:'fund_shares',isActive:true},{id:'inactive',tenantId:'t',projectType:'fund_shares',isActive:false}]};});
 after(async()=>{await new Promise(r=>server.close(r));await prisma.$disconnect();});
-function token(role,project,userId){const id=`s${++counter}`,value=signAccessToken({sessionId:id,tenantId:'t',userId});db.sessions.push({id,tenantId:'t',userId,tokenHash:hashToken(value),revokedAt:null,expiresAt:new Date(Date.now()+60000),activeProjectId:project,user:{isActive:true,lastActiveAt:new Date()}});db.memberships.push({tenantId:'t',projectId:project,userId,role,isActive:true,memberId:role==='member'?'member':null});return value;}
+function token(role,project,userId){const id=`s${++counter}`,value=signAccessToken({sessionId:id,tenantId:'t',userId});db.sessions.push(normalizedAccountRelations({id,tenantId:'t',userId,tokenHash:hashToken(value),revokedAt:null,expiresAt:new Date(Date.now()+60000),activeProjectId:project,user:{isActive:true,lastActiveAt:new Date()}}));db.memberships.push({tenantId:'t',projectId:project,userId,role,isActive:true,memberId:role==='member'?'member':null});return value;}
 async function request(path='',body,role='admin',project='p',userId=`user-${role}`,method=body?'PUT':'GET'){
  const response=await fetch(base+path,{method,headers:{authorization:`Bearer ${token(role,project,userId)}`,'x-project-id':project,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:response.status,...await response.json()};
 }

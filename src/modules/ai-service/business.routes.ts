@@ -27,7 +27,7 @@ router.use(requireRoles('owner','admin','accountant'),asyncHandler(async(req,_re
  if(!p||!['fund_shares','accounting','billing','construction'].includes(p.projectType))throw forbidden('Choose an active supported project.');
  const sharedExpense=req.method==='GET'&&['/expense-snapshot','/financial-summary'].includes(req.path)||req.method==='POST'&&req.path==='/actions'&&req.body?.operation==='create_expense_draft';
  if(p.projectType!=='accounting'&&!sharedExpense)throw forbidden('These tools belong to the active Accounting project.');
- const t=await prisma.tenant.findUniqueOrThrow({where:{id:a.tenantId},select:{currency:true}});
+ const t=await prisma.tenant.findUniqueOrThrow({where:{id:a.tenantId},select:{ subscription: true, currency:true}});
  if(t.currency!=='BDT')throw badRequest('Nesta Accounting AI currently requires a BDT project.');
  next();
 }));

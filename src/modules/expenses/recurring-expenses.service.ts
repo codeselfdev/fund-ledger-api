@@ -1,3 +1,5 @@
+import { subscriptionContext } from "../../core/subscription/subscription.repository.js";
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { Prisma, type RecurringExpenseBill } from '@prisma/client';
 import { prisma } from '../../core/prisma/client.js';
 import { badRequest, conflict, notFound } from '../../core/http/api-error.js';
@@ -50,7 +52,7 @@ export async function queueNotification(tx: Tx, bill: RecurringExpenseBill, type
 export async function pushNotification(message: Awaited<ReturnType<typeof queueNotification>> | null) {
   if (!message?.recipientUserIds.length) return;
   try {
-    const users = await prisma.user.findMany({ where: { tenantId: message.tenantId, id: { in: message.recipientUserIds }, isActive: true }, select: { deviceId: true } });
+    const users = await tenantAccounts(prisma).findMany({ where: { tenantId: message.tenantId, id: { in: message.recipientUserIds }, isActive: true }, select: { deviceId: true } });
     await sendPushMessage({ tokens: users.flatMap(user => user.deviceId ? [user.deviceId] : []), title: message.title, body: message.body, data: { type: message.type, tenant_id: message.tenantId, project_id: message.projectId, entity_type: message.type === 'expense.submitted' ? 'expense' : 'recurring_expense', entity_id: message.entityId } });
   } catch (error) { console.error('[recurring-expenses] push delivery failed; in-app notification saved', error); }
 }
@@ -99,8 +101,8 @@ export async function runRecurringExpenses(now = new Date()) {
     const bills = await prisma.recurringExpenseBill.findMany({ where: { deletedAt: null, paused: false, nextDue: { lte: horizon }, project: { isActive: true }, AND: [{ OR: [{ endDate: null }, { endDate: { gte: prisma.recurringExpenseBill.fields.nextDue } }] }, { OR: [{ mode: 'auto' }, { remindedFor: null }, { NOT: { remindedFor: { equals: prisma.recurringExpenseBill.fields.nextDue } } }] }] }, orderBy: { id: 'asc' }, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}), take: 500 });
     for (const candidate of bills) {
       try {
-        const project = await prisma.project.findFirst({ where: { id: candidate.projectId, tenantId: candidate.tenantId, isActive: true }, include: { tenant: true } });
-        if (!project || !evaluateSubscription(project.tenant.contact).has_access) continue;
+        const project = await prisma.project.findFirst({ where: { id: candidate.projectId, tenantId: candidate.tenantId, isActive: true }, include: { tenant: { include: { subscription: true } } } });
+        if (!project || !evaluateSubscription(subscriptionContext(project.tenant)).has_access) continue;
         // A schedule cannot keep posting after its creator loses expense-writing access.
         const creator = await prisma.projectMembership.findFirst({ where: { tenantId: candidate.tenantId, projectId: candidate.projectId, userId: candidate.createdById, isActive: true, role: { in: ['owner', 'admin', 'accountant', 'cashier'] }, user: { isActive: true } } });
         if (!creator) continue;

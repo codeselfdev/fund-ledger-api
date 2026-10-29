@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { Router } from "express";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -40,10 +41,10 @@ router.post("/:id/invitation", requireProject, requireRoles("owner", "admin"), r
     }
     const recent = await tx.activity.findFirst({ where: { tenantId: a.tenantId, projectId: a.projectId, action: "member.email_invitation", entityId: member.id, createdAt: { gt: new Date(Date.now() - 60000) } } });
     if (recent) throw conflict("An invitation was requested recently. Wait a minute before resending.");
-    let user = member.userId ? await tx.user.findFirst({ where: { id: member.userId, tenantId: a.tenantId } }) : await tx.user.findUnique({ where: { tenantId_mobile: { tenantId: a.tenantId, mobile: member.mobile } } });
+    let user = member.userId ? await tenantAccounts(tx).findFirst({ where: { id: member.userId, tenantId: a.tenantId } }) : await tenantAccounts(tx).findUnique({ where: { tenantId_mobile: { tenantId: a.tenantId, mobile: member.mobile } } });
     if (user?.email && user.email.toLowerCase() !== email.data.toLowerCase()) throw conflict("Member and login account emails differ. Update the linked account before inviting.");
-    if (!user) user = await tx.user.create({ data: { tenantId: a.tenantId, name: member.name, mobile: member.mobile, email: email.data } });
-    else user = await tx.user.update({ where: { id: user.id }, data: { email: email.data, isActive: true } });
+    if (!user) user = await tenantAccounts(tx).create({ data: { tenantId: a.tenantId, name: member.name, mobile: member.mobile, email: email.data } });
+    else user = await tenantAccounts(tx).update({ where: { id: user.id }, data: { email: email.data, isActive: true } });
     await tx.member.update({ where: { id: member.id }, data: { userId: user.id } });
     await tx.projectMembership.upsert({ where: { projectId_userId_role: { projectId: a.projectId, userId: user.id, role: "member" } }, update: { isActive: true }, create: { tenantId: a.tenantId, projectId: a.projectId, userId: user.id, memberId: member.id, role: "member" } });
     const project = await tx.project.findFirstOrThrow({ where: { id: a.projectId, tenantId: a.tenantId } });

@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../core/prisma/client.js";
@@ -53,7 +54,7 @@ export function createSupportReplyNotifier(
       });
       try {
         const message = await db.supportMessage.findFirst({ where: { id: row.messageId, tenantId: row.tenantId, sender: "team" },
-          include: { ticket: { include: { requester: true, tenant: { select: { deletionStartedAt: true } } } }, _count: { select: { attachments: true } } } });
+          include: { ticket: { include: { requester: { include: { identity: { select: { name: true, email: true, mobile: true, isActive: true } } } }, tenant: { select: { deletionStartedAt: true } } } }, _count: { select: { attachments: true } } } });
         const ticket = message?.ticket, user = ticket?.requester;
         if (!message || !ticket || !user || ticket.tenantId !== row.tenantId || user.tenantId !== row.tenantId || !user.isActive || ticket.tenant.deletionStartedAt) {
           await finish({ status: "skipped", lastError: "recipient_unavailable" }); continue;
@@ -65,17 +66,17 @@ export function createSupportReplyNotifier(
             type: "support.replied", tenant_id: row.tenantId, entity_type: "support_ticket", entity_id: ticket.id,
           } });
           if (result.invalid_tokens.includes(token)) {
-            await db.user.updateMany({ where: { id: user.id, tenantId: row.tenantId, deviceId: token }, data: { deviceId: null } });
+            await tenantAccounts(db).updateMany({ where: { id: user.id, tenantId: row.tenantId, deviceId: token }, data: { deviceId: null } });
             await finish({ status: "skipped", lastError: "invalid_device_token" }); continue;
           }
           if (result.sent_count !== 1) throw new Error("push_unavailable");
         } else if (row.channel === "email") {
-          const email = user.email?.trim();
+          const email = user.identity.email?.trim();
           if (!email) { await finish({ status: "skipped", lastError: "no_email_address" }); continue; }
           const link = `fundnesta://support?ticket_id=${encodeURIComponent(ticket.id)}&tenant_id=${encodeURIComponent(row.tenantId)}`;
           const accepted = await transports.email({ to: email, fromName: "Fund Nesta support",
             subject: `Fund Nesta support: ${ticket.subject.replace(/[\r\n]/g, " ")}`,
-            text: [`Hello ${user.name},`, `The Fund Nesta team replied to your support request: ${ticket.subject}`,
+            text: [`Hello ${user.identity.name},`, `The Fund Nesta team replied to your support request: ${ticket.subject}`,
               message.body || "The team sent you an attachment.",
               message._count.attachments ? `${message._count.attachments} screenshot(s) available in your private support conversation.` : "",
               "Open Fund Nesta → Support to view the conversation and reply.", link].filter(Boolean).join("\n\n"),

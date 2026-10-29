@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { createHash } from 'node:crypto';
 import { prisma } from '../../core/prisma/client.js';
 import { ApiError, forbidden, conflict } from '../../core/http/api-error.js';
@@ -8,17 +9,17 @@ import { selectGuidePlan } from './app-guide.provider.js';
 type Auth={tenantId:string;projectId:string;userId:string};
 export async function guideScope(auth:Auth,language:Language) {
   const [user,project,memberships]=await Promise.all([
-    prisma.user.findFirst({where:{id:auth.userId,tenantId:auth.tenantId,isActive:true},select:{id:true,identityRootId:true,identityRoot:{select:{isActive:true}}}}),
+    tenantAccounts(prisma).findFirst({where:{id:auth.userId,tenantId:auth.tenantId,isActive:true},select:{id:true,userId:true}}),
     prisma.project.findFirst({where:{id:auth.projectId,tenantId:auth.tenantId,isActive:true},select:{projectType:true}}),
     prisma.projectMembership.findMany({where:{tenantId:auth.tenantId,projectId:auth.projectId,userId:auth.userId,isActive:true},include:{customRole:true}}),
   ]);
-  if(!user||!project||!memberships.length||user.identityRootId&&!user.identityRoot?.isActive)throw forbidden('Your project access is no longer active.');
+  if(!user||!project||!memberships.length||!user.isActive)throw forbidden('Your project access is no longer active.');
   const roles=effectiveProjectRoles(memberships.filter(m=>!m.customRoleId).map(m=>m.role));
   const custom=memberships.flatMap(m=>m.customRole?.tenantId===auth.tenantId&&m.customRole.projectId===auth.projectId?[m.customRole]:[]);
   const permissions=memberships.some(m=>m.customRoleId)?mergePermissions(custom):undefined;
   const grants=Object.entries(permissions??{}).sort(([a],[b])=>a.localeCompare(b));
   const authorization=createHash('sha256').update(JSON.stringify([auth.tenantId,auth.projectId,auth.userId,project.projectType,[...roles].sort(),grants])).digest('hex');
-  return {...auth,identity:user.identityRootId??user.id,authorization,articles:authorizedArticles(project.projectType,roles,permissions,language)};
+  return {...auth,identity:user.userId??user.id,authorization,articles:authorizedArticles(project.projectType,roles,permissions,language)};
 }
 export async function guideUsage(identity:string) {
   // Only abandoned reservations expire. Completed credits do not reset with projects, months or devices.

@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { createHash, randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../core/prisma/client.js';
@@ -69,7 +70,7 @@ export function createMasterAlertNotifier(db = prisma, transports = { email: sen
           if (!accepted) throw new Error('email_not_accepted');
         } else if (row.channel === 'push') {
           if (!ready.push()) { await wait('push_not_configured'); continue; }
-          const users = await db.user.findMany({ where: {
+          const users = await tenantAccounts(db).findMany({ where: {
             isActive: true, email: { equals: master.email, mode: 'insensitive' }, tenant: { deletionStartedAt: null },
             ...(master.userId ? { id: master.userId } : { sessions: { some: {
               verifiedEmail: { equals: master.email, mode: 'insensitive' }, impersonatorSessionId: null,
@@ -92,7 +93,7 @@ export function createMasterAlertNotifier(db = prisma, transports = { email: sen
                 type: 'master_admin.request', entity_type: 'platform_alert', entity_id: alert.id, url: link,
               } });
               if (result.invalid_tokens.includes(device.token)) {
-                await db.user.updateMany({ where: { id: { in: device.ids }, deviceId: device.token }, data: { deviceId: null } });
+                await tenantAccounts(db).updateMany({ where: { id: { in: device.ids }, deviceId: device.token }, data: { deviceId: null } });
                 continue;
               }
               if (result.sent_count !== 1) { failed = true; continue; }

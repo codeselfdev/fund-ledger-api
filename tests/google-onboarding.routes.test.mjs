@@ -1,3 +1,4 @@
+import { fixtureTransactionClient, installNormalizedFixtures } from './helpers/normalized-fixtures.mjs';
 import assert from 'node:assert/strict';
 import { before, after, beforeEach, test } from 'node:test';
 import express from 'express';
@@ -32,13 +33,13 @@ before(async () => {
  testFirebase=initializeApp({projectId:'isolated-auth-tests'});
  getAuth(testFirebase).verifyIdToken=async value=>{if(value!==phoneToken)throw Error('Use Google token verification');return {uid:'test-phone-user',phone_number:'+8801711000099',firebase:{sign_in_provider:'phone'}};};
  process.env.FIREBASE_SERVICE_ACCOUNT_JSON = ''; process.env.FCM_SERVICE_ACCOUNT_JSON = '';
- env.googleOAuth.clientSecret = 'isolated-test-secret';
+ env.googleOAuth.clientSecret = 'isolated-test-secret';env.googleOAuth.appRedirectAllowlist=['fundnesta://auth'];
  globalThis.fetch = async (input, options) => {
   if (String(input).startsWith('https://oauth2.googleapis.com/tokeninfo')) return new Response(JSON.stringify({ aud:'953182652005-5q814sgq7bhvki19pj8lkhen1ek7dk57.apps.googleusercontent.com',sub:'google-test-user',email,name:'Google Owner',email_verified:verified }),{status:validToken?200:401});
   if (String(input)==='https://oauth2.googleapis.com/token') return new Response(JSON.stringify({id_token:token}),{status:200});
   return nativeFetch(input,options);
  };
- prisma.$transaction = async fn => fn(prisma); prisma.$queryRaw = async () => [];
+ prisma.$transaction = async fn => fn(fixtureTransactionClient(prisma)); prisma.$queryRaw = async () => [];
  prisma.otpCode.updateMany = async ({where,data}) => {
    if (!otpRows.length) return {count:1};
    let count=0; for (const row of otpRows) if (matches(row,where)) {Object.assign(row,data);count++;} return {count};
@@ -62,6 +63,9 @@ before(async () => {
  prisma.activity.create = async ({data}) => data;
  prisma.otpCode.create = async ({data}) => {otpWrites++;const row={id:`otp-${otpWrites}`,createdAt:new Date(),consumedAt:null,...data};otpRows.push(row);return row;};
  prisma.otpCode.findFirst = async ({where}) => otpRows.length ? otpRows.filter(row=>matches(row,where)).at(-1) ?? null : ({id:'old-otp',codeHash:await bcrypt.hash('123456',4)});prisma.otpCode.update=async()=>({});
+  installNormalizedFixtures(prisma,{users:()=>users,tenants:()=>tenants,memberships:()=>memberships,projects:()=>projects,
+    createAccount:async data=>{const row={id:`fixture-user-${users.length}`,isActive:true,identityRootId:null,...data};if(!row.id)row.id=`fixture-user-${users.length}`;users.push(row);return row;},
+    updateAccount:async(where,data)=>{const row=users.find(row=>row.id===where.id);Object.assign(row,data);return row;},});
  const app=express();app.set('trust proxy',1);app.use(express.json());app.use('/onboarding',onboardingRouter);app.use('/auth',authRouter);
  app.use((error,_req,res,_next)=>res.status(error.statusCode??500).json({error:error.message,fields:error.fields}));
  server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));url=`http://127.0.0.1:${server.address().port}`;

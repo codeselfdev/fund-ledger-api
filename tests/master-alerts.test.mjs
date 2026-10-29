@@ -1,3 +1,4 @@
+import { installAccountReadFixtures } from './helpers/normalized-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -52,6 +53,7 @@ function fixture(kinds = ['support_message']) {
       async updateMany({ where, data }) { const selected = users.filter(user => matches(user, where)); selected.forEach(user => Object.assign(user, data)); return { count: selected.length }; },
     },
   };
+  installAccountReadFixtures(db);
   const notifier = createMasterAlertNotifier(db, {
     email: async input => { if (emailFailure) throw Error('Synthetic email outage'); mail.push(input); return true; },
     push: async input => { pushes.push(input); onPush(input); const token = input.tokens[0]; return { sent_count: pushFailures.has(token) || invalid.has(token) ? 0 : 1, failed_count: 0, invalid_tokens: invalid.has(token) ? [token] : [], skipped: false }; },

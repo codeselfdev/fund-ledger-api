@@ -1,5 +1,7 @@
 # Organization packages and Business assistant
 
+Current storage uses global `users`, `tenant_users`, `tenant_subscriptions`, `subscription_invoices` and `subscription_history`. See [database normalization and rollout](DATABASE_NORMALIZATION.md). References below to legacy JSON/identity-root persistence describe the older implementation.
+
 Quotas apply to the whole organization, across all projects. Each active uploaded file (member document, proof, logo or photo) counts as one document. The file limit is **5,000,000 bytes**, inclusive; existing image optimization still reduces images below 2 MB.
 
 | Package | BDT monthly / yearly | Projects | Users & members | Documents |

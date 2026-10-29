@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { queueInstituteNotifications } from './institute.notifications.js';
 import type { Request } from 'express';
 import { Prisma, type PrismaClient } from '@prisma/client';
@@ -84,7 +85,7 @@ export async function notify(tx: Tx, a: Access, studentIds: string[], type: stri
   return queueInstituteNotifications(tx,{...a.scope,actorUserId:a.auth.userId,userIds:users,timezone:a.config.timezone,type,title,entityId,dedupe,sms:type==='fee.reminder'});
 }
 export async function createUser(tx: Tx, a: Access, mobile: string, name: string, role: 'teacher' | 'member') {
-    const user = await tx.user.upsert({ where: { tenantId_mobile: { tenantId: a.scope.tenantId, mobile } }, create: { tenantId: a.scope.tenantId, mobile, name }, update: {} });
+    const user = await tenantAccounts(tx).upsert({ where: { tenantId_mobile: { tenantId: a.scope.tenantId, mobile } }, create: { tenantId: a.scope.tenantId, mobile, name }, update: {} });
     if (!user.isActive)
         throw forbidden('This account is inactive.');
     const existing = await tx.projectMembership.findFirst({ where: { ...a.scope, userId: user.id, role, customRoleId: null } });

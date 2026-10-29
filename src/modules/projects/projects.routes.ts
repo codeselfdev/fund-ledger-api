@@ -1,3 +1,5 @@
+import { saveSubscription } from "../../core/subscription/subscription.repository.js";
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { projectApprovalFlowRouter } from './project-approval-flow.routes.js';
 import { seedMemberDocumentTitles, withDefaultMemberDocumentTitles } from "../../core/projects/member-document-titles.js";
 import { settingsSchema as instituteSettingsSchema, settings as instituteSettings } from '../institute/institute.policy.js';
@@ -121,19 +123,20 @@ projectsRouter.get("/", requireRoles("any"), asyncHandler(async (req, res) => {
 projectsRouter.post("/owned-organization", requireRoles("any"), validateBody(requireFundShares(createProjectSchema)), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const body = req.body as z.infer<typeof createProjectSchema>;
-  const actor = await prisma.user.findUniqueOrThrow({
+  const actor = await tenantAccounts(prisma).findUniqueOrThrow({
     where: { id: auth.userId },
-    select: { id: true, name: true, mobile: true, email: true, identityRootId: true, deviceId: true }
+    select: { id: true, name: true, mobile: true, email: true, userId: true, deviceId: true }
   });
 
   const identity = await linkedIdentityUsers(actor.id);
   const result = await prisma.$transaction(async (tx) => {
-    const tenant = await tx.tenant.create({ data: {
-      name: body.organization_name, slug: `org-${randomUUID()}`, currency: "BDT", plan: "free",
-      contact: withDefaultMemberDocumentTitles({ subscription: createOneMonthTrial() }, body.project_type)
+    const tenant = await tx.tenant.create({  data: {
+      name: body.organization_name, slug: `org-${randomUUID()}`, currency: "BDT",
+      contact: withDefaultMemberDocumentTitles({}, body.project_type)
     } });
-    const owner = await tx.user.create({ data: { tenantId: tenant.id, name: actor.name,
-      mobile: actor.mobile, email: actor.email, identityRootId: identity.rootId, deviceId: actor.deviceId } });
+    await saveSubscription(tx, tenant.id, createOneMonthTrial(), { event: 'trial_started', actorUserId: auth.userId });
+    const owner = await tenantAccounts(tx).create({ data: { tenantId: tenant.id, name: actor.name,
+      mobile: actor.mobile, email: actor.email, userId: identity.rootId, deviceId: actor.deviceId } });
     const createdProject = await tx.project.create({
       data: {
         tenantId: tenant.id,
@@ -223,7 +226,7 @@ projectsRouter.post("/", authenticate, requireActiveSubscription, requireProject
   const auth = requireAuthContext(req);
   const body = req.body as z.infer<typeof createProjectSchema>;
   await assertProjectCapacity(auth.tenantId);
-  const actor = await prisma.user.findUniqueOrThrow({
+  const actor = await tenantAccounts(prisma).findUniqueOrThrow({
     where: { id: auth.userId },
     select: { id: true, name: true, mobile: true, email: true }
   });
@@ -503,7 +506,7 @@ invitationsRouter.post("/", requireProject, requireRoles("owner", "approver", "a
     where: { id: projectId, tenantId: auth.tenantId }
   });
   const { invitation, user } = await prisma.$transaction(async (tx) => {
-    const user = await tx.user.upsert({
+    const user = await tenantAccounts(tx).upsert({
       where: {
         tenantId_mobile: {
           tenantId: auth.tenantId,
@@ -526,8 +529,7 @@ invitationsRouter.post("/", requireProject, requireRoles("owner", "approver", "a
       await ensureUserProjectMember(tx, {
         tenantId: auth.tenantId,
         projectId: project.id,
-        user: {
-          id: user.id,
+        user: { id: user.id,
           name: user.name,
           mobile: user.mobile,
           email: user.email

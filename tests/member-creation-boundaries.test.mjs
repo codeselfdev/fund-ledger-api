@@ -1,3 +1,4 @@
+import { normalizedAccountRelations } from './helpers/normalized-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -18,7 +19,7 @@ function load(file, deps) {
 function authentication({ roles = ['owner'], linkedId = null, owned = [], requestedMemberId } = {}) {
   const calls = [];
   const db = {
-    session: { findFirst: async () => ({ id: 'session', tenantId: 'tenant', userId: 'owner', activeProjectId: 'project', user: { id: 'owner', name: 'Owner', isActive: true } }) },
+    session: { findFirst: async () => (normalizedAccountRelations({ id: 'session', tenantId: 'tenant', userId: 'owner', activeProjectId: 'project', user: { id: 'owner', name: 'Owner', isActive: true } })) },
     projectMembership: { findMany: async () => roles.map(role => ({ role, memberId: role === 'member' ? linkedId : null })) },
     project: { findUnique: async () => ({ projectType: 'fund_shares' }) },
     member: { findMany: async args => { calls.push(['members', args]); return owned.map(id => ({ id })); } },

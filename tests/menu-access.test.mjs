@@ -1,3 +1,4 @@
+import { normalizedAccountRelations } from './helpers/normalized-fixtures.mjs';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 process.env.DATABASE_URL = 'postgresql://test:test@127.0.0.1:1/test';
@@ -78,7 +79,7 @@ test('authentication reloads the scoped role on every request and never treats i
   const { signAccessToken } = await import('../dist/core/security/jwt.js');
   const token = signAccessToken({ sessionId:'session',userId:'user',tenantId:'tenant' });
   let permissions = { expenses: read };
-  prisma.session.findFirst = async () => ({ id:'session',userId:'user',tenantId:'tenant',activeProjectId:'project',impersonatorSessionId:null,user:{id:'user',isActive:true,lastActiveAt:new Date()} });
+  prisma.session.findFirst = async () => (normalizedAccountRelations({ id:'session',userId:'user',tenantId:'tenant',activeProjectId:'project',impersonatorSessionId:null,user:{id:'user',isActive:true,lastActiveAt:new Date()} }));
   prisma.projectMembership.findMany = async ({ where }) => {
     assert.equal(where.projectId,'project'); assert.equal(where.tenantId,'tenant'); assert.equal(where.userId,'user'); assert.equal(where.isActive,true);
     return [{role:'auditor',customRoleId:'role',customRole:{id:'role',tenantId:'tenant',projectId:'project',permissions},memberId:null}];

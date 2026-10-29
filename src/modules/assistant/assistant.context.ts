@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { createHash } from "node:crypto";
 import { prisma } from "../../core/prisma/client.js";
 import { forbidden } from "../../core/http/api-error.js";
@@ -5,7 +6,7 @@ import { forbidden } from "../../core/http/api-error.js";
 export async function assistantContext(tenantId: string, projectId: string, userId: string) {
   const [project, user, memberships] = await Promise.all([
     prisma.project.findFirst({ where: { id: projectId, tenantId, isActive: true }, select: { name: true, projectType: true } }),
-    prisma.user.findFirst({ where: { id: userId, tenantId, isActive: true }, select: { id: true } }),
+    tenantAccounts(prisma).findFirst({ where: { id: userId, tenantId, isActive: true }, select: { id: true } }),
     prisma.projectMembership.findMany({ where: { tenantId, projectId, userId, isActive: true }, select: { role: true, memberId: true } })
   ]);
   if (!project || !user || !memberships.length) throw forbidden("Your project access is no longer active.");

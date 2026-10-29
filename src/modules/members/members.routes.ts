@@ -1,3 +1,4 @@
+import { tenantAccounts } from "../../core/identity/tenant-accounts.js";
 import { assertPersonCapacity } from "../../core/subscription/quota.service.js";
 import { Router } from "express";
 import { z } from "zod";
@@ -491,7 +492,7 @@ router.post("/import", requireProject, requireRoles("owner", "accountant", "admi
         await assertMemberCanExit(auth.tenantId, auth.projectId, existingMember.id, tx);
       }
 
-      const user = await tx.user.upsert({
+      const user = await tenantAccounts(tx).upsert({
         where: {
           tenantId_mobile: {
             tenantId: auth.tenantId,
@@ -788,7 +789,7 @@ router.post("/", requireProject, requireRoles("owner", "accountant", "admin"), v
   const project = await assertShareCap({ tenantId: auth.tenantId, projectId: auth.projectId, shares: body.shares });
 
   const result = await prisma.$transaction(async (tx) => {
-    const user = await tx.user.upsert({
+    const user = await tenantAccounts(tx).upsert({
       where: {
         tenantId_mobile: {
           tenantId: auth.tenantId,
@@ -1064,11 +1065,11 @@ router.post("/:id/transfer", requireProject, requireRoles("owner", "admin"), val
       address: existingTarget!.address ?? undefined
     };
     let user = existingTarget?.userId
-      ? await tx.user.findFirst({ where: { id: existingTarget.userId, tenantId: auth.tenantId } })
-      : await tx.user.findFirst({ where: { tenantId: auth.tenantId, mobile: identity.mobile } });
+      ? await tenantAccounts(tx).findFirst({ where: { id: existingTarget.userId, tenantId: auth.tenantId } })
+      : await tenantAccounts(tx).findFirst({ where: { tenantId: auth.tenantId, mobile: identity.mobile } });
     const userCreated = !user;
     if (!user) {
-      user = await tx.user.create({
+      user = await tenantAccounts(tx).create({
         data: {
           tenantId: auth.tenantId,
           name: identity.name,
@@ -1077,7 +1078,7 @@ router.post("/:id/transfer", requireProject, requireRoles("owner", "admin"), val
         }
       });
     } else {
-      user = await tx.user.update({
+      user = await tenantAccounts(tx).update({
         where: { id: user.id },
         data: {
           name: identity.name,
@@ -1263,7 +1264,7 @@ router.patch("/:id", requireProject, requireRoles("owner", "accountant", "admin"
 
     let userId = updated.userId;
     if (!userId && body.status === "active") {
-      const user = await tx.user.upsert({
+      const user = await tenantAccounts(tx).upsert({
         where: {
           tenantId_mobile: {
             tenantId: auth.tenantId,
@@ -1280,15 +1281,6 @@ router.patch("/:id", requireProject, requireRoles("owner", "accountant", "admin"
       });
       userId = user.id;
       updated = await tx.member.update({ where: { id }, data: { userId } });
-    } else if (userId && (body.name !== undefined || body.mobile !== undefined || body.email !== undefined)) {
-      await tx.user.update({
-        where: { id: userId, tenantId: auth.tenantId },
-        data: {
-          name: body.name,
-          mobile: body.mobile,
-          email: body.email
-        }
-      });
     }
 
     if (body.status === "inactive") {
