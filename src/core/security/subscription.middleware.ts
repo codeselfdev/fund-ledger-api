@@ -18,7 +18,7 @@ export const requireActiveSubscription: RequestHandler = async (req, _res, next)
 
     const subscription = evaluateSubscription(tenant.contact);
     if (!subscription.has_access) {
-      return next(new ApiError(402, "SUBSCRIPTION_EXPIRED", "Subscription has expired. Renew subscription to continue.", {
+      return next(new ApiError(402, "SUBSCRIPTION_EXPIRED", "Your organization’s subscription and 5-day grace period have ended. Ask the organization owner to upgrade or renew with Fund Nesta to restore access for everyone.", {
         subscription
       }));
     }

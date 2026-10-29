@@ -16,6 +16,7 @@ import { badRequest, forbidden, notFound } from "../../core/http/api-error.js";
 import { created, ok } from "../../core/http/response.js";
 import { prisma } from "../../core/prisma/client.js";
 import { authenticate, authenticateAccount, requireProject, requireRoles } from "../../core/security/auth.middleware.js";
+import { requireOrganizationOwnership } from "../../core/security/organization-access.js";
 import { requireActiveSubscription } from "../../core/security/subscription.middleware.js";
 import { summarizeProjectMemberships } from "../../core/security/project-access.js";
 import { requireAuthContext, requireProjectContext } from "../../core/security/auth.context.js";
@@ -218,7 +219,7 @@ projectsRouter.post("/owned-organization", requireRoles("any"), validateBody(req
   });
 }));
 
-projectsRouter.post("/", authenticate, requireActiveSubscription, requireProject, requireRoles("owner", "admin"), validateBody(requireFundShares(createProjectSchema.omit({ organization_name: true }))), asyncHandler(async (req, res) => {
+projectsRouter.post("/", authenticate, requireActiveSubscription, requireProject, requireOrganizationOwnership, validateBody(requireFundShares(createProjectSchema.omit({ organization_name: true }))), asyncHandler(async (req, res) => {
   const auth = requireAuthContext(req);
   const body = req.body as z.infer<typeof createProjectSchema>;
   await assertProjectCapacity(auth.tenantId);

@@ -12,7 +12,7 @@ test('organization package enforcement against PostgreSQL', { skip: !url }, asyn
   process.env.UPLOAD_LOCAL_DIR = `/tmp/fundledger-retention-test-${process.pid}`;
   const { prisma } = await import('../dist/core/prisma/client.js');
   const { createOneMonthTrial, evaluateSubscription, renewTenantSubscription } = await import('../dist/core/subscription/subscription.service.js');
-  const { tenantQuota, assertPersonCapacity } = await import('../dist/core/subscription/quota.service.js');
+  const { tenantQuota, assertPersonCapacity, assertProjectCapacity } = await import('../dist/core/subscription/quota.service.js');
   const { freeDocumentsPurgeAt } = await import('../dist/core/subscription/document-retention.js');
   const { selectPackage } = await import('../dist/modules/subscription/package-selection.service.js');
   const { submitInvoicePayment, reviewInvoicePayment } = await import('../dist/modules/subscription/billing.service.js');
@@ -77,7 +77,7 @@ test('organization package enforcement against PostgreSQL', { skip: !url }, asyn
       await assert.rejects(prisma.$transaction(async tx => { await tx.user.create({ data: { tenantId: a.id, name: 'Import', mobile: 'new' } }); }), /USER_QUOTA_EXCEEDED/);
       assert.equal((await tenantQuota(a.id)).users.used, 20);
     });
-    for (const [plan, docs, seats, projects] of [['starter', 1000, 20, 6], ['business', 15000, 500, 20]]) {
+    for (const [plan, docs, seats, projects] of [['starter', 1000, 20, 2], ['business', 15000, 500, 6]]) {
       await t.test(`${plan} enforces the exact document, user and project boundaries`, async () => {
         const a = await org('custom'), p = await project(a.id), u = await user(a.id);
         await prisma.upload.createMany({ data: Array.from({ length: docs }, () => document(a.id, p.id, u.id)) });
@@ -87,12 +87,41 @@ test('organization package enforcement against PostgreSQL', { skip: !url }, asyn
         await assert.rejects(prisma.upload.create({ data: document(a.id, p.id, u.id) }), /DOCUMENT_QUOTA_EXCEEDED/);
         await assert.rejects(user(a.id), /USER_QUOTA_EXCEEDED/);
         await assert.rejects(project(a.id), /PROJECT_QUOTA_EXCEEDED/);
-        const quota = await tenantQuota(a.id); assert.equal(quota.documents.used, docs); assert.equal(quota.users.used, seats); assert.equal(quota.projects.used, projects);
+        const quota = await tenantQuota(a.id); assert.equal(quota.documents.used, docs); assert.equal(quota.users.used, seats); assert.equal(quota.projects.used, projects); assert.equal(quota.projects.limit, projects); await assert.rejects(assertProjectCapacity(a.id), /project limit/);
       });
     }
+    for (const [plan, cycle, amount] of [['starter', 'monthly', 3000], ['starter', 'yearly', 30000], ['business', 'monthly', 8000], ['business', 'yearly', 80000]]) {
+      await t.test(`${plan} ${cycle} invoice uses the current catalog price`, async () => {
+        const a = await org(), u = await user(a.id);
+        const invoice = await selectPackage(a.id, u.id, plan, cycle);
+        assert.equal(invoice.amount, amount); assert.equal(invoice.currency, 'BDT');
+        assert.equal((await tenantQuota(a.id)).package, 'free');
+      });
+    }
+    await t.test('organizations over a reduced project cap retain their records and reject new capacity', async () => {
+      const a = await org('custom');
+      for (let i=0;i<7;i++) await project(a.id);
+      for (const [plan, limit] of [['starter',2], ['business',6]]) {
+        await setPlan(a.id, plan);
+        const before = await tenantQuota(a.id); assert.deepEqual(before.projects, {used:7,limit});
+        const existing = await prisma.project.findFirstOrThrow({where:{tenantId:a.id}});
+        await prisma.project.update({where:{id:existing.id},data:{tenantId:a.id,name:'Still editable'}});
+        await assert.rejects(project(a.id), /PROJECT_QUOTA_EXCEEDED/);
+        assert.equal(await prisma.project.count({where:{tenantId:a.id}}),7);
+        await assert.rejects(selectPackage(a.id, 'operator', plan, 'monthly'), /usage exceeds/);
+      }
+    });
+    await t.test('a previously issued invoice retains its agreed price on selection retry', async () => {
+      const a = await org(), u = await user(a.id);
+      const oldInvoice = {id: 'previously-issued', package: 'starter', billing_cycle: 'monthly', amount: 1000, currency: 'BDT', status: 'open'};
+      await prisma.tenant.update({where:{id:a.id},data:{contact:{...a.contact,billing:{invoices:[oldInvoice]}}}});
+      const invoice = await selectPackage(a.id,u.id,'starter','monthly');
+      assert.equal(invoice.id,'previously-issued'); assert.equal(invoice.amount,1000);
+      assert.equal((await prisma.tenant.findUniqueOrThrow({where:{id:a.id}})).contact.billing.invoices.length,1);
+    });
     await t.test('invoices are priced on the server; pending/rejected payments never activate quotas', async () => {
       const a = await org(), u = await user(a.id);
-      const invoice = await selectPackage(a.id, u.id, 'starter', 'monthly'); assert.equal(invoice.amount, 1000); assert.equal(invoice.currency, 'BDT');
+      const invoice = await selectPackage(a.id, u.id, 'starter', 'monthly'); assert.equal(invoice.amount, 3000); assert.equal(invoice.currency, 'BDT');
       assert.equal((await selectPackage(a.id, u.id, 'starter', 'monthly')).id, invoice.id);
       assert.equal((await tenantQuota(a.id)).package, 'free');
       await assert.rejects(selectPackage(a.id, u.id, 'business', 'yearly'), /unpaid invoice/);

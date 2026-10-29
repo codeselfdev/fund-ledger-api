@@ -82,60 +82,36 @@ function withStoredSubscription(contact: unknown, subscription: StoredSubscripti
   });
 }
 
+export const SUBSCRIPTION_GRACE_DAYS = 5;
+
+/** Access belongs to the selected organization, including every member and project. */
 export function evaluateSubscription(contact: unknown, now = new Date()) {
   const stored = getStoredSubscription(contact);
-  if (!stored) {
-    return {
-      managed: false,
-      status: "expired" as SubscriptionStatus,
-      has_access: false,
-      reason: "unmanaged_missing_subscription",
-      renewal_term_years: DEFAULT_RENEWAL_TERM_YEARS,
-      trial_ends_at: null as string | null,
-      current_period_end_at: null as string | null,
-      days_left: 0
-    };
-  }
-
-  const trialEndsAt = parseDate(stored.trial_ends_at);
-  const periodEndsAt = parseDate(stored.current_period_end_at);
-  const nowMs = now.getTime();
-
-  if (stored.status !== "active" && trialEndsAt && trialEndsAt.getTime() >= nowMs) {
-    return {
-      managed: true,
-      status: "trial" as SubscriptionStatus,
-      has_access: true,
-      reason: "trial_active",
-      renewal_term_years: stored.renewal_term_years,
-      trial_ends_at: stored.trial_ends_at,
-      current_period_end_at: stored.current_period_end_at,
-      days_left: Math.ceil((trialEndsAt.getTime() - nowMs) / DAY_MS)
-    };
-  }
-
-  if (periodEndsAt && periodEndsAt.getTime() >= nowMs) {
-    return {
-      managed: true,
-      status: "active" as SubscriptionStatus,
-      has_access: true,
-      reason: "subscription_active",
-      renewal_term_years: stored.renewal_term_years,
-      trial_ends_at: stored.trial_ends_at,
-      current_period_end_at: stored.current_period_end_at,
-      days_left: Math.ceil((periodEndsAt.getTime() - nowMs) / DAY_MS)
-    };
-  }
-
+  const periodEnd = parseDate(stored?.current_period_end_at ?? null);
+  const trialEnd = parseDate(stored?.trial_ends_at ?? null);
+  const end = periodEnd ?? (stored?.status !== "active" ? trialEnd : null);
+  const graceEnd = end ? new Date(end.getTime() + SUBSCRIPTION_GRACE_DAYS * DAY_MS) : null;
+  const source = periodEnd ? "subscription" : "trial";
+  const eligible = Boolean(stored && stored.status !== "expired" && end);
+  const current = eligible && now < end!;
+  const grace = eligible && !current && now < graceEnd!;
+  const allowed = current || grace;
   return {
-    managed: true,
-    status: "expired" as SubscriptionStatus,
-    has_access: false,
-    reason: stored.status === "expired" ? "subscription_explicitly_expired" : "subscription_expired",
-    renewal_term_years: stored.renewal_term_years,
-    trial_ends_at: stored.trial_ends_at,
-    current_period_end_at: stored.current_period_end_at,
-    days_left: 0
+    managed: Boolean(stored),
+    status: (allowed ? source === "trial" ? "trial" : "active" : "expired") as SubscriptionStatus,
+    has_access: allowed,
+    access_phase: grace ? "grace" : current ? source === "trial" ? "trial" : "active" : "expired",
+    in_grace_period: grace,
+    grace_days_left: grace ? Math.ceil((graceEnd!.getTime() - now.getTime()) / DAY_MS) : 0,
+    grace_ends_at: graceEnd?.toISOString() ?? null,
+    access_ends_at: eligible ? graceEnd?.toISOString() ?? null : null,
+    billing_period_end_at: end?.toISOString() ?? null,
+    reason: !stored ? "unmanaged_missing_subscription" : stored.status === "expired" ? "subscription_explicitly_expired"
+      : grace ? `${source}_grace_period` : current ? `${source}_active` : "subscription_expired",
+    renewal_term_years: stored?.renewal_term_years ?? DEFAULT_RENEWAL_TERM_YEARS,
+    trial_ends_at: stored?.trial_ends_at ?? null,
+    current_period_end_at: stored?.current_period_end_at ?? null,
+    days_left: current ? Math.ceil((end!.getTime() - now.getTime()) / DAY_MS) : 0,
   };
 }
 

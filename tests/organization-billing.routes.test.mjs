@@ -134,7 +134,7 @@ test('a new organization with a non-fund project receives no member document def
 });
 test('adding a fund project seeds missing titles once and preserves customized organization titles', async () => {
   for (const titles of [undefined, [], [{ id: 'custom-id', title: 'Renamed identity proof', is_active: false }]]) {
-    reset('admin');
+    reset('owner');
     tenants[0].contact.email = 'saved@example.test';
     if (titles !== undefined) tenants[0].contact.member_document_titles = copy(titles);
     const result = await request('/projects', { token: tokenFor(), body: { name: 'Another fund', total_shares: 10 } });
@@ -189,6 +189,7 @@ test('optional member linkage belongs only to the new organization', async () =>
   assert.equal(result.status, 201); assert.equal(members.length, 1); assert.equal(members[0].tenantId, result.body.data.tenant_id); assert.equal(members[0].shares, 1); assert.deepEqual(result.body.data.roles, ['owner', 'member']);
 });
 test('switching rotates to a scoped token and switching back restores member access', async () => {
+  members.push({id:'original-member',tenantId:'original-org',projectId:'original-project',userId:'original-user',status:'active',shares:1});
   const own = await owned(); assert.equal(verifyAccessToken(own.token).tenantId, own.tenantId);
   assert.equal((await request('/manage', { token: own.token, projectId: own.id })).status, 200);
   assert.equal((await request('/manage', { token: own.token, projectId: 'original-project' })).status, 403);
@@ -298,4 +299,37 @@ test('login opens the remaining owned organization when original project access 
   assert.equal(login.active_project_id, own.id); assert.equal(login.tenant.id, own.tenantId);
   assert.equal(verifyAccessToken(login.token).tenantId, own.tenantId);
   assert.deepEqual(login.memberships.map(row => row.role), ['owner']);
+});
+
+
+test('only the organization owner can add projects or manage billing in that organization',async()=>{
+ for(const role of ['member','admin','accountant','approver','auditor','cashier']){
+  reset(role);const token=tokenFor();
+  assert.equal((await request('/projects',{token,body:{name:'Unauthorized project',total_shares:1}})).status,403,role);
+  assert.equal((await request('/subscription/project-check',{token,body:{}})).status,403,role);
+  assert.equal((await request('/subscription/upgrade',{token,body:{package:'starter',billing_cycle:'monthly'}})).status,403,role);
+  assert.equal((await request('/subscription/invoices',{token})).status,403,role);
+  assert.equal((await request('/subscription',{token})).body.data.can_manage_billing,false,role);
+ }
+ reset('owner');const token=tokenFor();
+ assert.equal((await request('/subscription',{token})).body.data.can_manage_billing,true);
+ assert.equal((await request('/projects',{token,body:{name:'Owner project',total_shares:1}})).status,201);
+});
+test('a project-level owner cannot become the payer for another organization',async()=>{
+ reset('owner');const tenant=tenants[0],original=projects[0];
+ users.push({id:'invited-user',tenantId:tenant.id,isActive:true,mobile:'+8801711000099',name:'Invited admin'});
+ projects.push({...original,id:'secondary-project'});
+ memberships.push({id:'secondary-role',tenantId:tenant.id,projectId:'secondary-project',userId:'invited-user',role:'owner',isActive:true});
+ const token=tokenFor('invited-user','secondary-project');
+ assert.equal((await request('/subscription',{token,projectId:'secondary-project'})).body.data.can_manage_billing,false);
+ assert.equal((await request('/projects',{token,projectId:'secondary-project',body:{name:'Another',total_shares:1}})).status,403);
+});
+test('an expired organization does not affect the same person’s access to a separately paid organization',async()=>{
+ const own=await owned();tenants[0].contact.subscription=createTrialSubscription(0,new Date('2020-01-01'));
+ const paid=tenants.find(row=>row.id===own.tenantId);paid.contact=renewTenantSubscription(paid.contact,new Date(),{package:'starter',billing_cycle:'monthly'}).contact;
+ const original=await request('/subscription',{token:own.originalToken,projectId:'original-project'});
+ const other=await request('/subscription',{token:own.token,projectId:own.id});
+ assert.equal(original.body.data.has_access,false);assert.equal(other.body.data.has_access,true);
+ assert.equal((await request(`/projects/${own.id}`,{token:own.token,projectId:own.id})).status,200);
+ assert.equal((await request('/projects/original-project',{token:own.originalToken,projectId:'original-project'})).status,402);
 });

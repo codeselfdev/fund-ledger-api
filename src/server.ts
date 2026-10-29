@@ -1,3 +1,4 @@
+import { startSubscriptionReminders, stopSubscriptionReminders } from "./modules/subscription/subscription-reminders.service.js";
 import { startInstituteWorker, stopInstituteWorker } from './modules/institute/institute.worker.js';
 import { startMasterAdminAlerts, stopMasterAdminAlerts } from './modules/internal/master-alerts.service.js';
 import { startRecurringExpensesWorker, stopRecurringExpensesWorker } from './modules/expenses/recurring-expenses.worker.js';
@@ -30,6 +31,7 @@ startMasterAdminAlerts();
 startPlatformBroadcasts();
 startSupportReplyNotifications();
 startAiCreditNotifications();
+startSubscriptionReminders();
 startAssistantWorker();
 startRecurringSchedulesCron();
 startDocumentRetentionCron();
@@ -62,6 +64,7 @@ async function shutdown() {
   stopPlatformBroadcasts();
   stopSupportReplyNotifications();
   stopAiCreditNotifications();
+  stopSubscriptionReminders();
   stopAssistantWorker();
   stopRecurringSchedulesCron();
   stopDocumentRetentionCron();

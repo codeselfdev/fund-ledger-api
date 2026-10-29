@@ -1222,6 +1222,7 @@ model Notification {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   aiCreditDeliveries AiCreditDelivery[]
+  subscriptionDeliveries SubscriptionReminderDelivery[]
   recipient User     @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
   actor     User?    @relation("NotificationActor", fields: [actorUserId], references: [id], onDelete: SetNull)
 
@@ -4028,4 +4029,28 @@ model PayrollPortalRecord {
   @@unique([projectId, kind, recordKey])
   @@index([tenantId, projectId, kind, employeeId], map: "payroll_portal_scope_idx")
   @@map("payroll_portal_records")
+}
+
+
+// Owner-only subscription reminders with durable, independently retryable channels.
+model SubscriptionReminderDelivery {
+  id String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  notificationId String @map("notification_id")
+  periodEndsAt DateTime @map("period_ends_at")
+  stage String
+  channel String
+  status String @default("pending")
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at")
+  leaseUntil DateTime? @map("lease_until")
+  leaseToken String? @map("lease_token")
+  sentAt DateTime? @map("sent_at")
+  lastError String? @map("last_error")
+  createdAt DateTime @default(now()) @map("created_at")
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  @@unique([notificationId, channel])
+  @@index([status, nextAttemptAt, leaseUntil], map: "subscription_reminder_deliveries_pending_idx")
+  @@index([tenantId])
+  @@map("subscription_reminder_deliveries")
 }

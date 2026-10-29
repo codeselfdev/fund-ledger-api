@@ -18,6 +18,7 @@ import {
 import { authenticate, requireProject, requireRoles } from "../../core/security/auth.middleware.js";
 import { requireAuthContext, requireProjectContext } from "../../core/security/auth.context.js";
 import { ensureUserProjectMember } from "../../core/security/member-link.service.js";
+import { requireActiveSubscription } from "../../core/security/subscription.middleware.js";
 import { evaluateSubscription } from "../../core/subscription/subscription.service.js";
 import { validateBody } from "../../core/validation/validate.js";
 import { writeAccountTransactionAudit, writeAudit } from "../../core/audit/audit.service.js";
@@ -470,10 +471,10 @@ async function completeOrganizationStep(req: import("express").Request, res: imp
   });
 }
 
-router.post("/organization", authenticate, requireProject, requireRoles("owner"), validateBody(organizationSetupSchema), asyncHandler(completeOrganizationStep));
-router.post("/project", authenticate, requireProject, requireRoles("owner"), validateBody(organizationSetupSchema), asyncHandler(completeOrganizationStep));
+router.post("/organization", authenticate, requireActiveSubscription, requireProject, requireRoles("owner"), validateBody(organizationSetupSchema), asyncHandler(completeOrganizationStep));
+router.post("/project", authenticate, requireActiveSubscription, requireProject, requireRoles("owner"), validateBody(organizationSetupSchema), asyncHandler(completeOrganizationStep));
 
-router.post("/accounting", authenticate, requireProject, requireRoles("owner"), validateBody(accountingSchema), asyncHandler(async (req, res) => {
+router.post("/accounting", authenticate, requireActiveSubscription, requireProject, requireRoles("owner"), validateBody(accountingSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   assertOwnerOnboarding(auth.roles);
   const body = req.body as z.infer<typeof accountingSchema>;
@@ -576,7 +577,7 @@ router.post("/accounting", authenticate, requireProject, requireRoles("owner"), 
   });
 }));
 
-router.post("/accounts", authenticate, requireProject, requireRoles("owner"), validateBody(accountsSetupSchema), asyncHandler(async (req, res) => {
+router.post("/accounts", authenticate, requireActiveSubscription, requireProject, requireRoles("owner"), validateBody(accountsSetupSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   assertOwnerOnboarding(auth.roles);
   const body = req.body as z.infer<typeof accountsSetupSchema>;
@@ -716,7 +717,7 @@ router.post("/accounts", authenticate, requireProject, requireRoles("owner"), va
   });
 }));
 
-router.post("/shareholders", authenticate, requireProject, requireRoles("owner"), validateBody(shareholdersSetupSchema), asyncHandler(async (req, res) => {
+router.post("/shareholders", authenticate, requireActiveSubscription, requireProject, requireRoles("owner"), validateBody(shareholdersSetupSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   assertOwnerOnboarding(auth.roles);
   const body = req.body as z.infer<typeof shareholdersSetupSchema>;
@@ -969,7 +970,7 @@ router.post("/shareholders", authenticate, requireProject, requireRoles("owner")
   });
 }));
 
-router.post("/skip", authenticate, requireProject, requireRoles("owner"), validateBody(skipSchema), asyncHandler(async (req, res) => {
+router.post("/skip", authenticate, requireActiveSubscription, requireProject, requireRoles("owner"), validateBody(skipSchema), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   assertOwnerOnboarding(auth.roles);
 
@@ -1043,7 +1044,7 @@ router.post("/skip", authenticate, requireProject, requireRoles("owner"), valida
   });
 }));
 
-router.post("/complete", authenticate, requireProject, requireRoles("owner"), asyncHandler(async (req, res) => {
+router.post("/complete", authenticate, requireActiveSubscription, requireProject, requireRoles("owner"), asyncHandler(async (req, res) => {
   const auth = requireProjectContext(req);
   assertOwnerOnboarding(auth.roles);
 
