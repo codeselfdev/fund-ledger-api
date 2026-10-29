@@ -46,6 +46,41 @@ BEGIN
   RAISE NOTICE 'linked % duplicate-mobile groups', n;
 END $$;
 
+-- Resolve duplicate emails across separate accounts. A shared email does not prove a shared
+-- person (families/offices share inboxes), so accounts that have their own mobile stay separate
+-- and just lose the duplicate email (they keep logging in by mobile). Accounts whose ONLY login
+-- is that email are linked to the primary account, since that email is already their sole login.
+DO $$
+DECLARE g record; root text; acc text; n int := 0;
+BEGIN
+  FOR g IN
+    SELECT lower(btrim(email)) AS em,
+           array_agg(id ORDER BY (password_hash IS NOT NULL) DESC, last_login_at DESC NULLS LAST, created_at, id) AS ids
+    FROM users WHERE identity_root_id IS NULL AND NULLIF(lower(btrim(email)),'') IS NOT NULL
+    GROUP BY 1 HAVING count(*) > 1
+  LOOP
+    root := g.ids[1];
+    -- email-only duplicates: link to root (one at a time) unless that would put two
+    -- accounts of the same identity in one tenant
+    FOREACH acc IN ARRAY g.ids[2:] LOOP
+      CONTINUE WHEN (SELECT normalize_login_mobile(mobile) FROM users WHERE id = acc) IS NOT NULL;
+      CONTINUE WHEN EXISTS (SELECT 1 FROM users a JOIN users b ON a.tenant_id = b.tenant_id
+                            WHERE COALESCE(a.identity_root_id,a.id) = root AND COALESCE(b.identity_root_id,b.id) = acc);
+      UPDATE users SET identity_root_id = root WHERE identity_root_id = acc;
+      UPDATE users SET identity_root_id = root WHERE id = acc;
+    END LOOP;
+    UPDATE app_guide_requests a SET identity_user_id = root FROM users c
+      WHERE c.id = a.identity_user_id AND c.identity_root_id = root;
+    UPDATE users c SET password_hash = NULL FROM users r
+      WHERE c.identity_root_id = root AND r.id = root AND c.password_hash IS DISTINCT FROM r.password_hash;
+    -- duplicates that have their own mobile: keep them separate, drop the shared email
+    UPDATE users SET email = NULL
+      WHERE id = ANY(g.ids[2:]) AND identity_root_id IS NULL AND normalize_login_mobile(mobile) IS NOT NULL;
+    n := n + 1;
+  END LOOP;
+  RAISE NOTICE 'resolved % duplicate-email groups', n;
+END $$;
+
 -- Only authenticated explicit identity links are eligible for consolidation.
 DO $$
 DECLARE bad text;
