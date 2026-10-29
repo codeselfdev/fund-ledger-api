@@ -9,6 +9,11 @@ CREATE FUNCTION normalize_login_mobile(value text) RETURNS text LANGUAGE sql IMM
     WHEN btrim(value) LIKE '00%' THEN '+'||substr(regexp_replace(value,'[^0-9]','','g'),3)
     ELSE '+'||regexp_replace(value,'[^0-9]','','g') END
 $$;
+-- A normalized mobile only counts as a login if it is a real E.164 number; junk values
+-- ("N/A", "123", "+") must not be treated as logins or used to link accounts together.
+CREATE FUNCTION valid_login_mobile(value text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE WHEN normalize_login_mobile(value) ~ '^\+[1-9][0-9]{6,14}$' THEN normalize_login_mobile(value) END
+$$;
 
 -- Quota triggers are replaced below; drop them first so the cleanup can't trip them.
 DROP TRIGGER users_quota_lock ON users;
@@ -23,8 +28,8 @@ DO $$
 DECLARE g record; root text; n int := 0;
 BEGIN
   FOR g IN
-    SELECT normalize_login_mobile(mobile) AS mob, array_agg(id ORDER BY (password_hash IS NOT NULL) DESC, last_login_at DESC NULLS LAST, created_at, id) AS ids
-    FROM users WHERE identity_root_id IS NULL AND normalize_login_mobile(mobile) IS NOT NULL
+    SELECT valid_login_mobile(mobile) AS mob, array_agg(id ORDER BY (password_hash IS NOT NULL) DESC, last_login_at DESC NULLS LAST, created_at, id) AS ids
+    FROM users WHERE identity_root_id IS NULL AND valid_login_mobile(mobile) IS NOT NULL
     GROUP BY 1 HAVING count(*) > 1
   LOOP
     -- skip if the merged identity would have two accounts in one tenant
@@ -63,7 +68,7 @@ BEGIN
     -- email-only duplicates: link to root (one at a time) unless that would put two
     -- accounts of the same identity in one tenant
     FOREACH acc IN ARRAY g.ids[2:] LOOP
-      CONTINUE WHEN (SELECT normalize_login_mobile(mobile) FROM users WHERE id = acc) IS NOT NULL;
+      CONTINUE WHEN (SELECT valid_login_mobile(mobile) FROM users WHERE id = acc) IS NOT NULL;
       CONTINUE WHEN EXISTS (SELECT 1 FROM users a JOIN users b ON a.tenant_id = b.tenant_id
                             WHERE COALESCE(a.identity_root_id,a.id) = root AND COALESCE(b.identity_root_id,b.id) = acc);
       UPDATE users SET identity_root_id = root WHERE identity_root_id = acc;
@@ -75,11 +80,17 @@ BEGIN
       WHERE c.identity_root_id = root AND r.id = root AND c.password_hash IS DISTINCT FROM r.password_hash;
     -- duplicates that have their own mobile: keep them separate, drop the shared email
     UPDATE users SET email = NULL
-      WHERE id = ANY(g.ids[2:]) AND identity_root_id IS NULL AND normalize_login_mobile(mobile) IS NOT NULL;
+      WHERE id = ANY(g.ids[2:]) AND identity_root_id IS NULL AND valid_login_mobile(mobile) IS NOT NULL;
     n := n + 1;
   END LOOP;
   RAISE NOTICE 'resolved % duplicate-email groups', n;
 END $$;
+
+-- Accounts left with no usable login (no email, no valid mobile) are kept with all their data;
+-- they get a reserved, undeliverable placeholder email (RFC 2606 ".invalid") so the new users
+-- table's contact constraint holds. An admin can set a real email/mobile for them later.
+UPDATE users SET email = 'no-login+' || lower(id) || '@fundledger.invalid'
+WHERE identity_root_id IS NULL AND valid_login_mobile(mobile) IS NULL AND NULLIF(btrim(email),'') IS NULL;
 
 -- Only authenticated explicit identity links are eligible for consolidation.
 DO $$
@@ -97,7 +108,7 @@ BEGIN
   END IF;
   SELECT string_agg(g, '; ') INTO bad FROM (SELECT 'child '||c.id||' root '||r.id AS g FROM users c JOIN users r ON r.id=c.identity_root_id WHERE
       (NULLIF(lower(btrim(c.email)),'') IS NOT NULL AND NULLIF(lower(btrim(c.email)),'') IS DISTINCT FROM NULLIF(lower(btrim(r.email)),'')) OR
-      (normalize_login_mobile(c.mobile) IS NOT NULL AND normalize_login_mobile(c.mobile) IS DISTINCT FROM normalize_login_mobile(r.mobile)) OR
+      (valid_login_mobile(c.mobile) IS NOT NULL AND valid_login_mobile(c.mobile) IS DISTINCT FROM valid_login_mobile(r.mobile)) OR
       (c.password_hash IS NOT NULL AND c.password_hash IS DISTINCT FROM r.password_hash) ORDER BY 1 LIMIT 50) x;
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION 'IDENTITY_MIGRATION_BLOCKED: linked accounts have conflicting login contacts or credentials (%)', bad;
@@ -105,14 +116,14 @@ BEGIN
   SELECT string_agg(g, '; ') INTO bad FROM (
     SELECT 'email '||lower(btrim(email))||': '||string_agg(id, ',') AS g FROM users WHERE identity_root_id IS NULL AND NULLIF(lower(btrim(email)),'') IS NOT NULL GROUP BY lower(btrim(email)) HAVING count(*)>1
     UNION ALL
-    SELECT 'mobile '||normalize_login_mobile(mobile)||': '||string_agg(id, ',') FROM users WHERE identity_root_id IS NULL AND normalize_login_mobile(mobile) IS NOT NULL GROUP BY normalize_login_mobile(mobile) HAVING count(*)>1
+    SELECT 'mobile '||valid_login_mobile(mobile)||': '||string_agg(id, ',') FROM users WHERE identity_root_id IS NULL AND valid_login_mobile(mobile) IS NOT NULL GROUP BY valid_login_mobile(mobile) HAVING count(*)>1
     ORDER BY 1 LIMIT 50) x;
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION 'IDENTITY_MIGRATION_BLOCKED: duplicate contacts across unlinked identities (%); run scripts/audit-user-identities.mjs', bad;
   END IF;
   SELECT string_agg(id, ', ') INTO bad FROM (SELECT id FROM users WHERE identity_root_id IS NULL AND
-      ((normalize_login_mobile(mobile) IS NULL AND NULLIF(btrim(email),'') IS NULL) OR
-       (normalize_login_mobile(mobile) IS NOT NULL AND normalize_login_mobile(mobile) !~ '^\+[1-9][0-9]{6,14}$')) ORDER BY id LIMIT 50) x;
+      ((valid_login_mobile(mobile) IS NULL AND NULLIF(btrim(email),'') IS NULL) OR
+       (valid_login_mobile(mobile) IS NOT NULL AND valid_login_mobile(mobile) !~ '^\+[1-9][0-9]{6,14}$')) ORDER BY id LIMIT 50) x;
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION 'IDENTITY_MIGRATION_BLOCKED: invalid or missing login contact (account ids: %)', bad;
   END IF;
@@ -135,7 +146,7 @@ CREATE TABLE users (
  CONSTRAINT users_login_contact_required CHECK (email IS NOT NULL OR mobile IS NOT NULL)
 );
 INSERT INTO users(id,name,email,mobile,password_hash,is_active,created_at,updated_at)
-SELECT id,name,NULLIF(lower(btrim(email)),''),normalize_login_mobile(mobile),password_hash,is_active,created_at,updated_at
+SELECT id,name,NULLIF(lower(btrim(email)),''),valid_login_mobile(mobile),password_hash,is_active,created_at,updated_at
 FROM tenant_users WHERE identity_root_id IS NULL;
 CREATE UNIQUE INDEX users_email_key ON users(email);
 CREATE UNIQUE INDEX users_mobile_key ON users(mobile);
@@ -178,3 +189,4 @@ END $$;
 CREATE TRIGGER sessions_account_tenant BEFORE INSERT OR UPDATE OF tenant_id,user_id ON sessions FOR EACH ROW EXECUTE FUNCTION check_account_tenant();
 CREATE TRIGGER memberships_account_tenant BEFORE INSERT OR UPDATE OF tenant_id,user_id ON project_memberships FOR EACH ROW EXECUTE FUNCTION check_account_tenant();
 CREATE TRIGGER members_account_tenant BEFORE INSERT OR UPDATE OF tenant_id,user_id ON members FOR EACH ROW EXECUTE FUNCTION check_account_tenant();
+DROP FUNCTION valid_login_mobile(text);
