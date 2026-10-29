@@ -103,3 +103,31 @@ test('a saved member with a national phone retains its member and user identitie
  const input=body();input.rows=[{...row('OWNER'),member_id:'owner-member'}];const preview=await previewFundImport(context,input);await commitFundImport(context,input,preview.review_token);
  assert.equal(db.members.length,1);assert.equal(db.members[0].userId,'owner-user');assert.equal(db.members[0].mobile,'01711000001');assert.equal(db.users.length,0);
 });
+
+
+test('current installment dates are validated independently and legacy imports retain their original due date',async()=>{
+ for(const [start,due] of [['2026-02-30','2026-03-01'],['2026-07-01','2026-02-30'],['2026-07-01','2026-06-30']]){
+  assert.equal(fundImportSchema.safeParse({...body(),as_of_date:start,current_installment_due_date:due}).success,false);
+ }
+ const input=body(),preview=await previewFundImport(context,input);
+ assert.equal(preview.current_installment_start_date,input.as_of_date);assert.equal(preview.current_installment_due_date,input.as_of_date);
+ await commitFundImport(context,input,preview.review_token);
+ assert.equal(db.schedules[1].dueDate.toISOString().slice(0,10),input.as_of_date);
+});
+test('separate start and due dates preserve the history boundary and set actual schedule and member due dates',async()=>{
+ const input=fundImportSchema.parse({...body(),as_of_date:'2026-07-01',current_installment_due_date:'2026-09-10'});
+ const preview=await previewFundImport(context,input);
+ assert.equal(preview.current_installment_start_date,'2026-07-01');assert.equal(preview.current_installment_due_date,'2026-09-10');
+ await commitFundImport(context,input,preview.review_token);
+ assert.equal(db.schedules[0].dueDate.toISOString().slice(0,10),'2026-06-30');
+ assert.equal(db.schedules[1].dueDate.toISOString().slice(0,10),'2026-09-10');
+ assert.ok(db.dues.filter(row=>row.scheduleId===db.schedules[1].id).every(row=>row.dueDate.toISOString().slice(0,10)==='2026-09-10'));
+ assert.equal(db.members[0].profile.opening_import.current_installment_start_date,'2026-07-01');
+ assert.equal(db.members[0].profile.opening_import.current_installment_due_date,'2026-09-10');
+});
+test('changing a current due date invalidates the reviewed payload before any writes',async()=>{
+ const input=fundImportSchema.parse({...body(),as_of_date:'2026-07-01',current_installment_due_date:'2026-09-10'});
+ const preview=await previewFundImport(context,input);input.current_installment_due_date='2026-10-10';
+ await assert.rejects(commitFundImport(context,input,preview.review_token),/changed after review/);
+ assert.equal(db.schedules.length+db.members.length+db.activities.length,0);
+});

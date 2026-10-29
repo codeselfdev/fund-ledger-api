@@ -12,7 +12,7 @@ router.use(requireProject, requireRoles("owner", "admin", "accountant"));
 router.post("/preview", validateBody(fundImportSchema), asyncHandler(async (req, res) => {
   return ok(res, await previewFundImport(requireProjectContext(req), fundImportSchema.parse(req.body)));
 }));
-const commitSchema = fundImportSchema.extend({ review_token: z.string().length(64), confirm: z.literal(true) });
+const commitSchema = fundImportSchema.and(z.object({ review_token: z.string().length(64), confirm: z.literal(true) }));
 router.post("/", validateBody(commitSchema), asyncHandler(async (req, res) => {
   const context = requireProjectContext(req), body = commitSchema.parse(req.body);
   const saved = await commitFundImport(context, fundImportSchema.parse(body), body.review_token);

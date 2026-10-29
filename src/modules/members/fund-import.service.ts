@@ -5,12 +5,14 @@ import { prisma } from "../../core/prisma/client.js";
 import { badRequest, conflict } from "../../core/http/api-error.js";
 
 const money = z.number().int().min(0).max(2147483647);
+const calendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
+  const date = new Date(`${value}T00:00:00Z`); return !isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}, "Choose a valid installment date");
 export const fundImportSchema = z.object({
   request_id: z.string().uuid(),
   installment_name: z.string().trim().min(2).max(120),
-  as_of_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
-    const date = new Date(`${value}T00:00:00Z`); return !isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
-  }, "Choose a valid opening date"),
+  as_of_date: calendarDate,
+  current_installment_due_date: calendarDate.optional(),
   rows: z.array(z.object({
     member_id: z.string().trim().min(1).max(100).optional(), advance_amount: money.optional(),
     serial: z.string().trim().max(100), mid: z.string().trim().min(1).max(100),
@@ -19,6 +21,8 @@ export const fundImportSchema = z.object({
     previous_due_amount: money, current_installment_amount: money, total_due_amount: money,
     previous_paid_amount: money, total_paid_amount: money, comment: z.string().max(2000),
   })).min(1).max(10000),
+}).refine(input => !input.current_installment_due_date || input.current_installment_due_date >= input.as_of_date, {
+  message: "Current installment due date must be on or after the start date", path: ["current_installment_due_date"],
 });
 export type FundImportInput = z.infer<typeof fundImportSchema>;
 export interface FundImportContext { tenantId: string; projectId: string; userId: string }
@@ -88,7 +92,7 @@ async function plan(db: Db, context: FundImportContext, input: FundImportInput) 
 }
 export async function previewFundImport(context: FundImportContext, input: FundImportInput) {
   const result = await plan(prisma, context, input);
-  return { review_token: result.review_token, summary: result.summary, existing_members: result.existing_members, matched_member_ids: result.matched_member_ids };
+  return { current_installment_start_date: input.as_of_date, current_installment_due_date: input.current_installment_due_date ?? input.as_of_date, review_token: result.review_token, summary: result.summary, existing_members: result.existing_members, matched_member_ids: result.matched_member_ids };
 }
 export async function commitFundImport(context: FundImportContext, input: FundImportInput, reviewToken: string) {
   const id = `fund-import:${hash([context.tenantId, context.projectId, input.request_id])}`;
@@ -106,7 +110,8 @@ export async function commitFundImport(context: FundImportContext, input: FundIm
       const prepared = await plan(tx, context, input);
       if (prepared.review_token !== reviewToken) throw conflict("The file or project changed after review. Review the import again.");
       await tx.activity.create({ data: { id, tenantId: context.tenantId, projectId: context.projectId, actorUserId: context.userId, action: "fund.opening_imported", entityType: "fund_import", entityId: input.request_id, after: { digest } } });
-      const dueDate = new Date(`${input.as_of_date}T00:00:00Z`), previousDate = new Date(dueDate.getTime() - 86400000);
+      const startDate = new Date(`${input.as_of_date}T00:00:00Z`);
+      const dueDate = new Date(`${input.current_installment_due_date ?? input.as_of_date}T00:00:00Z`), previousDate = new Date(startDate.getTime() - 86400000);
       const previousTotal = prepared.summary.previous_paid + prepared.summary.previous_due;
       const previousSchedule = previousTotal ? await tx.schedule.create({ data: {
         tenantId: context.tenantId, projectId: context.projectId, name: "Opening history before current installment", totalAmount: previousTotal,
@@ -131,7 +136,7 @@ export async function commitFundImport(context: FundImportContext, input: FundIm
         users.set(row.mobile, userId);
         const oldProfile = existing?.profile && typeof existing.profile === "object" && !Array.isArray(existing.profile) ? existing.profile : {};
         const data = { userId, mid: row.mid, name: row.name, mobile: existing?.mobile ?? row.mobile, email: row.email || null, shares: row.shares, status: "active" as const,
-          profile: { ...oldProfile, opening_import: { request_id: input.request_id, as_of_date: input.as_of_date, serial: row.serial, comment: row.comment, previous_paid: row.previous_paid_amount, current_paid: row.total_paid_amount - row.previous_paid_amount, total_paid: row.total_paid_amount, advance_amount: row.advance_amount ?? 0 } } };
+          profile: { ...oldProfile, opening_import: { request_id: input.request_id, as_of_date: input.as_of_date, current_installment_start_date: input.as_of_date, current_installment_due_date: input.current_installment_due_date ?? input.as_of_date, serial: row.serial, comment: row.comment, previous_paid: row.previous_paid_amount, current_paid: row.total_paid_amount - row.previous_paid_amount, total_paid: row.total_paid_amount, advance_amount: row.advance_amount ?? 0 } } };
         const member = existing ? await tx.member.update({ where: { id: existing.id }, data }) : await tx.member.create({ data: { ...data, tenantId: context.tenantId, projectId: context.projectId } });
         ids.push(member.id);
         // One login can own several distinct share/member records. Keep its first
