@@ -1,4 +1,5 @@
-BEGIN;
+-- No explicit BEGIN/COMMIT: Prisma runs this file as one implicit transaction, so it stays
+-- atomic AND the real error is reported (an explicit BEGIN masked it as "transaction is aborted").
 SET LOCAL TIME ZONE 'UTC';
 LOCK TABLE users IN ACCESS EXCLUSIVE MODE;
 CREATE FUNCTION normalize_login_mobile(value text) RETURNS text LANGUAGE sql IMMUTABLE AS $$
@@ -9,34 +10,79 @@ CREATE FUNCTION normalize_login_mobile(value text) RETURNS text LANGUAGE sql IMM
     ELSE '+'||regexp_replace(value,'[^0-9]','','g') END
 $$;
 
+-- Quota triggers are replaced below; drop them first so the cleanup can't trip them.
+DROP TRIGGER users_quota_lock ON users;
+DROP TRIGGER users_quota_guard ON users;
+
+-- Resolve duplicate mobiles across separate (unlinked) accounts by LINKING them, not deleting:
+-- one account per number becomes the identity root, the others become its tenant accounts.
+-- Their tenant memberships, sessions and history are kept; login uses the root's credentials.
+-- Groups that would put two accounts of one identity in the same tenant are left alone and
+-- reported by the guard below.
+DO $$
+DECLARE g record; root text; n int := 0;
+BEGIN
+  FOR g IN
+    SELECT normalize_login_mobile(mobile) AS mob, array_agg(id ORDER BY (password_hash IS NOT NULL) DESC, last_login_at DESC NULLS LAST, created_at, id) AS ids
+    FROM users WHERE identity_root_id IS NULL AND normalize_login_mobile(mobile) IS NOT NULL
+    GROUP BY 1 HAVING count(*) > 1
+  LOOP
+    -- skip if the merged identity would have two accounts in one tenant
+    CONTINUE WHEN EXISTS (SELECT 1 FROM users WHERE COALESCE(identity_root_id,id) = ANY(g.ids)
+                          GROUP BY tenant_id HAVING count(*) > 1);
+    root := g.ids[1];
+    -- re-point existing children of the losing roots, then link the losing roots themselves
+    UPDATE users SET identity_root_id = root WHERE identity_root_id = ANY(g.ids[2:]);
+    UPDATE users SET identity_root_id = root WHERE id = ANY(g.ids[2:]);
+    -- linked accounts must not carry their own conflicting credentials/contacts
+    UPDATE users c SET password_hash = NULL FROM users r
+      WHERE c.identity_root_id = root AND r.id = root AND c.password_hash IS DISTINCT FROM r.password_hash;
+    UPDATE users c SET email = NULL FROM users r
+      WHERE c.identity_root_id = root AND r.id = root
+        AND NULLIF(lower(btrim(c.email)),'') IS DISTINCT FROM NULLIF(lower(btrim(r.email)),'');
+    UPDATE app_guide_requests SET identity_user_id = root WHERE identity_user_id = ANY(g.ids[2:]);
+    n := n + 1;
+  END LOOP;
+  RAISE NOTICE 'linked % duplicate-mobile groups', n;
+END $$;
+
 -- Only authenticated explicit identity links are eligible for consolidation.
 DO $$
+DECLARE bad text;
 BEGIN
-  IF EXISTS (SELECT 1 FROM users c LEFT JOIN users r ON r.id=c.identity_root_id WHERE c.identity_root_id IS NOT NULL AND (r.id IS NULL OR r.identity_root_id IS NOT NULL)) THEN
-    RAISE EXCEPTION 'IDENTITY_MIGRATION_BLOCKED: invalid/nested identity links; run scripts/audit-user-identities.mjs';
+  SELECT string_agg(c.id, ', ') INTO bad FROM (SELECT c.id FROM users c LEFT JOIN users r ON r.id=c.identity_root_id
+    WHERE c.identity_root_id IS NOT NULL AND (r.id IS NULL OR r.identity_root_id IS NOT NULL) ORDER BY c.id LIMIT 50) c;
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'IDENTITY_MIGRATION_BLOCKED: invalid/nested identity links (account ids: %)', bad;
   END IF;
-  IF EXISTS (SELECT 1 FROM users GROUP BY COALESCE(identity_root_id,id),tenant_id HAVING count(*)>1) THEN
-    RAISE EXCEPTION 'IDENTITY_MIGRATION_BLOCKED: multiple accounts for an identity within a tenant';
+  SELECT string_agg(g, '; ') INTO bad FROM (SELECT tenant_id||': '||string_agg(id, ',') AS g FROM users
+    GROUP BY COALESCE(identity_root_id,id),tenant_id HAVING count(*)>1 ORDER BY 1 LIMIT 50) x;
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'IDENTITY_MIGRATION_BLOCKED: multiple accounts for an identity within a tenant (%)', bad;
   END IF;
-  IF EXISTS (SELECT 1 FROM users c JOIN users r ON r.id=c.identity_root_id WHERE
+  SELECT string_agg(g, '; ') INTO bad FROM (SELECT 'child '||c.id||' root '||r.id AS g FROM users c JOIN users r ON r.id=c.identity_root_id WHERE
       (NULLIF(lower(btrim(c.email)),'') IS NOT NULL AND NULLIF(lower(btrim(c.email)),'') IS DISTINCT FROM NULLIF(lower(btrim(r.email)),'')) OR
       (normalize_login_mobile(c.mobile) IS NOT NULL AND normalize_login_mobile(c.mobile) IS DISTINCT FROM normalize_login_mobile(r.mobile)) OR
-      (c.password_hash IS NOT NULL AND c.password_hash IS DISTINCT FROM r.password_hash)) THEN
-    RAISE EXCEPTION 'IDENTITY_MIGRATION_BLOCKED: linked accounts have conflicting login contacts or credentials';
+      (c.password_hash IS NOT NULL AND c.password_hash IS DISTINCT FROM r.password_hash) ORDER BY 1 LIMIT 50) x;
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'IDENTITY_MIGRATION_BLOCKED: linked accounts have conflicting login contacts or credentials (%)', bad;
   END IF;
-  IF EXISTS (SELECT 1 FROM users WHERE identity_root_id IS NULL AND NULLIF(lower(btrim(email)),'') IS NOT NULL GROUP BY lower(btrim(email)) HAVING count(*)>1) OR
-     EXISTS (SELECT 1 FROM users WHERE identity_root_id IS NULL AND normalize_login_mobile(mobile) IS NOT NULL GROUP BY normalize_login_mobile(mobile) HAVING count(*)>1) THEN
-    RAISE EXCEPTION 'IDENTITY_MIGRATION_BLOCKED: duplicate contacts across unlinked identities; run scripts/audit-user-identities.mjs';
+  SELECT string_agg(g, '; ') INTO bad FROM (
+    SELECT 'email '||lower(btrim(email))||': '||string_agg(id, ',') AS g FROM users WHERE identity_root_id IS NULL AND NULLIF(lower(btrim(email)),'') IS NOT NULL GROUP BY lower(btrim(email)) HAVING count(*)>1
+    UNION ALL
+    SELECT 'mobile '||normalize_login_mobile(mobile)||': '||string_agg(id, ',') FROM users WHERE identity_root_id IS NULL AND normalize_login_mobile(mobile) IS NOT NULL GROUP BY normalize_login_mobile(mobile) HAVING count(*)>1
+    ORDER BY 1 LIMIT 50) x;
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'IDENTITY_MIGRATION_BLOCKED: duplicate contacts across unlinked identities (%); run scripts/audit-user-identities.mjs', bad;
   END IF;
-  IF EXISTS (SELECT 1 FROM users WHERE identity_root_id IS NULL AND
+  SELECT string_agg(id, ', ') INTO bad FROM (SELECT id FROM users WHERE identity_root_id IS NULL AND
       ((normalize_login_mobile(mobile) IS NULL AND NULLIF(btrim(email),'') IS NULL) OR
-       (normalize_login_mobile(mobile) IS NOT NULL AND normalize_login_mobile(mobile) !~ '^\+[1-9][0-9]{6,14}$'))) THEN
-    RAISE EXCEPTION 'IDENTITY_MIGRATION_BLOCKED: invalid or missing login contact';
+       (normalize_login_mobile(mobile) IS NOT NULL AND normalize_login_mobile(mobile) !~ '^\+[1-9][0-9]{6,14}$')) ORDER BY id LIMIT 50) x;
+  IF bad IS NOT NULL THEN
+    RAISE EXCEPTION 'IDENTITY_MIGRATION_BLOCKED: invalid or missing login contact (account ids: %)', bad;
   END IF;
 END $$;
 
-DROP TRIGGER users_quota_lock ON users;
-DROP TRIGGER users_quota_guard ON users;
 ALTER TABLE users DROP CONSTRAINT users_identity_root_id_fkey;
 ALTER TABLE app_guide_requests DROP CONSTRAINT app_guide_requests_identity_user_id_fkey;
 ALTER TABLE users RENAME TO tenant_users;
@@ -97,4 +143,3 @@ END $$;
 CREATE TRIGGER sessions_account_tenant BEFORE INSERT OR UPDATE OF tenant_id,user_id ON sessions FOR EACH ROW EXECUTE FUNCTION check_account_tenant();
 CREATE TRIGGER memberships_account_tenant BEFORE INSERT OR UPDATE OF tenant_id,user_id ON project_memberships FOR EACH ROW EXECUTE FUNCTION check_account_tenant();
 CREATE TRIGGER members_account_tenant BEFORE INSERT OR UPDATE OF tenant_id,user_id ON members FOR EACH ROW EXECUTE FUNCTION check_account_tenant();
-COMMIT;
