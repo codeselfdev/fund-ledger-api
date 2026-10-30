@@ -19,7 +19,9 @@ export const requireActiveSubscription: RequestHandler = async (req, _res, next)
 
     const subscription = evaluateSubscription(subscriptionContext(tenant));
     if (!subscription.has_access) {
-      return next(new ApiError(402, "SUBSCRIPTION_EXPIRED", "Your organization’s subscription and 5-day grace period have ended. Ask the organization owner to upgrade or renew with Fund Nesta to restore access for everyone.", {
+      return next(new ApiError(402, "SUBSCRIPTION_EXPIRED", subscription.reason === "subscription_missing_access_term" || subscription.reason === "unmanaged_missing_subscription"
+        ? "Your organization has no valid subscription access term on record. Ask support to verify its subscription or complimentary demo access, or ask the organization owner to request a renewal."
+        : "Your organization’s subscription and 5-day grace period have ended. Ask the organization owner to upgrade or renew with Fund Nesta to restore access for everyone.", {
         subscription
       }));
     }

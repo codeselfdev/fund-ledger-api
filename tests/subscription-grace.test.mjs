@@ -52,3 +52,21 @@ test('reminders are due 7, 3 and 1 days before expiry, during grace, and when ac
  const renewed=renewTenantSubscription(trial,end,{package:'business',billing_cycle:'yearly'});
  assert.equal(subscriptionReminder(renewed.contact,'Example',end),null);
 });
+
+test('a package without dates needs configuration review and never gains demo access by name',()=>{
+ const missing=evaluateSubscription({name:'Fund Nesta Review Demo',subscription:{status:'active',package:'business',billing_cycle:'yearly'}},end);
+ assert.equal(missing.has_access,false);assert.equal(missing.reason,'subscription_missing_access_term');assert.equal(missing.billing_cycle,'yearly');assert.equal(missing.billing_period_end_at,null);
+ assert.equal(evaluateSubscription({subscription:{status:'expired',package:'business'}},end).reason,'subscription_explicitly_expired');
+ const complimentary=evaluateSubscription({subscription:{status:'trial',package:'business',trial_ends_at:'2027-03-01T00:00:00Z'}},end);
+ assert.equal(complimentary.has_access,true);assert.equal(complimentary.status,'trial');
+});
+
+test('the review demo active Business package retains its existing January trial term',()=>{
+ const demo={subscription:{status:'active',package:'business',billing_cycle:'yearly',trial_ends_at:'2027-01-17T09:54:55.079Z',current_period_end_at:null}};
+ const before=structuredClone(demo),now=new Date('2026-10-30T10:00:00Z');
+ const status=evaluateSubscription(demo,now);assert.equal(status.has_access,true);assert.equal(status.status,'trial');assert.equal(status.access_phase,'trial');assert.equal(status.reason,'trial_active');assert.equal(status.billing_period_end_at,'2027-01-17T09:54:55.079Z');assert.equal(status.days_left,79);assert.deepEqual(demo,before);
+ assert.equal(evaluateSubscription({subscription:{...demo.subscription,status:'expired'}},now).has_access,false);
+ assert.equal(evaluateSubscription({subscription:{...demo.subscription,current_period_end_at:'2026-10-01T00:00:00Z'}},now).has_access,false);
+ assert.equal(evaluateSubscription({subscription:{...demo.subscription,current_period_end_at:'invalid'}},now).has_access,false);
+ assert.equal(evaluateSubscription(demo,new Date('2027-01-22T09:54:55.079Z')).has_access,false);
+});

@@ -23,7 +23,9 @@ import { startPlatformAlerts, stopPlatformAlerts } from "./modules/internal/aler
 import { logWhatsAppConfiguration } from "./core/whatsapp/whatsapp.configuration.js";
 import { startPlatformBroadcasts, stopPlatformBroadcasts } from './modules/internal/platform-broadcasts.service.js';
 import { startAiCreditNotifications, stopAiCreditNotifications } from './modules/internal/ai-credit-notifications.service.js';
+import { startProjectDeletionWorker, stopProjectDeletionWorker } from './modules/projects/project-deletion.service.js';
 const app = createApp();
+startProjectDeletionWorker();
 logWhatsAppConfiguration();
 startInstituteWorker();
 startPlatformAlerts();
@@ -57,6 +59,7 @@ const server = app.listen(env.port, () => {
 const stopAssistantEvents = attachAssistantEvents(server);
 
 async function shutdown() {
+  stopProjectDeletionWorker();
   stopInstituteWorker();
   stopAssistantEvents();
   stopPlatformAlerts();

@@ -42,6 +42,7 @@ export async function createSessionToken(input: {
       activeProjectId: input.activeProjectId ?? null,
       verifiedEmail: input.verifiedEmail?.trim().toLowerCase() ?? null,
       tokenHash: "pending",
+      authenticatedAt: input.recordLogin ? new Date() : null,
       expiresAt: sessionExpiryDate()
     }
   });

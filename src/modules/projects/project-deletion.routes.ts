@@ -1,0 +1,22 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { authenticateAccount } from '../../core/security/auth.middleware.js';
+import { requireAuthContext } from '../../core/security/auth.context.js';
+import { asyncHandler } from '../../core/http/async-handler.js';
+import { ok } from '../../core/http/response.js';
+import { forbidden } from '../../core/http/api-error.js';
+import { prisma } from '../../core/prisma/client.js';
+import { publicJob,projectDeletionPreview,beginProjectDeletion,deletionJob,retryProjectDeletion } from './project-deletion.service.js';
+const router=Router();router.use(authenticateAccount);
+router.get('/',asyncHandler(async(req,res)=>{const a=requireAuthContext(req);const jobs=await prisma.projectDeletionJob.findMany({where:{tenantId:a.tenantId,userId:a.userId},orderBy:{createdAt:'desc'},take:20});return ok(res,jobs.map(publicJob));}));
+router.get('/jobs/:id',asyncHandler(async(req,res)=>ok(res,await deletionJob(requireAuthContext(req),req.params.id!))));
+router.post('/jobs/:id/retry',asyncHandler(async(req,res)=>ok(res,await retryProjectDeletion(requireAuthContext(req),req.params.id!))));
+router.get('/:id/preview',asyncHandler(async(req,res)=>ok(res,await projectDeletionPreview(requireAuthContext(req),req.params.id!))));
+const body=z.object({confirmation:z.string().max(250),preview_token:z.string().max(2000),reason:z.string().trim().min(10).max(1000)}).strict();
+router.post('/:id',asyncHandler(async(req,res)=>{
+ const a=requireAuthContext(req);
+ const session=await prisma.session.findFirst({where:{id:a.sessionId,userId:a.userId,revokedAt:null}});
+ if(!session||!session.authenticatedAt || Date.now()-session.authenticatedAt.getTime()>15*60000)throw forbidden('For permanent deletion, sign out and sign in again, then review the project within 15 minutes.');
+ return ok(res,await beginProjectDeletion(a,req.params.id!,body.parse(req.body)));
+}));
+export {router as projectDeletionRouter};

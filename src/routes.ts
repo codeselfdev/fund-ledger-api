@@ -64,7 +64,10 @@ import { followupsRouter } from "./modules/follow-ups/followups.routes.js";
 
 import { assistantRouter } from "./modules/assistant/assistant.routes.js";
 
+import { reversalsRouter } from './modules/reversals/reversals.routes.js';
+import { projectDeletionRouter } from './modules/projects/project-deletion.routes.js';
 export function registerRoutes(app: Express) {
+  app.use('/v1/project-deletions', projectDeletionRouter);
   app.use("/v1/ai-service", aiServiceRouter);
   app.use("/v1/internal", internalRouter);
   app.use("/v1/support/admin", masterAdminRouter);
@@ -85,6 +88,7 @@ export function registerRoutes(app: Express) {
   // Account notifications include private support replies, even after subscription expiry.
   app.use("/v1", accountNotificationsRouter);
   app.use("/v1/app-guide", appGuideRouter);
+  app.use('/v1/reversals', requireActiveSubscription, reversalsRouter);
   app.use(requireActiveSubscription);
   app.use("/v1/institute", instituteRouter);
   app.use("/v1/assistant", assistantRouter);

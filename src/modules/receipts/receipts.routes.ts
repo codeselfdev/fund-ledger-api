@@ -65,6 +65,8 @@ router.get("/receipts/:id/pdf", requireProject, requireRoles("any"), validatePar
   if (!receipt) throw notFound("Receipt not found");
   if (!isSelfOrRole(auth, receipt.memberId, [...STAFF_ROLES, "owner"])) throw forbidden();
 
+  if (receipt.voidedAt) throw forbidden("This receipt was voided by a transaction reversal. View its history instead.");
+
   const ownerMembership = await prisma.projectMembership.findFirst({
     where: { tenantId: auth.tenantId, projectId: receipt.projectId, role: "owner" },
     include: { user: { include: { identity: { select: { name: true, email: true, mobile: true, isActive: true } } } } }

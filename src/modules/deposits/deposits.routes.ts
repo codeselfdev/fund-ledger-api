@@ -277,7 +277,7 @@ async function finalizeDepositConfirmation(input: {
 
       await tx.depositAllocation.updateMany({
         where: { depositId: input.depositId, dueId: due.id },
-        data: { amount: appliedToThisDue }
+        data: { amount: appliedToThisDue, principalAmount: allocation.paidAmount - due.paidAmount, penaltyAmount: allocation.penaltyPaid - due.penaltyPaid }
       });
     }
 

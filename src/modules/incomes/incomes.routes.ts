@@ -26,7 +26,7 @@ type IncomeRow = Prisma.AccountTransactionGetPayload<{
 }>;
 const mapIncome = (t: IncomeRow) => ({ id: t.id, account_id: t.accountId, account_name: t.account.name, amount: t.amount, source: t.incomeSource ?? t.description ?? 'Income', description: t.description, income_date: (t.occurredOn ?? t.createdAt).toISOString().slice(0, 10), created_at: t.createdAt, balance_after: t.balanceAfter, category_id: t.incomeCategoryId, category_name: t.incomeCategory?.name ?? null, customer_id: t.incomeCustomerId, customer_name: t.incomeCustomer?.name ?? null });
 function filterWhere(auth: ReturnType<typeof requireProjectContext>, q: z.infer<typeof filters>): Prisma.AccountTransactionWhereInput {
-    const where: Prisma.AccountTransactionWhereInput = { tenantId: auth.tenantId, projectId: auth.projectId, referenceType: 'income', direction: 'money_in', incomeCategoryId: q.category_id === 'none' ? null : q.category_id, incomeCustomerId: q.customer_id === 'none' ? null : q.customer_id };
+    const where: Prisma.AccountTransactionWhereInput = { tenantId: auth.tenantId, projectId: auth.projectId, referenceType: 'income', direction: 'money_in', reversedAt: null, incomeCategoryId: q.category_id === 'none' ? null : q.category_id, incomeCustomerId: q.customer_id === 'none' ? null : q.customer_id };
     if (q.from || q.to) {
         const nextDay = (v: string) => new Date(new Date(`${v}T00:00:00Z`).getTime() + 86400000);
         where.OR = [{ occurredOn: { gte: q.from ? new Date(`${q.from}T00:00:00Z`) : undefined, lt: q.to ? nextDay(q.to) : undefined } }, { occurredOn: null, createdAt: { gte: q.from ? new Date(`${q.from}T00:00:00Z`) : undefined, lt: q.to ? nextDay(q.to) : undefined } }];
@@ -102,7 +102,7 @@ router.patch('/:id/tags', requireRoles('accountant', 'approver', 'admin'), valid
     if (!await canRecord(auth.tenantId, auth.roles))
         throw forbidden('Your project income approval flow does not allow this role to tag income');
     const result = await financialTransaction(async (tx) => {
-        const where = { id: req.params.id, tenantId: auth.tenantId, projectId: auth.projectId, referenceType: 'income', direction: 'money_in' } satisfies Prisma.AccountTransactionWhereUniqueInput;
+        const where = { id: req.params.id, tenantId: auth.tenantId, projectId: auth.projectId, referenceType: 'income', direction: 'money_in', reversedAt: null } satisfies Prisma.AccountTransactionWhereUniqueInput;
         const old = await tx.accountTransaction.findFirst({ where, include });
         if (!old)
             throw notFound('Income entry not found');

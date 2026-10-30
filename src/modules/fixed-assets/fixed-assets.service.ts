@@ -21,7 +21,7 @@ export async function asset(tx: Tx, a: Scope, id: string, active = false) {
     if (!row)
         throw notFound('Asset not found');
     if (active && row.status !== 'active')
-        throw conflict('This asset has been disposed of');
+        throw conflict('This asset is disposed or its purchase was reversed');
     return row;
 }
 async function audit(tx: Tx, a: Scope, kind: string, id: string, detail: unknown) {
@@ -96,7 +96,7 @@ export async function purchase(a: Scope, b: z.infer<typeof purchaseSchema>) {
         const rows: FixedAsset[] = [];
         for (let i = 0; i < b.quantity; i++) {
             const unit = b.units[i];
-            if (unit.serial && await tx.fixedAsset.findFirst({ where: { tenantId: a.tenantId, serial: unit.serial } }))
+            if (unit.serial && await tx.fixedAsset.findFirst({ where: { tenantId: a.tenantId, serial: unit.serial, status: { not: 'reversed' } } }))
                 throw conflict(`Serial ${unit.serial} already exists`);
             const id = randomUUID();
             const row = await tx.fixedAsset.create({ data: { id, ...scope(a), code: `FA-${CATEGORIES[b.category].code}-${id.slice(0, 8).toUpperCase()}`, name: b.name, category: b.category, cost: b.cost, residual: b.residual, lifeMonths: b.life_months, purchaseDate: atDate(b.purchase_date), inUseDate: atDate(b.in_use_date), supplier: b.supplier, invoice: b.invoice, invoiceUploadId: b.invoice_upload_id, accountId: b.account_id, ...{ location: unit.location, assignedTo: unit.assigned_to, serial: unit.serial }, warrantyUntil: b.warranty_until ? atDate(b.warranty_until) : null, createdById: a.userId } });
@@ -178,7 +178,7 @@ export async function overview(a: Scope) {
     const through = completedMonth(today()), rows = await prisma.fixedAsset.findMany({ where: scope(a), orderBy: { createdAt: 'desc' } });
     const assets = rows.map(r => ({ ...r, ...valuation(r, through) })), active = assets.filter(r => r.status === 'active');
     const months = Array.from({ length: 12 }, (_, i) => monthLabel(monthIndex(through) - 10 + i));
-    const journals = await prisma.fixedAssetJournal.findMany({ where: { ...scope(a), kind: 'depreciation', period: { gte: months[0], lte: through } } });
+    const journals = await prisma.fixedAssetJournal.findMany({ where: { ...scope(a), kind: { in: ['depreciation', 'depreciation_reversal'] }, period: { gte: months[0], lte: through } } });
     const outgoing = await prisma.fixedAsset.findMany({ where: { tenantId: a.tenantId, depreciationSourceId: a.projectId, status: 'active', depreciationSourceThrough: { gt: through } } });
     const forecast = (month: string, category?: string) => active.filter(r => !category || r.category === category).reduce((n, r) => n + (r.depreciationSourceId && r.depreciationSourceId !== a.projectId && r.depreciationSourceThrough && month <= r.depreciationSourceThrough ? 0 : monthlyCharge(r, month)), 0) + outgoing.filter(r => r.projectId !== a.projectId && r.depreciationSourceThrough && month <= r.depreciationSourceThrough && (!category || r.category === category)).reduce((n, r) => n + monthlyCharge(r, month), 0);
     const monthly = months.map(month => ({ month, amount: month > through ? forecast(month) : journals.filter(j => j.period === month).reduce((n, j) => n + j.amount, 0), forecast: month > through }));

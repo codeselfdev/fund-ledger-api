@@ -70,6 +70,8 @@ function mock(table) {
   };
 }
 before(async () => {
+  // Member authorization resolves owned share records even when this asset fixture has none.
+  prisma.member.findMany = async () => [];
   for (const [model, table] of Object.entries(models)) Object.assign(prisma[model], mock(table));
   prisma.$transaction = async fn => {
     const previous = queue; let release; queue = new Promise(r => release = r); await previous;

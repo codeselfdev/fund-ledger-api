@@ -52,9 +52,11 @@ export interface Depreciable {
     lifeMonths: number;
     inUseDate: Date | string;
     disposedAt?: Date | string | null;
+    status?: string;
 }
 /** Whole currency units match the cash ledger; cumulative rounding preserves the exact depreciable total. */
 export function valuation(a: Depreciable, through: string) {
+    if (a.status === 'reversed') return { monthly: 0, accumulated: 0, book_value: 0, elapsed: 0, remaining: 0 };
     const stop = a.disposedAt ? Math.min(monthIndex(through), monthIndex(a.disposedAt) - 1) : monthIndex(through);
     const elapsed = Math.max(0, Math.min(a.lifeMonths, stop - monthIndex(a.inUseDate) + 1));
     const accumulated = Math.round((a.cost - a.residual) * elapsed / a.lifeMonths);

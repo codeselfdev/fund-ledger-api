@@ -24,7 +24,7 @@ async function eligibilityFor(db: CleanupDb, tenant: { id: string; contact: unkn
 const tokenData = (tenant: {id:string;updatedAt:Date}, eligibility: unknown) => createHash("sha256").update(JSON.stringify([tenant.id,tenant.updatedAt,eligibility])).digest("hex");
 function sign(value: string) { return createHmac("sha256",env.internalApiKey!).update(value).digest("hex"); }
 function deletionModels() {
-  const models = Prisma.dmmf.datamodel.models.filter(m=>m.name!=="InternalAudit"&&m.name!=="TenantDeletionJob"&&m.name!=="SubscriptionHistory"&&m.fields.some(f=>f.name==="tenantId"));
+  const models = Prisma.dmmf.datamodel.models.filter(m=>m.name!=="InternalAudit"&&m.name!=="ProjectDeletionJob"&&m.name!=="TenantDeletionJob"&&m.name!=="SubscriptionHistory"&&m.fields.some(f=>f.name==="tenantId"));
   const remaining = new Map(models.map(m=>[m.name,m])), ordered: typeof models = [];
   while(remaining.size) {
     const leaves = [...remaining.values()].filter(parent=>![...remaining.values()].some(child=>child.name!==parent.name&&child.fields.some(f=>f.relationFromFields?.length&&f.type===parent.name)));

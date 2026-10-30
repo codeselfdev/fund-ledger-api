@@ -1,0 +1,12 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { asyncHandler } from '../../core/http/async-handler.js';
+import { ok } from '../../core/http/response.js';
+import { requireProjectContext } from '../../core/security/auth.context.js';
+import { reversalPreview, reverseTransaction, requireReversalAdmin } from './reversals.service.js';
+const router = Router();
+const params = z.object({ kind: z.enum(['income','expense','deposit','fixed_asset']), id: z.string().min(1).max(200) });
+const body = z.object({ reason: z.string().trim().min(10).max(1000), request_key: z.string().uuid() }).strict();
+router.get('/:kind/:id', asyncHandler(async (req,res) => { const a=requireProjectContext(req); requireReversalAdmin(a); const p=params.parse(req.params); return ok(res,await reversalPreview(a,p.kind,p.id)); }));
+router.post('/:kind/:id', asyncHandler(async (req,res) => { const a=requireProjectContext(req); requireReversalAdmin(a); const p=params.parse(req.params); return ok(res,await reverseTransaction(a,p.kind,p.id,body.parse(req.body))); }));
+export { router as reversalsRouter };

@@ -6,6 +6,7 @@ import { ApiError } from "./api-error.js";
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if(err instanceof ZodError)return res.status(400).json({ok:false,error:{code:"VALIDATION_ERROR",message:err.issues[0]?.message??"Invalid request",fields:Object.fromEntries(err.issues.map(issue=>[issue.path.join("."),issue.message]))}});
   const message = err instanceof Error ? err.message : "";
+  if (message.includes('Project is locked for deletion')) return res.status(409).json({ok:false,error:{code:'PROJECT_DELETING',message:'This project is locked for permanent deletion.'}});
   const quotaCode = ["DOCUMENT_QUOTA_EXCEEDED", "USER_QUOTA_EXCEEDED", "PROJECT_QUOTA_EXCEEDED", "DOCUMENT_TOO_LARGE"].find(code => message.includes(code));
   if (quotaCode || err?.code === "LIMIT_FILE_SIZE") {
     const code = quotaCode ?? "DOCUMENT_TOO_LARGE";

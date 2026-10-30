@@ -45,7 +45,7 @@ router.patch('/assets/:id', write, validateBody(metadataSchema), asyncHandler(as
         const row = await asset(tx, a, req.params.id, true);
         if (b.warranty_until && b.warranty_until < row.purchaseDate.toISOString().slice(0, 10))
             throw badRequest('Warranty expiry predates purchase');
-        if (b.serial && await tx.fixedAsset.findFirst({ where: { tenantId: a.tenantId, serial: b.serial, id: { not: row.id } } }))
+        if (b.serial && await tx.fixedAsset.findFirst({ where: { tenantId: a.tenantId, serial: b.serial, id: { not: row.id }, status: { not: 'reversed' } } }))
             throw conflict('Serial already exists');
         const updated = await tx.fixedAsset.update({ where: { id: row.id }, data: { serial: b.serial, warrantyUntil: b.warranty_until ? atDate(b.warranty_until) : null, nextServiceDate: b.next_service_date ? atDate(b.next_service_date) : null } });
         await tx.activity.create({ data: { ...scope(a), actorUserId: a.userId, action: 'fixed_asset.updated', entityType: 'fixed_asset', entityId: row.id, after: json(b) } });

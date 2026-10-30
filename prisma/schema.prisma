@@ -67,6 +67,7 @@ enum DueStatus {
 }
 
 enum DepositStatus {
+  reversed
   submitted
   pending_accountant
   pending_approver
@@ -75,6 +76,7 @@ enum DepositStatus {
 }
 
 enum ExpenseStatus {
+  reversed
   draft
   pending
   approved
@@ -235,6 +237,7 @@ enum DepositApprovalRoute {
 }
 
 model Project {
+  deletionStartedAt DateTime? @map("deletion_started_at")
   payrollPortalRecords PayrollPortalRecord[]
   constructionRequisitions ConstructionRequisition[]
   constructionSupplierQuotes ConstructionSupplierQuote[]
@@ -617,6 +620,7 @@ model OtpCode {
 }
 
 model Session {
+  authenticatedAt DateTime? @map("authenticated_at")
   verifiedEmail          String? @map("verified_email")
   impersonatorUserId     String? @map("impersonator_user_id")
   impersonatorSessionId  String? @map("impersonator_session_id")
@@ -779,6 +783,8 @@ model Deposit {
 }
 
 model DepositAllocation {
+  principalAmount Int? @map("principal_amount")
+  penaltyAmount Int? @map("penalty_amount")
   id         String   @id @default(cuid())
   tenantId   String   @map("tenant_id")
   projectId  String   @map("project_id")
@@ -798,6 +804,8 @@ model DepositAllocation {
 }
 
 model Receipt {
+  voidedAt DateTime? @map("voided_at")
+  voidReason String? @map("void_reason")
   id        String   @id @default(cuid())
   tenantId  String   @map("tenant_id")
   projectId String   @map("project_id")
@@ -1112,6 +1120,8 @@ model Transfer {
 }
 
 model AccountTransaction {
+  reversedAt DateTime? @map("reversed_at")
+  reversalOfId String? @unique @map("reversal_of_id")
   id            String               @id @default(cuid())
   tenantId      String               @map("tenant_id")
   projectId     String               @map("project_id")
@@ -4145,4 +4155,38 @@ model SubscriptionHistory {
   @@unique([tenantId, revision])
   @@index([tenantId, createdAt])
   @@map("subscription_history")
+}
+
+// Durable receipts have no project FK: deletion completion remains reviewable after purge.
+model ProjectDeletionJob {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @unique @map("project_id")
+  userId String @map("user_id")
+  status String @default("pending")
+  reason String
+  manifest Json
+  cursor Int @default(0)
+  objectsDeleted Int @default(0) @map("objects_deleted")
+  leaseUntil DateTime? @map("lease_until")
+  error String?
+  createdAt DateTime @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
+  @@index([status, leaseUntil])
+  @@map("project_deletion_jobs")
+}
+model TransactionReversal {
+  id String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  projectId String @map("project_id")
+  kind String
+  recordId String @map("record_id")
+  requestKey String @map("request_key")
+  reason String
+  userId String @map("user_id")
+  result Json
+  createdAt DateTime @default(now()) @map("created_at")
+  @@unique([projectId, kind, recordId])
+  @@unique([projectId, requestKey])
+  @@map("transaction_reversals")
 }

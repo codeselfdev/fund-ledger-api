@@ -91,7 +91,9 @@ export function evaluateSubscription(contact: unknown, now = new Date()) {
   const stored = getStoredSubscription(contact);
   const periodEnd = parseDate(stored?.current_period_end_at ?? null);
   const trialEnd = parseDate(stored?.trial_ends_at ?? null);
-  const end = periodEnd ?? (stored?.status !== "active" ? trialEnd : null);
+  // A complimentary package or legacy active status does not erase an existing trial.
+  // A malformed explicit paid term fails closed rather than falling back to a trial.
+  const end = periodEnd ?? (stored?.current_period_end_at ? null : trialEnd);
   const graceEnd = end ? new Date(end.getTime() + SUBSCRIPTION_GRACE_DAYS * DAY_MS) : null;
   const source = periodEnd ? "subscription" : "trial";
   const eligible = Boolean(stored && stored.status !== "expired" && end);
@@ -100,6 +102,7 @@ export function evaluateSubscription(contact: unknown, now = new Date()) {
   const allowed = current || grace;
   return {
     managed: Boolean(stored),
+    billing_cycle: stored?.billing_cycle ?? null,
     status: (allowed ? source === "trial" ? "trial" : "active" : "expired") as SubscriptionStatus,
     has_access: allowed,
     access_phase: grace ? "grace" : current ? source === "trial" ? "trial" : "active" : "expired",
@@ -109,7 +112,7 @@ export function evaluateSubscription(contact: unknown, now = new Date()) {
     access_ends_at: eligible ? graceEnd?.toISOString() ?? null : null,
     billing_period_end_at: end?.toISOString() ?? null,
     reason: !stored ? "unmanaged_missing_subscription" : stored.status === "expired" ? "subscription_explicitly_expired"
-      : grace ? `${source}_grace_period` : current ? `${source}_active` : "subscription_expired",
+      : !end ? "subscription_missing_access_term" : grace ? `${source}_grace_period` : current ? `${source}_active` : "subscription_expired",
     renewal_term_years: stored?.renewal_term_years ?? DEFAULT_RENEWAL_TERM_YEARS,
     trial_ends_at: stored?.trial_ends_at ?? null,
     current_period_end_at: stored?.current_period_end_at ?? null,

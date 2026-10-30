@@ -1,6 +1,7 @@
 import { DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
 import { mkdir, readFile, unlink, writeFile, readdir, lstat } from "node:fs/promises";
 import path from "node:path";
+import { prisma } from "../prisma/client.js";
 import { env } from "../../config/env.js";
 
 export class StorageObjectNotFoundError extends Error {
@@ -148,6 +149,18 @@ async function streamToBuffer(body: unknown) {
 }
 
 export async function storeObject(input: { storageKey: string; buffer: Buffer; contentType?: string }) {
+  const [tenantId,projectId]=input.storageKey.split('/');
+  if(tenantId === 'platform' || ['billing','support','assistant'].includes(projectId ?? ''))return writeStorageObject(input);
+  const project=projectId ? await prisma.project.findFirst({where:{id:projectId,tenantId},select:{id:true}}) : null;
+  if(!project)throw new Error('Project is unavailable for file storage');
+  return prisma.$transaction(async tx=>{
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock_shared(hashtextextended(${project.id}, 0))::text`;
+    const current=await tx.project.findFirst({where:{id:project.id,tenantId,deletionStartedAt:null,isActive:true}});
+    if(!current)throw new Error('Project is locked for deletion');
+    await writeStorageObject(input);
+  },{timeout:20000});
+}
+async function writeStorageObject(input: { storageKey: string; buffer: Buffer; contentType?: string }) {
   const mode = getStorageMode();
   if (mode === "local") {
     const filePath = resolveLocalUploadPath(input.storageKey);
@@ -163,7 +176,7 @@ export async function storeObject(input: { storageKey: string; buffer: Buffer; c
     Key: input.storageKey,
     Body: input.buffer,
     ContentType: input.contentType
-  }));
+  }), { abortSignal: AbortSignal.timeout(10000) });
 }
 
 export async function readObject(storageKey: string): Promise<ReadObjectResult> {
@@ -232,7 +245,13 @@ export async function purgeObject(storageKey: string) {
 /** Only a validated organization prefix is accepted; drain bounded batches, including orphan objects. */
 export async function tenantObjectKeys(tenantId: string, limit = 25): Promise<string[]> {
   if (!/^[a-zA-Z0-9_-]+$/.test(tenantId)) throw new Error("Invalid organization storage prefix");
-  const prefix = `${tenantId}/`;
+  return objectKeysUnderPrefix(`${tenantId}/`, limit);
+}
+export async function projectObjectKeys(tenantId: string, projectId: string, limit=25) {
+  if (![tenantId,projectId].every(v=>/^[a-zA-Z0-9_-]+$/.test(v))) throw new Error("Invalid project storage prefix");
+  return objectKeysUnderPrefix(`${tenantId}/${projectId}/`,limit);
+}
+async function objectKeysUnderPrefix(prefix: string, limit: number): Promise<string[]> {
   if (getStorageMode() === "r2") {
     const config = getR2Config();
     const page = await getR2Client().send(new ListObjectsV2Command({ Bucket: config.bucket, Prefix: prefix, MaxKeys: Math.min(limit,1000) }), { abortSignal: AbortSignal.timeout(10000) });
@@ -254,5 +273,5 @@ export async function tenantObjectKeys(tenantId: string, limit = 25): Promise<st
       else throw new Error("Organization storage contains an unsupported symbolic link");
     }
   };
-  await walk(tenantId); return keys;
+  await walk(prefix.replace(/\/$/, '')); return keys;
 }

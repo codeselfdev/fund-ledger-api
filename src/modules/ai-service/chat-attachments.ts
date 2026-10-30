@@ -11,10 +11,11 @@ export async function retainChatAttachments(tenantId: string, replyId: string, f
   const where = { tenantId, replyId };
   const existing = await prisma.assistantAttachment.findMany({ where, select: metadata });
   if (existing.length) return existing;
+  const reply=await prisma.assistantReply.findFirstOrThrow({where:{id:replyId,tenantId},select:{projectId:true}});
   const attachments = files.map(file => ({ ...where, fileName: file.originalname.slice(0, 180),
     mimeType: screenshotType(file.buffer), size: file.size,
     contentHash: createHash('sha256').update(file.buffer).digest('hex'),
-    storageKey: `${tenantId}/assistant/${randomUUID()}` }));
+    storageKey: `${tenantId}/${reply.projectId}/assistant/${randomUUID()}` }));
   const written: string[] = [];
   let retained = false;
   try {
