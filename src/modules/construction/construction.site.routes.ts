@@ -1,3 +1,4 @@
+import {contractorTracking,validateContractorWork} from './construction-workforce.service.js';
 import { moneyFromMicro } from './construction.control.engine.js';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -15,6 +16,7 @@ import { scope, financialTransaction, head, boq, audit, moveMaterialInTransactio
 
 const router = Router(), write = requireRoles('accountant');
 const querySchema = z.object({ from: dateSchema, to: dateSchema, include_pending: z.literal('true').optional() }).refine(v => v.from <= v.to && (+atDate(v.to) - +atDate(v.from)) <= 90 * 86400000, 'Select a date range of up to 90 days');
+router.get('/contractor-work',asyncHandler(async(req,res)=>{const through=z.object({through:dateSchema}).strict().parse(req.query).through;return ok(res,await financialTransaction(tx=>contractorTracking(tx,requireProjectContext(req),through)));}));
 router.get('/site-logs', asyncHandler(async (req, res) => {
  const a = requireProjectContext(req), range = querySchema.parse(req.query);
  const rows = await prisma.constructionSiteLog.findMany({ where: { ...scope(a), OR: [{ workDate: { gte: atDate(range.from), lte: atDate(range.to) } }, ...(range.include_pending ? [{ status: 'pending' }] : [])] }, orderBy: { workDate: 'asc' } });
@@ -40,6 +42,7 @@ router.put('/site-logs', write, validateBody(siteSaveSchema), asyncHandler(async
    const file = await tx.upload.findFirst({ where: { id, ...scope(a), deletedAt: null } });
    if (!file || !file.mimeType.startsWith('image/')) throw notFound('Project photo not found');
   }
+  await validateContractorWork(tx,a,b.content);
   const context = await validateSiteWorkContext(tx,a,b.content);
   const data = { content: json({...b.content,...contextInput(context),context_label:context.label||undefined}), createdById: a.userId, version: b.version + 1 };
   const row = old ? await tx.constructionSiteLog.update({ where: { id: old.id }, data }) : await tx.constructionSiteLog.create({ data: { ...scope(a), workDate: atDate(b.work_date), ...data } });
@@ -58,8 +61,9 @@ router.post('/site-logs/:id/submit', write, validateBody(z.object({ version: z.n
   if (log.version !== req.body.version) throw conflict('This log changed. Reload it before submitting.');
   if (log.workDate > atDate(today())) throw badRequest('Cannot submit a future day');
   const content = siteContentSchema.parse(log.content), laborIds: string[] = [], materialIds: string[] = [];
+  await validateContractorWork(tx,a,content);
   await validateSiteWorkContext(tx,a,content);
-  if (!content.labor.length && !content.materials.length && !content.expense_ids.length && !content.note && !content.photo_ids.length) throw badRequest('Add site activity before submitting');
+  if (!content.contractor_work.length && !content.labor.length && !content.materials.length && !content.expense_ids.length && !content.note && !content.photo_ids.length) throw badRequest('Add site activity before submitting');
   for (const [i, l] of content.labor.entries()) {
    await head(tx, a, l.cost_head_id);
    const payload = { cost_head_id: l.cost_head_id, worker_name: l.role, work_date: log.workDate.toISOString().slice(0,10), units: l.workers, rate: l.rate, note: `Site log ${log.id}`, request_key: `site:${log.id}:labor:${i}` };
@@ -67,7 +71,8 @@ router.post('/site-logs/:id/submit', write, validateBody(z.object({ version: z.n
    laborIds.push(labor.id);
   }
   for (const [i, m] of content.materials.entries()) {
-   const entry = await moveMaterialInTransaction(tx, a, { ...m, kind: 'consume', entry_date: log.workDate.toISOString().slice(0,10), reason: `Daily site log ${log.id}`, request_key: `site:${log.id}:material:${i}` });
+   const {contract_id,...movement}=m;
+   const entry = await moveMaterialInTransaction(tx, a, { ...movement, kind: 'consume', entry_date: log.workDate.toISOString().slice(0,10), reason: `Daily site log ${log.id}`, request_key: `site:${log.id}:material:${i}` });
    materialIds.push(entry.id);
   }
   const result = await tx.constructionSiteLog.update({ where: { id: log.id }, data: { status: 'pending', createdById: a.userId, laborIds, materialIds, submittedAt: new Date(), version: { increment: 1 } } });
@@ -84,6 +89,7 @@ router.post('/site-logs/:id/decision', requireRoles('approver'), validateBody(de
   if (log.createdById === a.userId) throw conflict('A different administrator or approver must review this log');
   if (log.status === status) return log;
   if (log.status !== 'pending') throw conflict('Only submitted logs can be reviewed');
+  if(status==='approved')await validateContractorWork(tx,a,log.content,true,log.id);
   for (const id of log.laborIds) {
    const entry = await tx.constructionLaborEntry.findFirst({ where: { id, ...scope(a) } });
    if (!entry || entry.status !== 'pending') throw conflict('Linked wages were already reviewed separately. Review the labor records.');

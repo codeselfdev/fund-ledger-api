@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {contractorWorkSchema} from './construction-workforce.engine.js';
 import { contextFields } from './construction.structure.policy.js';
 import { money, id, requestKey, dateSchema, pastDateSchema, checkedMoney } from '../billing/billing.policy.js';
 import { badRequest } from '../../core/http/api-error.js';
@@ -43,11 +44,12 @@ export function runningBill(contract: {
 
 export const siteContentSchema = z.object({
  ...contextFields, phase_id: id.optional(), context_label: z.string().max(3000).optional(),
+ contractor_work: z.array(contractorWorkSchema).max(50).default([]),
  labor: z.array(z.object({ cost_head_id: id, role: name, workers: z.number().int().min(1).max(10000), rate: money.refine(n => n > 0) }).strict()).max(50),
- materials: z.array(z.object({ cost_head_id:id.optional(), stock_location_id:id.optional(), item_id: id, boq_id: id.optional(), quantity: z.number().int().positive().max(2147483647) }).strict()).max(100),
+ materials: z.array(z.object({ contract_id:id.optional(),cost_head_id:id.optional(), stock_location_id:id.optional(), item_id: id, boq_id: id.optional(), quantity: z.number().int().positive().max(2147483647) }).strict()).max(100),
  expense_ids: z.array(id).max(100),
  photo_ids: z.array(id).max(20),
  note: z.string().trim().max(2000).default(''),
-}).strict();
+}).strict().refine(content=>new Set(content.contractor_work.map(row=>row.id)).size===content.contractor_work.length,'Do not repeat a contractor crew card.');
 export const siteSaveSchema = z.object({ work_date: pastDateSchema, version: z.number().int().min(0), content: siteContentSchema }).strict();
 export const wasteLimitSchema = z.object({ item_id: id, allowance_bps: z.number().int().min(0).max(10000) }).strict();

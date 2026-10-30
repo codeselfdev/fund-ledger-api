@@ -678,3 +678,62 @@ test('measured agreement and bill evidence is rechecked at review and other proj
 test('contractor work creation and certification roll back together with a failed audit',async()=>{
  const {c,body}=await workFixture(),bill=(await request('/running-bills/measured',measuredBody(c,2))).body.data;failAudit=true;const old=console.error;console.error=()=>{};try{assert.equal((await request('/contracts/measured',{...body,request_key:randomUUID()})).status,500);assert.equal((await request(`/running-bills/${bill.id}/decision`,{decision:'approve'},'approver')).status,500);}finally{failAudit=false;console.error=old;}assert.equal(db.contracts.length,1);assert.equal(db.contracts[0].certifiedAmount,0);assert.deepEqual(db.contracts[0].certifiedQuantities,{});assert.equal(db.bills[0].status,'pending');assert.equal(db.payments.length,0);
 });
+
+const crewCard=(c,quantity=2,extra={})=>({id:randomUUID(),contract_id:c.id,crew:[{trade:'Rod binder',workers:4},{trade:'Helper',workers:3}],outputs:[{work_item_id:c.workItems[0].id,quantity}],note:'Measured on site',delay_reason:'',...extra});
+async function crewDraft(h,c,quantity=2,date='2026-01-01',extra={}){const r=await request('/site-logs',{work_date:date,version:0,content:siteContent(h,{labor:[],note:'',contractor_work:[crewCard(c,quantity)],...extra})},'accountant','PUT');assert.equal(r.status,200,JSON.stringify(r.body));return r.body.data;}
+async function submitCrew(log){const r=await request(`/site-logs/${log.id}/submit`,{version:log.version});assert.equal(r.status,201,JSON.stringify(r.body));return r.body.data;}
+async function verifyCrew(log){const r=await request(`/site-logs/${log.id}/decision`,{decision:'approve'},'approver');assert.equal(r.status,200,JSON.stringify(r.body));return r.body.data;}
+
+test('contractor-only attendance and verified output never create wages, financial cost or cash payments',async()=>{
+ const {h,c}=await workFixture(),draft=await crewDraft(h,c,2.125),before=db.accounts[0].balance;
+ let tracking=(await request('/contractor-work?through=2026-01-01')).body.data;assert.equal(tracking.rows[0].verified_percent,0);
+ const submitted=await submitCrew(draft);assert.deepEqual(submitted.laborIds,[]);assert.equal(db.labor.length,0);tracking=(await request('/contractor-work?through=2026-01-01')).body.data;assert.equal(tracking.rows[0].workers_today,7);assert.equal(tracking.rows[0].items[0].reported_quantity,2.125);assert.equal(tracking.rows[0].items[0].verified_quantity,0);
+ assert.equal((await request(`/site-logs/${draft.id}/decision`,{decision:'approve'},'admin','POST','p','user-accountant')).status,409);
+ await verifyCrew(draft);tracking=(await request('/contractor-work?through=2026-01-01')).body.data;assert.equal(tracking.rows[0].verified_percent,21.25);assert.equal(tracking.rows[0].items[0].verified_quantity,2.125);assert.equal((await request('/overview')).body.data.actual_cost,0);assert.equal(db.labor.length,0);assert.equal(db.payments.length,0);assert.equal(db.accounts[0].balance,before);
+});
+test('mixed daily logs create wages only for directly paid workers and retain contractor crew counts',async()=>{
+ const {h,c}=await workFixture(),draft=await crewDraft(h,c,2,'2026-01-01',{labor:[{cost_head_id:h.id,role:'Company guard',workers:2,rate:600}]});await submitCrew(draft);await verifyCrew(draft);assert.equal(db.labor.length,1);assert.equal(db.labor[0].amount,1200);assert.equal((await request('/overview')).body.data.actual_cost,1200);assert.equal(db.accounts[0].balance,5000000);
+});
+test('contractor workforce validates project, approved agreement, quantities and crew fields without accepting wages',async()=>{
+ const {h,c}=await workFixture(),base=crewCard(c),body=row=>({work_date:'2026-01-01',version:0,content:siteContent(h,{labor:[],contractor_work:[row]})});
+ for(const extra of [{contract_id:'foreign-contract'},{contract_id:'missing'}])assert.equal((await request('/site-logs',body({...base,...extra}),'accountant','PUT')).status,404);
+ for(const extra of [{rate:900},{crew:[{trade:'Helper',workers:0}]},{crew:[{trade:'X',workers:1}]},{outputs:[{work_item_id:randomUUID(),quantity:1}]},{outputs:[{work_item_id:c.workItems[0].id,quantity:11}]},{outputs:[{work_item_id:c.workItems[0].id,quantity:0.0001}]},{outputs:[base.outputs[0],base.outputs[0]]}])assert.equal((await request('/site-logs',body({...base,...extra}),'accountant','PUT')).status,400,JSON.stringify(extra));
+ db.contracts[0].status='pending';assert.equal((await request('/site-logs',body(base),'accountant','PUT')).status,404);assert.equal(db.siteLogs.length,0);assert.equal(db.labor.length,0);
+});
+test('workforce submission rechecks agreement status before recording any stock or direct wages',async()=>{
+ const {h,c}=await workFixture(),draft=await crewDraft(h,c);db.contracts[0].status='suspended';assert.equal((await request(`/site-logs/${draft.id}/submit`,{version:draft.version})).status,404);assert.equal(db.siteLogs[0].status,'draft');assert.equal(db.labor.length,0);
+});
+test('concurrent daily output approvals cannot verify more than the agreed quantity',async()=>{
+ const {h,c}=await workFixture(),a=await crewDraft(h,c,6),b=await crewDraft(h,c,6,'2026-01-02');await submitCrew(a);await submitCrew(b);
+ const results=await Promise.all([request(`/site-logs/${a.id}/decision`,{decision:'approve'},'approver'),request(`/site-logs/${b.id}/decision`,{decision:'approve'},'approver')]);assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);const tracking=(await request('/contractor-work?through=2026-01-02')).body.data;assert.equal(tracking.rows[0].items[0].verified_quantity,6);assert.equal(db.labor.length,0);
+});
+test('company materials link to the agreement while stock is consumed exactly once and rejected output is unverified',async()=>{
+ const {h,c}=await workFixture();db.inventory.push({id:'steel',tenantId:'t',projectId:'p',name:'Steel rod',unit:'kg',quantity:100,costPrice:10,isActive:true});const draft=await crewDraft(h,c,2,'2026-01-01',{materials:[{item_id:'steel',contract_id:c.id,cost_head_id:h.id,quantity:20}]});
+ await submitCrew(draft);await submitCrew(draft);assert.equal(db.inventory[0].quantity,80);assert.equal(db.materials.length,1);assert.equal(db.materials[0].costHeadId,c.costHeadId);assert.equal(db.labor.length,0);
+ assert.equal((await request(`/site-logs/${draft.id}/decision`,{decision:'reject'},'approver')).status,200);assert.equal(db.inventory[0].quantity,80);const tracking=(await request('/contractor-work?through=2026-01-01')).body.data;assert.equal(tracking.rows[0].items[0].verified_quantity,0);
+});
+test('verified-output bills reference approved logs and deduct previously certified quantities once',async()=>{
+ const {h,c}=await workFixture(),a=await crewDraft(h,c,2);await submitCrew(a);
+ assert.equal((await request('/running-bills/measured',measuredBody(c,2,{use_verified_site_output:true}))).status,409);await verifyCrew(a);
+ const first=(await request('/running-bills/measured',measuredBody(c,2,{use_verified_site_output:true}))).body.data;assert.equal(first.currentCertified,2000);assert.equal(first.measurementLines[0].site_log_sources[0].site_log_id,a.id);await approve('running-bills',first);
+ const b=await crewDraft(h,c,2,'2026-01-02');await submitCrew(b);await verifyCrew(b);
+ assert.equal((await request('/running-bills/measured',measuredBody(db.contracts[0],8,{use_verified_site_output:true,bill_date:'2026-01-02'}))).status,409);
+ const second=(await request('/running-bills/measured',measuredBody(db.contracts[0],4,{use_verified_site_output:true,bill_date:'2026-01-02'}))).body.data;assert.equal(second.currentCertified,2000);assert.equal(second.measurementLines[0].site_log_sources.length,2);await approve('running-bills',second);assert.equal(db.contracts[0].certifiedAmount,4000);assert.equal(db.labor.length,0);assert.equal(db.payments.length,0);assert.equal((await request('/running-bills/measured',measuredBody(db.contracts[0],4,{use_verified_site_output:true,bill_date:'2026-01-02'}))).status,400);
+});
+test('bill review rejects changed or foreign daily-output references before any certification',async()=>{
+ const {h,c}=await workFixture(),log=await crewDraft(h,c);await submitCrew(log);await verifyCrew(log);const bill=(await request('/running-bills/measured',measuredBody(c,2,{use_verified_site_output:true}))).body.data;
+ db.siteLogs[0].version++;assert.equal((await request(`/running-bills/${bill.id}/decision`,{decision:'approve'},'approver')).status,409);db.siteLogs[0].version--;db.bills[0].measurementLines[0].site_log_sources[0].site_log_id='foreign-log';assert.equal((await request(`/running-bills/${bill.id}/decision`,{decision:'approve'},'approver')).status,409);assert.equal(db.contracts[0].certifiedAmount,0);
+});
+test('contractor tracking is project-scoped, read-only and hides drafts from verified totals',async()=>{
+ const {h,c}=await workFixture();await crewDraft(h,c);const report=await request('/contractor-work?through=2026-01-01',undefined,'auditor');assert.equal(report.status,200);assert.equal(report.body.data.rows[0].workers_today,0);assert.equal((await request('/contractor-work?through=2026-01-01',undefined,'member')).status,403);assert.equal((await request('/contractor-work?through=invalid')).status,400);const other=await request('/contractor-work?through=2026-01-01',undefined,'accountant','GET','foreign');assert.notEqual(other.status,200);assert.equal(db.payments.length,0);
+});
+test('contractor crew cards and linked material budgets cannot cross their agreement scope',async()=>{
+ const {h,c}=await workFixture(),card=crewCard(c),body={work_date:'2026-01-01',version:0,content:siteContent(h,{labor:[],contractor_work:[card,card]})};assert.equal((await request('/site-logs',body,'accountant','PUT')).status,400);
+ const other=await newHead({name:'Another budget',phase:'Finishing'});db.inventory.push({id:'wire',tenantId:'t',projectId:'p',name:'Wire',quantity:100,isActive:true});db.boq.push({id:'other-boq',tenantId:'t',projectId:'p',costHeadId:other.id,isActive:true});
+ for(const extra of [{cost_head_id:other.id},{boq_id:'other-boq'}])assert.equal((await request('/site-logs',{...body,content:siteContent(h,{labor:[],contractor_work:[card],materials:[{item_id:'wire',quantity:1,contract_id:c.id,...extra}]})},'accountant','PUT')).status,400);
+});
+
+test('company materials retain their separate budget while attributed to a labour-only agreement',async()=>{
+ const {h,c}=await workFixture(),materials=await newHead({name:'Company material budget',category:'materials'});db.inventory.push({id:'wire',tenantId:'t',projectId:'p',name:'Wire',quantity:100,isActive:true,costPrice:10});
+ const draft=await crewDraft(h,c,2,'2026-01-01',{materials:[{item_id:'wire',quantity:3,contract_id:c.id,cost_head_id:materials.id}]});await submitCrew(draft);assert.equal(db.materials[0].costHeadId,materials.id);assert.notEqual(db.materials[0].costHeadId,c.costHeadId);assert.equal(db.labor.length,0);assert.equal(db.contracts[0].certifiedAmount,0);
+});

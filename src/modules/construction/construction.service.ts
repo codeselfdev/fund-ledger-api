@@ -1,3 +1,4 @@
+import {verifyBillSiteSources} from './construction-workforce.service.js';
 import {verifyMeasuredBill,measuredTotals} from './construction-contractor.engine.js';
 import {evidence} from './construction.workflow.shared.js';
 import { capitalizeSupplierBill } from './construction.valuation.js';
@@ -55,7 +56,7 @@ export async function decideInTransaction(tx:Tx,a:ConstructionScope,kind:Decisio
                 if (contract.certifiedAmount !== bill.previousCertified)
                     throw conflict('Another bill was certified; submit a fresh cumulative running bill');
                 const measurement=contract.billingMode==='item_rate'?verifyMeasuredBill(contract,bill):null;
-                if(measurement)await evidence(tx,a,bill.evidenceFileIds);
+                if(measurement){await evidence(tx,a,bill.evidenceFileIds);await verifyBillSiteSources(tx,a,contract.id,bill.billDate,bill.measurementLines);}
                 const totals = measurement?measuredTotals(contract,bill.cumulativeCertified,bill.advanceRecovery):runningBill(contract, bill.cumulativeCertified, bill.advanceRecovery);
                 if (totals.retention !== bill.retention || totals.netPayable - bill.wastageDeduction !== bill.netPayable)
                     throw conflict('Contract changed since this bill was requested');

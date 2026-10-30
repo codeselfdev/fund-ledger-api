@@ -1,3 +1,4 @@
+import {billSiteSources} from './construction-workforce.service.js';
 import type {Prisma} from '@prisma/client';
 import {badRequest,conflict,notFound} from '../../core/http/api-error.js';
 import {atDate,hash,json} from '../billing/billing.policy.js';
@@ -26,6 +27,7 @@ export async function submitMeasuredBill(tx:Tx,a:A,raw:unknown){
  const totals=measuredTotals(c,m.cumulative,b.advance_recovery),wasteIds=[...new Set(b.waste_entry_ids)],waste=await tx.constructionMaterialEntry.findMany({where:{...scope(a),id:{in:wasteIds},kind:'waste',chargeContractId:c.id,chargeBillId:null}});
  if(waste.length!==wasteIds.length)throw conflict('Wastage was already assigned or belongs to another contract.');
  const deduction=waste.reduce((n,e)=>n+(e.valuationValueMicro!==null&&e.valuationValueMicro!==undefined?Math.round(Math.abs(moneyFromMicro(BigInt(String(e.valuationValueMicro))))):e.quantity*(e.unitRate??0)),0);if(deduction>totals.netPayable)throw badRequest('Wastage deductions exceed the current payable.');totals.netPayable-=deduction;
- const row=await tx.constructionRunningBill.create({data:{...scope(a),contractId:c.id,cumulativeCertified:m.cumulative,...totals,measurementLines:json(m.lines),evidenceFileIds:b.file_ids,wastageDeduction:deduction,wasteEntryIds:wasteIds,billDate:atDate(b.bill_date),note:b.note,requestKey:b.request_key,requestHash:hash(b),createdById:a.userId}});
+ const siteSources=b.use_verified_site_output?await billSiteSources(tx,a,c.id,b.bill_date,b.quantities):null;
+ const row=await tx.constructionRunningBill.create({data:{...scope(a),contractId:c.id,cumulativeCertified:m.cumulative,...totals,measurementLines:json(m.lines.map(line=>({...line,...(siteSources?{site_log_sources:siteSources[line.id]??[]}:{})}))),evidenceFileIds:b.file_ids,wastageDeduction:deduction,wasteEntryIds:wasteIds,billDate:atDate(b.bill_date),note:b.note,requestKey:b.request_key,requestHash:hash(b),createdById:a.userId}});
  await tx.constructionMaterialEntry.updateMany({where:{...scope(a),id:{in:wasteIds},chargeBillId:null},data:{chargeBillId:row.id}});await audit(tx,a,'measured_bill.submitted','construction_running_bill',row.id,row);return row;
 }
