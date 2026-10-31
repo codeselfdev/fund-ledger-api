@@ -12,8 +12,17 @@ const scoped=w=>{assert.equal(w.tenantId,'tenant');assert.equal(w.projectId,'pro
 before(async()=>{
  prisma.$queryRaw=async()=>[];
  prisma.$transaction=async fn=>{const before=structuredClone(state);try{return await fn(prisma);}catch(e){state=before;throw e;}};
- prisma.project.findFirst=async({where})=>{assert.equal(where.id,'project');assert.equal(where.tenantId,'tenant');return{projectType:type,stockManagementEnabled:false};};
+ prisma.project.findFirst=async({where})=>{assert.equal(where.id,'project');assert.equal(where.tenantId,'tenant');return{projectType:type,totalShares:100,stockManagementEnabled:false};};
  prisma.tenant.findUniqueOrThrow=async()=>({currency:'BDT'});
+ prisma.project.findFirstOrThrow=prisma.project.findFirst;
+ prisma.member.findMany=async({where})=>{scoped(where);return structuredClone(state.members);};
+ prisma.member.create=async({data})=>{scoped(data);if(failAt===state.members.length+1)throw Error('Simulated member storage failure');const row={id:'member-'+state.members.length,status:'active',updatedAt:'2026-10-31',...data};state.members.push(row);return row;};
+ prisma.user.findMany=async()=>[];
+ prisma.user.create=async({data})=>{const row={id:'identity-'+state.identities.length,isActive:true,...data};state.identities.push(row);return row;};
+ prisma.tenantUser.findFirst=async({where})=>{assert.equal(where.tenantId,'tenant');const account=state.tenantUsers.find(row=>state.identities.find(identity=>identity.id===row.userId)?.mobile===where.identity?.mobile);return account?{...account,identity:state.identities.find(identity=>identity.id===account.userId)}:null;};
+ prisma.tenantUser.create=async({data})=>{const row={id:'account-'+state.tenantUsers.length,isActive:true,...data};state.tenantUsers.push(row);return{...row,identity:state.identities.find(identity=>identity.id===row.userId)};};
+ prisma.projectMembership.upsert=async({create})=>{scoped(create);state.memberships.push(create);return create;};
+
  prisma.onboardingProgress.findUnique=async()=>({incomeApprovalFlow:flow,expenseApprovalFlow:'accountant_and_approver'});
  prisma.businessConfiguration.findFirst=async()=>null;prisma.businessField.findMany=async()=>[];
  for(const [name,key]of [['customer','customers'],['vendor','dealers'],['inventoryItem','items']]){
@@ -35,7 +44,7 @@ before(async()=>{
  prisma.upload.findFirst=async({where})=>{scoped(where);return where.id==='proof'?{id:'proof'}:null;};
  const app=express();app.use(express.json());app.use((req,res,next)=>{req.auth={...auth,roles};next();});app.use('/bulk',bulkAssistantRouter);app.use(errorHandler);server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));base=`http://127.0.0.1:${server.address().port}/bulk`;
 });
-beforeEach(()=>{type='billing';roles=['accountant'];flow='accountant_only';failAt=0;state={categories:[],customers:[],dealers:[],items:[],expenses:[],transactions:[],activities:[],accounts:[{id:'bank',name:'Bank',balance:100000}]};});
+beforeEach(()=>{type='billing';roles=['accountant'];flow='accountant_only';failAt=0;state={members:[],identities:[],tenantUsers:[],memberships:[],categories:[],customers:[],dealers:[],items:[],expenses:[],transactions:[],activities:[],accounts:[{id:'bank',name:'Bank',balance:100000}]};});
 after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));await prisma.$disconnect();});
 const request=(path,body)=>fetch(base+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
 const batch=(operation,rows)=>({operation,fields:{rows}});
@@ -112,4 +121,23 @@ test('a changed or deactivated item category invalidates confirmation without cr
  const b=batch('bulk_items',[{name:'Cable',category_id:'cables'}]),plan=await preview(b);
  state.categories[0].name='Other';assert.equal((await commit(b,plan)).status,409);assert.equal(state.items.length,0);
  state.categories[0].name='Cables';state.categories[0].isActive=false;assert.equal((await commit(b,plan)).status,400);assert.equal(state.items.length,0);
+});
+
+test('member batches save member records and linked access atomically, once, without touching customers',async()=>{
+ type='fund_shares';const rows=[{name:'Mehedi',mobile:'+8801583939393',shares:1},{name:'Zoha',mobile:'+8801839304040',shares:2}],b=batch('bulk_members',rows),plan=await preview(b),key=randomUUID();
+ assert.equal(state.members.length,0);assert.equal(plan.assigned_shares,3);
+ const saved=await commit(b,plan,key);assert.equal(saved.status,200,await saved.clone().text());
+ assert.equal(state.members.length,2);assert.equal(state.memberships.length,2);assert.equal(state.tenantUsers.length,2);assert.equal(state.customers.length,0);
+ assert.equal((await commit(b,plan,key)).status,200);assert.equal(state.members.length,2);
+});
+test('later member failures roll back member rows, identities, memberships and audit records',async()=>{
+ type='fund_shares';const b=batch('bulk_members',[{name:'Mehedi',mobile:'+8801583939393',shares:1},{name:'Zoha',mobile:'+8801839304040',shares:1}]),plan=await preview(b);failAt=2;
+ assert.equal((await commit(b,plan)).status,500);for(const key of ['members','identities','tenantUsers','memberships','activities'])assert.equal(state[key].length,0,key);
+});
+test('member validation and changed project shares prevent all writes',async()=>{
+ type='fund_shares';const rows=[{name:'Mehedi',mobile:'+8801583939393',shares:1}];
+ for(const values of [[{...rows[0],shares:undefined}],[{...rows[0],mobile:'0183930409'}],[{...rows[0],shares:101}],rows.concat(rows)])assert.ok([400,409].includes((await request('/preview',batch('bulk_members',values))).status));
+ const b=batch('bulk_members',rows),plan=await preview(b);state.members.push({id:'other',name:'Other',mobile:'+8801700000000',shares:100,status:'active',updatedAt:'changed'});
+ assert.equal((await commit(b,plan)).status,400);assert.equal(state.members.length,1);assert.equal(state.identities.length,0);
+ type='accounting';assert.equal((await request('/preview',b)).status,403);
 });

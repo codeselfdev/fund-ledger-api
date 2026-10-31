@@ -3127,9 +3127,17 @@ model AppGuideRequest {
   promptHash String @map("prompt_hash")
   authorizationHash String @map("authorization_hash")
   plan Json?
+  channel String @default("text")
+  speechMs Int? @map("speech_ms")
+  usageModel String? @map("usage_model")
+  inputTokens Int? @map("input_tokens")
+  cachedTokens Int? @map("cached_tokens")
+  outputTokens Int? @map("output_tokens")
+  reasoningTokens Int? @map("reasoning_tokens")
   createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
   identityUser User @relation(fields: [identityUserId], references: [id], onDelete: Cascade)
   @@id([identityUserId, requestKey])
+  @@index([createdAt, channel])
   @@map("app_guide_requests")
 }
 

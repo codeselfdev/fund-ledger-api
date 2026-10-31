@@ -55,7 +55,8 @@ function execute(strings,...v){
   if(sql.includes('created_at'))return 0;
   const id=key(v[0],v[1]),row=rows.get(id);if(row&&!row.plan){rows.delete(id);return 1;}return 0;
  }
- if(sql.startsWith('INSERT')){const [identity,request,tenant_id,project_id,user_id,prompt_hash,authorization_hash]=v;assert.ok(!rows.has(key(identity,request)));rows.set(key(identity,request),{tenant_id,project_id,user_id,prompt_hash,authorization_hash,plan:null});return 1;}
+ if(sql.startsWith('INSERT')){const [identity,request,tenant_id,project_id,user_id,prompt_hash,authorization_hash,channel,speech_ms]=v;assert.ok(!rows.has(key(identity,request)));rows.set(key(identity,request),{tenant_id,project_id,user_id,prompt_hash,authorization_hash,channel,speech_ms,plan:null});return 1;}
+ if(sql.includes('SET usage_model')){const [usage_model,input_tokens,cached_tokens,output_tokens,reasoning_tokens,identity,request]=v,row=rows.get(key(identity,request));if(!row)return 0;Object.assign(row,{usage_model,input_tokens,cached_tokens,output_tokens,reasoning_tokens});return 1;}
  if(sql.startsWith('UPDATE')){const [plan,identity,request]=v,row=rows.get(key(identity,request));if(!row||row.plan)return 0;row.plan=JSON.parse(plan);return 1;}
  throw Error('Unexpected SQL');
 }
@@ -126,4 +127,33 @@ test('Payroll/PF knowledge follows staff, self-service and custom access without
  }
  assert.throws(()=>policy.validatePlan({kind:'guide',topic_ids:['payroll_settings']},member));
  assert.deepEqual(policy.validatePlan({kind:'guide',topic_ids:['payroll_pf','payroll_run']},owner).topic_ids,['payroll_pf','payroll_run']);
+});
+
+test('model input is a compact English catalogue with a stable cache key, even for Bangla questions',async()=>{
+ const sent=[];globalThis.fetch=async(_url,options)=>{sent.push(JSON.parse(options.body));return Response.json({status:'completed',usage:{input_tokens:900,input_tokens_details:{cached_tokens:768},output_tokens:30,output_tokens_details:{reasoning_tokens:0}},output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({kind:'guide',topic_ids:['expenses']})}]}]});};
+ const bn=policy.authorizedArticles('fund_shares',['owner'],undefined,'bn'),en=policy.authorizedArticles('fund_shares',['owner'],undefined,'en');
+ const result=await selectGuidePlan('খরচ কীভাবে লিখব?','bn',bn,{catalog:en});
+ assert.deepEqual(result.plan,{kind:'guide',topic_ids:['expenses']});assert.deepEqual(result.usage,{model:'test-guide-model',input_tokens:900,cached_tokens:768,output_tokens:30,reasoning_tokens:0});
+ await selectGuidePlan('How do I add a member?','en',en);
+ const catalog=JSON.parse(sent[0].input[0].content);assert.ok(catalog.every(row=>Array.isArray(row)&&row.length===4));
+ assert.ok(!sent[0].input[0].content.includes('"steps"'));assert.ok(!sent[0].input[0].content.includes('"why"'));
+ assert.ok(sent[0].input[0].content.length<JSON.stringify(bn).length/4,'compact catalogue must be far smaller than full Bangla articles');
+ assert.equal(sent[0].prompt_cache_key,sent[1].prompt_cache_key);assert.ok(sent[0].max_output_tokens<=400);
+ assert.equal(sent[0].instructions,sent[1].instructions);assert.equal(sent[0].input.at(-1).role,'user');
+});
+test('voice questions are short, carry only authorized previous topics, and log tokens without changing credits',async()=>{
+ const request={question:'How do I add a member?',language:'en',request_key:randomUUID()};
+ assert.equal(policy.guideBody.parse(request).channel,'text');
+ assert.throws(()=>policy.guideBody.parse({...request,follow_up_ids:['members']}),/only accepted for voice/);
+ assert.throws(()=>policy.guideBody.parse({...request,channel:'voice',question:'x'.repeat(301)}),/300/);
+ assert.throws(()=>policy.guideBody.parse({...request,channel:'voice',follow_up_ids:['a','b','c','d','e']}));
+ assert.equal(policy.guideBody.parse({...request,channel:'voice',follow_up_ids:['expenses'],speech_ms:4200}).speech_ms,4200);
+ assert.equal(policy.questionHash('q','en'),policy.questionHash('q','en',[]));assert.notEqual(policy.questionHash('q','en'),policy.questionHash('q','en',['expenses']));
+ setup();let body;globalThis.fetch=async(_url,options)=>{providerCalls++;body=JSON.parse(options.body);return Response.json({status:'completed',usage:{input_tokens:1200,input_tokens_details:{cached_tokens:1024},output_tokens:24},output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({kind:'guide',topic_ids:['expenses']})}]}]});};
+ const voice={question:'Then how do I edit it?',language:'en',request_key:randomUUID(),channel:'voice',follow_up_ids:['expenses','secret-record'],speech_ms:3100};
+ const answer=await askAppGuide(auth(),voice);assert.equal(answer.used,1);assert.equal(answer.remaining,19);
+ assert.deepEqual(JSON.parse(body.input[1].content),{previous_topics:['expenses']});assert.ok(!JSON.stringify(body).includes('secret-record'));
+ const row=[...rows.values()][0];assert.equal(row.channel,'voice');assert.equal(row.speech_ms,3100);assert.equal(row.input_tokens,1200);assert.equal(row.cached_tokens,1024);assert.equal(row.output_tokens,24);assert.equal(row.reasoning_tokens,0);
+ await askAppGuide(auth(),voice);assert.equal(providerCalls,1,'voice replay reuses the saved answer');
+ await askAppGuide(auth(),input());const text=[...rows.values()][1];assert.equal(text.channel,'text');assert.equal(text.speech_ms,null);
 });

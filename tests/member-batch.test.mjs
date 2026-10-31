@@ -1,0 +1,9 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+Object.assign(process.env,{DATABASE_URL:'postgresql://test:test@127.0.0.1:1/no_database',JWT_SECRET:'synthetic-member-batch-test-secret'});
+const {memberBatchPlan}=await import('../dist/modules/ai-service/member-batch.js');
+const auth={tenantId:'tenant',projectId:'project',userId:'user'};
+const row=(mobile='+8801711000001',shares=1)=>({name:'Mehedi',mobile,shares});
+function fixture(){const state={type:'fund_shares',cap:10,members:[]};const db={project:{findFirstOrThrow:async({where})=>{assert.equal(where.tenantId,auth.tenantId);return{projectType:state.type,totalShares:state.cap};}},member:{findMany:async({where})=>{assert.equal(where.projectId,auth.projectId);assert.equal(where.tenantId,auth.tenantId);return state.members;}}};return{state,db};}
+test('member review keeps all supplied rows and checks shares without inserting members',async()=>{const f=fixture();f.state.members=[{id:'old',mobile:'+8801711000000',shares:2,status:'active',updatedAt:new Date('2026-10-31T00:00:00.000Z')}];const plan=await memberBatchPlan(f.db,auth,[row(),row('+8801711000002',3)]);assert.equal(plan.entries.length,2);assert.equal(plan.assigned_shares,6);assert.equal(f.state.members.length,1);assert.deepEqual(plan.members_snapshot,[['old','2026-10-31T00:00:00.000Z','active',2]]);});
+test('duplicates, share caps and other project types block member batches before writes',async()=>{const f=fixture();await assert.rejects(memberBatchPlan(f.db,auth,[row(),row()]),/repeated/);f.state.members=[{mobile:'01711000001',shares:1,status:'active'}];await assert.rejects(memberBatchPlan(f.db,auth,[row()]),/existing member/);f.state.members=[];f.state.cap=1;await assert.rejects(memberBatchPlan(f.db,auth,[row('+8801711000002',2)]),/limit/);f.state.type='accounting';await assert.rejects(memberBatchPlan(f.db,auth,[row()]),/Fund/);});

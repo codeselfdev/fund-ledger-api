@@ -20,6 +20,7 @@ import { platformAlerts, retryPlatformAlert } from "./alerts.service.js";
 import { deletionRequests, deletionRequest, reviewDeletionRequest, deletionPreview, executeAccountDeletion } from './account-deletion.service.js';
 import { billingRequests, billingRequestCounts } from './billing-requests.service.js';
 import { broadcastDraftSchema, broadcastSendSchema, platformBroadcasts } from './platform-broadcasts.service.js';
+import { appGuideTokenUsage } from '../app-guide/app-guide.service.js';
 import { aiCreditGrantSchema, grantAiCredits, aiCreditTenants, aiCreditHistory, aiCreditSortFields } from './ai-credits.service.js';
 const router = Router();
 router.use(requireInternalApiKey, rateLimit({ windowMs: 60000, limit: 120, standardHeaders: true, legacyHeaders: false }));
@@ -33,6 +34,7 @@ router.post('/notifications/poster', rateLimit({ windowMs: 60000, limit: 10 }), 
   if (!req.file) throw badRequest('Choose a poster image.');
   return ok(res, await uploadPromotionalPoster(internalActor(req), req.file.buffer));
 }));
+router.get('/app-guide/usage', asyncHandler(async (req, res) => ok(res, await appGuideTokenUsage(z.coerce.number().int().min(1).max(366).catch(30).parse(req.query.days)))));
 router.get('/notifications/audience', asyncHandler(async (_req, res) => ok(res, await platformBroadcasts.reach())));
 router.get('/notifications/users', asyncHandler(async (req, res) => {
   internalActor(req);

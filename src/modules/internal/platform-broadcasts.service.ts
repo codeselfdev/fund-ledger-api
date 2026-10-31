@@ -46,7 +46,7 @@ export function broadcastAudience(users: Recipient[], includeInboxOnlyAccounts =
 export function createPlatformBroadcasts(db = prisma, push = sendPushMessage,
   configured = () => Boolean(getFirebaseAdminApp()), secret = env.internalApiKey ?? '', includeInboxOnlyAccounts = false) {
   async function audience(client: Prisma.TransactionClient = db, testUserId?: string) {
-    const result = broadcastAudience(await client.user.findMany({ where: { ...eligible, ...(includeInboxOnlyAccounts && !testUserId ? { deviceId: undefined } : {}), ...(testUserId ? { id: testUserId } : {}) }, select: userSelect, orderBy: { id: 'asc' } }), includeInboxOnlyAccounts);
+    const result = broadcastAudience(await tenantAccounts(client).findMany({ where: { ...eligible, ...(includeInboxOnlyAccounts && !testUserId ? { deviceId: undefined } : {}), ...(testUserId ? { id: testUserId } : {}) }, select: userSelect, orderBy: { id: 'asc' } }), includeInboxOnlyAccounts);
     if (testUserId && (result.recipients.length !== 1 || result.devices.size !== 1)) throw badRequest('This user no longer has a registered push device. Search again.');
     return result;
   }

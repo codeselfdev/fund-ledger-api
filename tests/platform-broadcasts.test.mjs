@@ -40,6 +40,7 @@ function fixture(includeInboxOnlyAccounts = false) {
     async $transaction(fn) { return fn(db); },
   };
   installAccountReadFixtures(db);
+  db.user.findMany = async () => { throw new Error('Broadcast recipients must be read from tenant accounts, not global users'); };
   const service = createPlatformBroadcasts(db, async input => { pushes.push(input); if (result instanceof Error) throw result; return result; }, () => ready, 'synthetic-preview-secret', includeInboxOnlyAccounts);
   const input = async () => { const p = await service.preview(actor, draft); return { draft, request_key: randomUUID(), preview_token: p.preview_token, expires_at: p.expires_at }; };
   const workerRow = (extra = {}) => { deliveries.push({ id: 'delivery1', broadcastId: 'broadcast1', recipientIds: ['u1', 'u2'], tokenHash: digest('same-device'), attempts: 0, broadcast: draft, ...extra }); };
@@ -50,6 +51,28 @@ test('reach counts unique registered devices across organizations and omits empt
   const audience = broadcastAudience([...users, { id: 'u4', tenantId: 'org4', deviceId: '   ' }, { id: 'u5', tenantId: 'org4', deviceId: null }]);
   assert.deepEqual(audience.reach, { devices: 2, accounts: 3, organizations: 3 });
   assert.deepEqual(audience.devices.get(digest('same-device')), ['u1', 'u2']);
+});
+test('audience reads active tenant accounts with active identities after identity normalization', async () => {
+  const calls = [];
+  const db = { tenantUser: { async findMany(input) {
+    calls.push(input);
+    assert.equal(input.where.isActive, true);
+    assert.deepEqual(input.where.identity, { isActive: true });
+    assert.deepEqual(input.where.tenant, { deletionStartedAt: null });
+    assert.deepEqual(input.where.deviceId, { not: null });
+    assert.equal(input.select.tenantId, true);
+    assert.equal(input.select.deviceId, true);
+    assert.equal(input.select.identity.select.isActive, true);
+    const row = { id: 'tenant-account', tenantId: 'org1', userId: 'global-identity', isActive: true,
+      deviceId: 'registered-device', identity: { id: 'global-identity', isActive: true } };
+    return !input.where.id || input.where.id === row.id ? [row] : [];
+  } } };
+  const service = createPlatformBroadcasts(db, undefined, () => true, 'synthetic-preview-secret');
+  assert.deepEqual(await service.reach(), { devices: 1, accounts: 1, organizations: 1, push_configured: true });
+  const preview = await service.preview(actor, { ...draft, test_user_id: 'tenant-account' });
+  assert.equal(preview.accounts, 1);
+  assert.equal(calls.at(-1).where.id, 'tenant-account');
+  await assert.rejects(service.preview(actor, { ...draft, test_user_id: 'global-identity' }), /no longer/);
 });
 test('input rejects blank, oversize and unknown fields', () => {
   for (const value of [{ ...draft, title: '  ' }, { ...draft, title: 'x'.repeat(66) }, { ...draft, body: 'x'.repeat(501) }, { ...draft, tenant_id: 'foreign' }]) assert.equal(broadcastDraftSchema.safeParse(value).success, false);

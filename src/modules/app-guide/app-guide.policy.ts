@@ -4,7 +4,18 @@ import knowledge from './knowledge.json' with { type: 'json' };
 import { availableForAccess } from '../shortcuts/shortcuts.access.js';
 import type { MenuPermissions } from '../../core/security/menu-access.js';
 export const GUIDE_LIMIT = 20;
-export const guideBody = z.object({ question: z.string().trim().min(2).max(1000), language: z.enum(['en','bn']), request_key: z.string().uuid() }).strict();
+/** Voice turns are short by design: one spoken question, at most three per conversation on the client. */
+export const VOICE_QUESTION_LIMIT = 300;
+export const guideBody = z.object({
+  question: z.string().trim().min(2).max(1000), language: z.enum(['en','bn']), request_key: z.string().uuid(),
+  channel: z.enum(['text','voice']).default('text'),
+  follow_up_ids: z.array(z.string().max(80)).max(4).default([]),
+  speech_ms: z.number().int().min(0).max(60000).optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.channel === 'text' && (value.follow_up_ids.length || value.speech_ms !== undefined)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Follow-up context is only accepted for voice questions.' });
+  if (value.channel === 'voice' && value.question.length > VOICE_QUESTION_LIMIT) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['question'], message: `Voice questions are limited to ${VOICE_QUESTION_LIMIT} characters.` });
+});
+export type GuideInput = { question: string; language: Language; request_key: string; channel?: 'text' | 'voice'; follow_up_ids?: string[]; speech_ms?: number };
 export const guidePlan = z.object({ kind: z.enum(['guide','not_supported','not_permitted','private_data']), topic_ids: z.array(z.string().max(80)).max(4) }).strict();
 export type GuidePlan = z.infer<typeof guidePlan>;
 export type Language = 'en' | 'bn';
@@ -65,4 +76,5 @@ export function validatePlan(raw: unknown, articles: Article[]): GuidePlan {
 export function redactGuideQuestion(value: string) {
   return value.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[email]').replace(/\+?\d[\d ()-]{7,}\d/g,'[number]').replace(/Bearer\s+\S+|sk-[\w-]{12,}/gi,'[secret]');
 }
-export const questionHash = (question:string, language:Language) => createHash('sha256').update(JSON.stringify([question,language])).digest('hex');
+/** Text questions keep their original hash; voice follow-ups also bind the previous topics to the request key. */
+export const questionHash = (question:string, language:Language, followUps:string[] = []) => createHash('sha256').update(JSON.stringify(followUps.length ? [question,language,[...followUps]] : [question,language])).digest('hex');

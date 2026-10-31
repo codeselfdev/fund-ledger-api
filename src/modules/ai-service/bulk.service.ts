@@ -1,3 +1,4 @@
+import { memberBatchPlan, saveBatchMember } from './member-batch.js';
 import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
@@ -13,9 +14,10 @@ const date=z.string().refine(isCalendarDate,'Use a valid YYYY-MM-DD date').refin
 const attributes=z.record(z.union([z.string().max(2000),z.number().finite(),z.boolean(),z.array(z.string().max(100)).max(100),z.null()])).optional();
 const person={name:text(120),email:z.string().email().max(200).optional(),address:text(500).optional(),attributes};
 const expenses=z.object({account_id:id,amount:money.positive(),title:text(120),category:z.enum(['materials','construction','professional','services','survey']).optional(),category_def_id:id.optional(),vendor_id:id.optional(),vendor:text(120).optional(),expense_date:date.optional()}).strict().refine(r=>r.category||r.category_def_id,'Choose an expense category');
-export const bulkOperations=['bulk_customers','bulk_dealers','bulk_items','bulk_expenses','bulk_incomes'] as const;
+export const bulkOperations=['bulk_members','bulk_customers','bulk_dealers','bulk_items','bulk_expenses','bulk_incomes'] as const;
 export type Operation=typeof bulkOperations[number];
 const schemas={
+ bulk_members:z.object({name:text(120).min(2),mobile:z.string().regex(/^\+[1-9]\d{6,14}$/),shares:money.positive(),email:z.string().email().max(200).optional(),address:text(500).optional()}).strict(),
  bulk_customers:z.object({...person,mobile:text(32).optional()}).strict(),
  bulk_dealers:z.object({...person,address:text(255).optional(),phone:text(32).optional(),notes:text(2000).optional()}).strict(),
  bulk_items:z.object({name:text(120),description:text(2000).optional(),sku:text(64).optional(),unit:text(16).optional(),category_id:id.optional(),suggested_category:text(64).optional(),suggested_supplier:text(120).optional(),inference_notes:text(1000).optional(),cost_price:money.optional(),sell_price:money.optional(),quantity:money.optional(),reorder_level:money.optional(),attributes}).strict(),
@@ -60,6 +62,7 @@ export async function bulkCatalog(db:Db,a:Auth){
 export async function previewBulk(db:Db,a:Auth,input:BulkRequest){
  const {operation}=input,c=await projectContext(db,a,operation),entity=entities[operation];
  const rows=input.fields.rows.map((row,i)=>{const parsed=schemas[operation].safeParse(row);if(!parsed.success)throw badRequest(`Row ${i+1}: ${parsed.error.issues.map(e=>`${e.path.join('.')}: ${e.message}`).join('; ')}`);return parsed.data as Row;});
+ if(operation==='bulk_members'){const plan=await memberBatchPlan(db,a,rows as {name:string;mobile:string;shares:number;email?:string;address?:string}[]);return{tenant_id:a.tenantId,project_id:a.projectId,project_type:c.project.projectType,operation,row_count:rows.length,currency:c.currency,policy:c.policy,...plan,entries:plan.entries as Row[]};}
  const definition=entity?await entitySchema(db,a,entity):null;
  const existingPeople=entity==='customer'?await db.customer.findMany({where:scope(a),select:{name:true,mobile:true,email:true}}):entity==='dealer'?await db.vendor.findMany({where:scope(a),select:{name:true,phone:true,email:true}}):[];
  const entries:Row[]=[],seen=new Set<string>(),balances=new Map<string,number>();
@@ -112,6 +115,7 @@ export async function executeBulk(db:Db,a:Auth,input:BulkRequest,targets:unknown
  const records:Row[]=[],entity=entities[input.operation];
  for(const entry of plan.entries){
   const r=input.fields.rows[Number(entry.row)-1]!;
+  if(input.operation==='bulk_members'){const saved=await saveBatchMember(db,a,r as {name:string;mobile:string;shares:number;email?:string;address?:string});records.push({row:entry.row,id:saved.id,name:saved.name,status:'created'});continue;}
   if(entity){const saved=await saveRecord(db,a,entity,entity==='item'?itemRecord(r):r);if(entity==='item'&&r.category_id)await db.inventoryItem.update({where:{id:saved.id},data:{categoryId:String(r.category_id)}});records.push({row:entry.row,id:saved.id,name:saved.name,status:'created'});continue;}
   const amount=Number(r.amount),accountId=String(r.account_id);
   if(input.operation==='bulk_incomes'){
