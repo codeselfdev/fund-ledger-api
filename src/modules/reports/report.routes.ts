@@ -8,7 +8,7 @@ import { requireProject, requireRoles } from '../../core/security/auth.middlewar
 import { requireProjectContext } from '../../core/security/auth.context.js';
 import { validateBody } from '../../core/validation/validate.js';
 import { writeAudit } from '../../core/audit/audit.service.js';
-import { exportSchema, destinationsSchema, scheduleSchema } from './report.policy.js';
+import { timezoneSchema, exportSchema, destinationsSchema, scheduleSchema } from './report.policy.js';
 import { buildReport } from './report.workbook.js';
 import { createExport, deliverExport, getExport, getSchedule, reportFile, retryExport, staffRecipients, validateDestinations } from './report.service.js';
 const router=Router();
@@ -32,7 +32,7 @@ router.get('/configuration',asyncHandler(async(req,res)=>{
   return ok(res,{automation_available:process.env.REPORTS_AUTOMATION_ENABLED==='true',schedule,recipients,telegram:telegram?{chat_title:telegram.chatTitle,report:telegram.report}:null,project_name:project?.name,history:history.map(r=>({id:r.id,createdAt:r.createdAt,status:r.status,error:r.error,deliveries:r.deliveries}))});
 }));
 router.get('/snapshot',asyncHandler(async(req,res)=>{
-  const timezone=exportSchema.shape.timezone.parse(req.query.timezone);
+  const timezone=timezoneSchema.default('Asia/Dhaka').parse(req.query.timezone);
   const report=await buildReport(requireProjectContext(req),{sheets:['summary'],period:'today',layout:'one',timezone});
   return ok(res,{date:report.date,...report.stats});
 }));

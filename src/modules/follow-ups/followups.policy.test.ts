@@ -16,6 +16,9 @@ test("score and tiers use the documented edges", () => {
   assert.equal(tierFor(60), "watch");
   assert.equal(tierFor(59), "at_risk");
   assert.equal(scoreFor(20, 20), 0);
+  assert.equal(scoreFor(1, 0, 1), 90, "each accredited recognition adds 5 points");
+  assert.equal(scoreFor(0, 0, 4), 100, "recognition never lifts the score above 100");
+  assert.equal(scoreFor(10, 0, 2), 0, "heavy penalties still floor at zero");
 });
 
 test("reminder availability and promise window are server driven", () => {

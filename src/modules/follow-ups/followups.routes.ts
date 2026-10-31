@@ -18,6 +18,8 @@ import { addDateDays, assertPromiseDate, callLogSchema, compareDateOnly, dateKey
 import { commitmentPayload, getFollowupList, getMemberFollowup, getReliabilityRanking } from "./followups.service.js";
 
 import { actionListQuerySchema, getFollowupActionList } from "./followup-action-list.service.js";
+import { createRecognition, getMemberRecognitions, updateRecognition } from "./recognitions.service.js";
+import { recognitionActionSchema, recognitionCreateSchema, recognitionParamsSchema } from "./followups.policy.js";
 
 const router = Router();
 const readRoles = requireRoles("owner", "admin", "accountant", "auditor");
@@ -50,6 +52,20 @@ router.get("/follow-ups/reliability", requireProject, readRoles, validateQuery(r
   const auth = requireProjectContext(req);
   const { tier } = req.query as z.infer<typeof reliabilityQuerySchema>;
   return ok(res, await getReliabilityRanking({ tenantId: auth.tenantId, projectId: auth.projectId }, tier));
+}));
+
+// Recognition: positive counterpart to broken commitments and missed deadlines. Access is checked per member in the service.
+router.get("/members/:id/recognitions", requireProject, validateParams(idParamSchema), asyncHandler(async (req, res) => {
+  const { id } = req.params as z.infer<typeof idParamSchema>;
+  return ok(res, await getMemberRecognitions(requireProjectContext(req), id));
+}));
+router.post("/members/:id/recognitions", requireProject, validateParams(idParamSchema), validateBody(recognitionCreateSchema), asyncHandler(async (req, res) => {
+  const { id } = req.params as z.infer<typeof idParamSchema>;
+  return created(res, await createRecognition(requireProjectContext(req), id, req.body as z.infer<typeof recognitionCreateSchema>));
+}));
+router.patch("/members/:id/recognitions/:recognitionId", requireProject, validateParams(recognitionParamsSchema), validateBody(recognitionActionSchema), asyncHandler(async (req, res) => {
+  const { id, recognitionId } = req.params as z.infer<typeof recognitionParamsSchema>;
+  return ok(res, await updateRecognition(requireProjectContext(req), id, recognitionId, req.body as z.infer<typeof recognitionActionSchema>));
 }));
 
 router.get("/members/:id/follow-up", requireProject, memberReadRoles, validateParams(idParamSchema), validateQuery(timelineQuerySchema), asyncHandler(async (req, res) => {

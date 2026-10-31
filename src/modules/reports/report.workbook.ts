@@ -6,7 +6,7 @@ import { dueRemaining, reportRange, type ExportConfig, type Scope } from './repo
 export type Sheet = { key: string; name: string; rows: (string | number | null)[][]; total_rows: number };
 const MAX_ROWS = 100000;
 export async function buildReport(scope: Scope, config: ExportConfig, now = new Date()) {
-  const range = reportRange(now, config.timezone, config.period);
+  const range = reportRange(now, config.timezone, config.period, config);
   return prisma.$transaction(async tx => {
     const where = { tenantId: scope.tenantId, projectId: scope.projectId };
     const project = await tx.project.findFirst({ where: { id: scope.projectId, tenantId: scope.tenantId } });
@@ -15,7 +15,7 @@ export async function buildReport(scope: Scope, config: ExportConfig, now = new 
       tx.account.findMany({ where, orderBy: { name: 'asc' } }),
       tx.due.findMany({ where }),
       tx.accountTransaction.findMany({ where: { ...where, createdAt: { gte: range.dayStart, lte: now } }, take: MAX_ROWS + 1 }),
-      config.sheets.includes('ie') ? tx.accountTransaction.findMany({ where: { ...where, direction: { in: ['money_in','money_out'] }, OR: [{ occurredOn: { gte: new Date(`${range.from}T00:00:00Z`), lt: new Date(`${range.until}T00:00:00Z`) } }, { occurredOn: null, createdAt: { gte: range.start, lte: range.end } }] }, include: { account: true, incomeCategory: true, incomeCustomer: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: MAX_ROWS + 1 }) : [],
+      config.sheets.includes('ie') ? tx.accountTransaction.findMany({ where: { ...where, direction: { in: ['money_in','money_out'] }, OR: [{ occurredOn: { gte: new Date(`${range.from}T00:00:00Z`), lt: new Date(`${range.until}T00:00:00Z`) } }, { occurredOn: null, createdAt: { gte: range.start, ...(config.period === 'custom' ? { lt: range.end } : { lte: range.end }) } }] }, include: { account: true, incomeCategory: true, incomeCustomer: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: MAX_ROWS + 1 }) : [],
       config.sheets.includes('members') ? tx.member.findMany({ where, orderBy: { name: 'asc' }, take: MAX_ROWS + 1 }) : [],
       config.sheets.includes('members') ? tx.deposit.groupBy({ where: { ...where, status: 'confirmed' }, by: ['memberId'], _max: { confirmedAt: true } }) : [],
     ]);
@@ -50,6 +50,8 @@ export function workbookFiles(report: Awaited<ReturnType<typeof buildReport>>, l
   const groups = layout === 'sep' ? report.sheets.map(sheet=>[sheet]) : [report.sheets];
   return groups.map(sheets=> {
     const workbook = XLSX.utils.book_new();
+    const inclusiveEnd = new Date(Date.parse(`${report.period_until}T00:00:00Z`) - 86400000).toISOString().slice(0,10);
+    workbook.Props = { Title: report.project_name, Subject: `Income & expense: ${report.period_from} to ${inclusiveEnd} (inclusive). Other sheets show current figures.` };
     for (const sheet of sheets) {
       // aoa_to_sheet preserves untrusted strings as text, never as formula cells.
       const ws = XLSX.utils.aoa_to_sheet(sheet.rows);

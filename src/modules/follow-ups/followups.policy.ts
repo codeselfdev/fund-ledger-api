@@ -7,6 +7,10 @@ export const MISSED_DEADLINE_PENALTY = 10;
 export const RELIABLE_MIN_SCORE = 85;
 export const WATCH_MIN_SCORE = 60;
 export const MAX_PROMISE_DAYS = 90;
+/** Each accredited recognition adds points back, offsetting penalties; the score never exceeds 100. */
+export const RECOGNITION_BONUS = 5;
+export const RECOGNITION_WINDOW_DAYS = 365;
+export const MAX_PENDING_RECOGNITIONS = 5;
 
 export const followupsQuerySchema = z.object({ tab: z.enum(["need", "upcoming", "settled"]).default("need") });
 export const reliabilityQuerySchema = z.object({ tier: z.enum(["all", "reliable", "watch", "at_risk"]).default("all") });
@@ -90,8 +94,8 @@ export function effectiveStatus(status: CommitmentStatus, promisedDate: Date, no
   return comparison < 0 ? "broken" : comparison === 0 ? "due_today" : "pending";
 }
 
-export function scoreFor(breaks: number, missedDeadlines: number) {
-  return Math.max(0, 100 - BREAK_PENALTY * breaks - MISSED_DEADLINE_PENALTY * missedDeadlines);
+export function scoreFor(breaks: number, missedDeadlines: number, recognitions = 0) {
+  return Math.min(100, Math.max(0, 100 - BREAK_PENALTY * breaks - MISSED_DEADLINE_PENALTY * missedDeadlines + RECOGNITION_BONUS * recognitions));
 }
 
 export function tierFor(score: number): "reliable" | "watch" | "at_risk" {
@@ -100,4 +104,28 @@ export function tierFor(score: number): "reliable" | "watch" | "at_risk" {
 
 export function isReminderAvailable(outstanding: number, sentTodayAt?: Date | null) {
   return outstanding > 0 && !sentTodayAt;
+}
+
+export const recognitionCreateSchema = z.object({
+  title: z.string().trim().min(3).max(120),
+  note: z.string().trim().max(500).optional(),
+  effort_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  effort_hours: z.number().positive().max(24).multipleOf(0.25).optional()
+}).strict();
+export const recognitionActionSchema = z.object({
+  action: z.enum(["accredit", "decline", "withdraw", "revoke"]),
+  note: z.string().trim().max(500).optional()
+}).strict().superRefine((value, context) => {
+  if (["decline", "revoke"].includes(value.action) && (value.note?.length ?? 0) < 3) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["note"], message: "Add a short reason for the member" });
+  }
+});
+export const recognitionParamsSchema = z.object({ id: z.string().min(1).max(100), recognitionId: z.string().min(1).max(100) });
+
+export function assertEffortDate(value: string, now = new Date()) {
+  const today = dhakaToday(now), date = dateOnly(value);
+  if (compareDateOnly(date, today) > 0 || compareDateOnly(date, addDateDays(today, -RECOGNITION_WINDOW_DAYS)) < 0) {
+    throw badRequest("Effort date must be within the last 12 months", { effort_date: "Choose a date from the last 12 months, not in the future" });
+  }
+  return date;
 }

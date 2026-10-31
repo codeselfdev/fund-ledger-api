@@ -2,7 +2,7 @@ import type { CommitmentStatus, PaymentCommitment, Prisma } from "@prisma/client
 import { prisma } from "../../core/prisma/client.js";
 import { calculateDueBalance } from "../members/member-settlement.service.js";
 import { getMemberOutstanding } from "../dues/outstanding.service.js";
-import { addDateDays, compareDateOnly, dateKey, dhakaDateKey, dhakaToday, effectiveStatus, isReminderAvailable, scoreFor, tierFor } from "./followups.policy.js";
+import { addDateDays, compareDateOnly, dateKey, dhakaDateKey, dhakaToday, effectiveStatus, isReminderAvailable, RECOGNITION_WINDOW_DAYS, scoreFor, tierFor } from "./followups.policy.js";
 
 type Tx = Prisma.TransactionClient;
 type Scope = { tenantId: string; projectId: string };
@@ -89,9 +89,9 @@ export async function resolveCommitmentsForDeposit(
   return resolved;
 }
 
-async function projectSnapshot(scope: Scope, now = new Date()) {
+export async function projectSnapshot(scope: Scope, now = new Date()) {
   const today = dhakaToday(now);
-  const [members, commitments, dues, reminders] = await Promise.all([
+  const [members, commitments, dues, reminders, recognitions] = await Promise.all([
     prisma.member.findMany({
       where: { ...scope, status: "active" },
       select: { id: true, name: true, mobile: true, shares: true, profile: true },
@@ -118,8 +118,11 @@ async function projectSnapshot(scope: Scope, now = new Date()) {
         }
       }
     }),
-    prisma.memberReminder.findMany({ where: { ...scope, reminderDate: today }, orderBy: { sentAt: "desc" } })
+    prisma.memberReminder.findMany({ where: { ...scope, reminderDate: today }, orderBy: { sentAt: "desc" } }),
+    // Only accredited recognitions from the last 12 months count, mirroring how penalties reflect recent behaviour.
+    prisma.memberRecognition.groupBy({ by: ["memberId"], where: { ...scope, status: "accredited", effortDate: { gte: addDateDays(today, -RECOGNITION_WINDOW_DAYS) } }, _count: { _all: true } })
   ]);
+  const recognitionsByMember = new Map(recognitions.map(row => [row.memberId, row._count._all]));
 
   const commitmentsByMember = new Map<string, PaymentCommitment[]>();
   for (const commitment of commitments) {
@@ -146,9 +149,10 @@ async function projectSnapshot(scope: Scope, now = new Date()) {
       const settledAt = due.paidAt ?? due.allocations[0]?.createdAt ?? null;
       return !settledAt || compareDateOnly(dhakaDateKey(settledAt), due.dueDate) > 0;
     }).length;
-    const score = scoreFor(breaks, missedDeadlines);
-    return { member, score, tier: tierFor(score), kept, breaks, missed_deadlines: missedDeadlines };
-  }).sort((left, right) => right.score - left.score || left.breaks - right.breaks || left.member.name.localeCompare(right.member.name));
+    const recognized = recognitionsByMember.get(member.id) ?? 0;
+    const score = scoreFor(breaks, missedDeadlines, recognized);
+    return { member, score, tier: tierFor(score), kept, breaks, missed_deadlines: missedDeadlines, recognitions: recognized };
+  }).sort((left, right) => right.score - left.score || right.recognitions - left.recognitions || left.breaks - right.breaks || left.member.name.localeCompare(right.member.name));
 
   const reliabilityByMember = new Map(reliability.map((row, index) => [row.member.id, {
     score: row.score,
@@ -157,7 +161,8 @@ async function projectSnapshot(scope: Scope, now = new Date()) {
     of: reliability.length,
     kept: row.kept,
     breaks: row.breaks,
-    missed_deadlines: row.missed_deadlines
+    missed_deadlines: row.missed_deadlines,
+    recognitions: row.recognitions
   }]));
   const outstandingByMember = new Map(members.map(member => [member.id, (duesByMember.get(member.id) ?? []).reduce((sum, due) => sum + calculateDueBalance(due).total, 0)]));
   return { today, members, commitmentsByMember, reminderByMember, reliability, reliabilityByMember, outstandingByMember };

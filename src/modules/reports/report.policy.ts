@@ -3,12 +3,20 @@ export const sheetKeys = ['summary', 'members', 'banks', 'ie'] as const;
 export const timezoneSchema = z.string().max(80).refine(value => {
   try { new Intl.DateTimeFormat('en', { timeZone: value }); return true; } catch { return false; }
 }, 'Choose a valid IANA timezone');
-export const exportSchema = z.object({
+const exportFields = z.object({
   sheets: z.array(z.enum(sheetKeys)).min(1).max(4).transform(v => [...new Set(v)]),
-  period: z.enum(['today', 'month', 'last']).default('month'),
+  period: z.enum(['today', 'month', 'last', 'custom']).default('month'),
+  from: z.string().optional(), to: z.string().optional(),
   layout: z.enum(['one', 'sep']).default('one'),
   timezone: timezoneSchema.default('Asia/Dhaka'),
 }).strict();
+const validDate = (value?: string): value is string => !!value && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0,10) === value;
+export const exportSchema = exportFields.superRefine((value, ctx) => {
+  if (value.period !== 'custom') return;
+  if (!validDate(value.from)) ctx.addIssue({code:'custom',path:['from'],message:'Choose a valid From date'});
+  if (!validDate(value.to)) ctx.addIssue({code:'custom',path:['to'],message:'Choose a valid To date'});
+  if (validDate(value.from) && validDate(value.to) && value.from > value.to) ctx.addIssue({code:'custom',path:['to'],message:'To date must be on or after From date'});
+});
 export const destinationsSchema = z.object({
   recipient_ids: z.array(z.string().min(1).max(100)).max(100).transform(v => [...new Set(v)]),
   email: z.boolean(), inbox: z.boolean(), telegram: z.boolean(),
@@ -16,7 +24,7 @@ export const destinationsSchema = z.object({
 export const scheduleSchema = z.object({
   enabled: z.boolean(), time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), timezone: timezoneSchema,
   days: z.array(z.number().int().min(0).max(6)).max(7).transform(v => [...new Set(v)]),
-  sheets: exportSchema.shape.sheets,
+  sheets: exportFields.shape.sheets,
   ...destinationsSchema.shape,
 }).strict().superRefine((v, ctx) => {
   if (!v.enabled) return;
@@ -45,8 +53,14 @@ export function localMidnight(date: string, timezone: string) {
   }
   return new Date(candidate);
 }
-export function reportRange(now: Date, timezone: string, period: ExportConfig['period']) {
+export function reportRange(now: Date, timezone: string, period: ExportConfig['period'], custom: Pick<ExportConfig, 'from' | 'to'> = {}) {
   const today = localParts(now, timezone).date;
+  if (period === 'custom') {
+    if (!validDate(custom.from) || !validDate(custom.to) || custom.from > custom.to) throw new Error('Choose a valid custom date range');
+    // The UI's To date is inclusive; database upper bounds are the next local midnight, exclusive.
+    const until = new Date(Date.parse(`${custom.to}T00:00:00Z`) + 86400000).toISOString().slice(0,10);
+    return { today, from: custom.from, until, start: localMidnight(custom.from, timezone), end: localMidnight(until, timezone), dayStart: localMidnight(today, timezone) };
+  }
   const date = new Date(`${today}T00:00:00Z`);
   const next = new Date(date.getTime() + 86400000).toISOString().slice(0,10);
   const month = `${today.slice(0,7)}-01`;

@@ -6,7 +6,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../dist/core/prisma/client.js';
 import { followupsRouter } from '../dist/modules/follow-ups/followups.routes.js';
 
-let server, url, reminders = [], commitments = [], callLogs = [], dueAmount = 100;
+let server, url, reminders = [], commitments = [], callLogs = [], recognitions = [], notices = [], dueAmount = 100;
 let memberProfile = { photo_file_id: 'member-photo', father_name: 'Private profile field' };
 const dhakaKey = () => {
   const parts = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Dhaka',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
@@ -42,14 +42,24 @@ before(async () => {
   prisma.memberReminder.findMany = async () => reminders;
   prisma.memberReminder.update = async ({where,data}) => Object.assign(reminders.find(row=>row.id===where.id),data);
   prisma.projectMembership.findMany = async () => [];
+  const matches=(row,where)=>Object.entries(where).every(([key,value])=>key==='effortDate'?row.effortDate>=value.gte:value&&typeof value==='object'&&'in' in value?value.in.includes(row[key]):row[key]===value);
+  const withPeople=row=>row&&{...row,requestedBy:row.requestedById?{identity:{name:row.requestedById==='admin'?'Admin User':'Member One'}}:null,reviewedBy:row.reviewedById?{identity:{name:'Admin User'}}:null};
+  prisma.memberRecognition.groupBy = async ({where}) => {const counts=new Map();recognitions.filter(row=>matches(row,where)).forEach(row=>counts.set(row.memberId,(counts.get(row.memberId)??0)+1));return [...counts].map(([memberId,all])=>({memberId,_count:{_all:all}}));};
+  prisma.memberRecognition.findMany = async ({where}) => recognitions.filter(row=>matches(row,where)).map(withPeople);
+  prisma.memberRecognition.count = async ({where}) => recognitions.filter(row=>matches(row,where)).length;
+  prisma.memberRecognition.aggregate = async ({where}) => {const rows=recognitions.filter(row=>matches(row,where));return {_count:{_all:rows.length},_sum:{effortMinutes:rows.reduce((sum,row)=>sum+(row.effortMinutes??0),0)||null}};};
+  prisma.memberRecognition.create = async ({data}) => {const row={id:`rec${recognitions.length+1}`,status:'pending',note:null,effortMinutes:null,reviewedById:null,reviewedAt:null,reviewNote:null,createdAt:new Date(),updatedAt:new Date(),...data};recognitions.unshift(row);return withPeople(row);};
+  prisma.memberRecognition.findFirst = async ({where}) => withPeople(recognitions.find(row=>matches(row,where)))??null;
+  prisma.memberRecognition.updateMany = async ({where,data}) => {const rows=recognitions.filter(row=>matches(row,where));rows.forEach(row=>Object.assign(row,data));return {count:rows.length};};
+  prisma.memberRecognition.findUniqueOrThrow = async ({where}) => withPeople(recognitions.find(row=>row.id===where.id));
   prisma.activity.create = async ({data}) => data;
   installSubscriptionReadFixtures(prisma);
 installAccountRelationFixtures(prisma);
-const app=express(); app.use(express.json()); app.use((req,_res,next)=>{req.auth={tenantId:'tenant',projectId:'project',userId:'admin',memberId:'admin-member',roles:[req.header('x-role')??'admin']};next();}); app.use('/v1',followupsRouter); app.use((error,_req,res,_next)=>res.status(error.statusCode??500).json({error:{code:error.code,message:error.message,fields:error.fields}}));
+const app=express(); app.use(express.json()); app.use((req,_res,next)=>{req.auth={tenantId:'tenant',projectId:'project',userId:req.header('x-user')??'admin',memberId:req.header('x-member')??'admin-member',roles:[req.header('x-role')??'admin']};next();}); app.use('/v1',followupsRouter); app.use((error,_req,res,_next)=>res.status(error.statusCode??500).json({error:{code:error.code,message:error.message,fields:error.fields}}));
   server=app.listen(0,'127.0.0.1'); await new Promise(resolve=>server.once('listening',resolve)); url=`http://127.0.0.1:${server.address().port}/v1`;
 });
 after(async()=>{await new Promise(resolve=>server.close(resolve));await prisma.$disconnect();});
-async function request(path,method='POST',body,role='admin'){const response=await fetch(url+path,{method,headers:{'content-type':'application/json','x-role':role},body:body?JSON.stringify(body):undefined});return {status:response.status,body:await response.json()};}
+async function request(path,method='POST',body,role='admin',extra={}){const response=await fetch(url+path,{method,headers:{'content-type':'application/json','x-role':role,...extra},body:body?JSON.stringify(body):undefined});return {status:response.status,body:await response.json()};}
 
 test('a reminder is recorded once and returns zero delivery for a member without an app account',async()=>{reminders=[];dueAmount=100;const first=await request('/members/member/reminders');assert.equal(first.status,200);assert.equal(first.body.data.delivered_count,0);const second=await request('/members/member/reminders');assert.equal(second.status,409);assert.equal(second.body.error.code,'REMINDER_ALREADY_SENT_TODAY');});
 test('two parallel reminder taps produce exactly one success',async()=>{reminders=[];dueAmount=100;const results=await Promise.all([request('/members/member/reminders'),request('/members/member/reminders')]);assert.deepEqual(results.map(row=>row.status).sort(),[200,409]);assert.equal(reminders.length,1);});
@@ -140,4 +150,44 @@ test('an existing standalone commitment is not attributed to a deleted user', as
   assert.equal(result.status,200);
   assert.equal(result.body.data.timeline[0].kind,'commitment');
   assert.equal(result.body.data.timeline[0].created_by_name,undefined);
+});
+
+const asMember={'x-member':'member','x-user':'member-user'};
+test('a member requests recognition, it counts only after an admin accredits it, and lifts the reliability score',async()=>{
+  recognitions=[];reminders=[];dueAmount=100;
+  const base={tenantId:'tenant',projectId:'project',memberId:'member',amount:100,outstandingAtCreate:100,createdById:'admin',updatedAt:new Date(),callLogId:null,resolvedById:null,resolvedDepositId:null,resolveReason:null,supersededById:null,resolvedAt:null};
+  commitments=[{...base,id:'broken',promisedDate:new Date(`${plusDays(-3)}T00:00:00Z`),summary:'Missed',status:'broken',createdAt:new Date()}];
+  const before=await request('/members/member/recognitions','GET',undefined,'member',asMember);
+  assert.equal(before.status,200);assert.equal(before.body.data.reliability.score,85);assert.equal(before.body.data.can_request,true);assert.equal(before.body.data.can_review,false);
+  const requested=await request('/members/member/recognitions','POST',{title:'Organised the annual meeting',effort_date:plusDays(-2),effort_hours:3.5},'member',asMember);
+  assert.equal(requested.status,201);assert.equal(requested.body.data.status,'pending');assert.equal(requested.body.data.effort_hours,3.5);assert.equal(requested.body.data.requested_by_me,true);
+  assert.equal((await request('/members/member/recognitions','GET',undefined,'member',asMember)).body.data.reliability.score,85,'pending requests do not count');
+  assert.equal((await request(`/members/member/recognitions/${requested.body.data.id}`,'PATCH',{action:'accredit'},'member',asMember)).status,403,'members cannot accredit themselves');
+  assert.equal((await request(`/members/member/recognitions/${requested.body.data.id}`,'PATCH',{action:'accredit'},'accountant')).status,403,'accountants cannot accredit');
+  const accredited=await request(`/members/member/recognitions/${requested.body.data.id}`,'PATCH',{action:'accredit'});
+  assert.equal(accredited.status,200);assert.equal(accredited.body.data.status,'accredited');assert.equal(accredited.body.data.reviewed_by_name,'Admin User');
+  assert.equal((await request(`/members/member/recognitions/${requested.body.data.id}`,'PATCH',{action:'decline',note:'Too late'})).status,409,'a decided request cannot be decided again');
+  const after=await request('/members/member/recognitions','GET');
+  assert.equal(after.body.data.reliability.score,90);assert.equal(after.body.data.reliability.recognitions,1);assert.equal(after.body.data.summary.counted,1);assert.equal(after.body.data.summary.hours,3.5);
+  const ranking=await request('/follow-ups/reliability','GET');assert.equal(ranking.body.data.items[0].reliability.recognitions,1);
+});
+test('admins add accredited recognition directly; revoke needs a reason; accountants only read',async()=>{
+  recognitions=[];commitments=[];dueAmount=0;
+  assert.equal((await request('/members/member/recognitions','POST',{title:'Helped collect dues',effort_date:plusDays(0)},'accountant')).status,403);
+  assert.equal((await request('/members/member/recognitions','GET',undefined,'accountant')).status,200);
+  assert.equal((await request('/members/member/recognitions','GET',undefined,'member')).status,403,'members cannot read another member');
+  assert.equal((await request('/members/member/recognitions','POST',{title:'Future work',effort_date:plusDays(1)})).status,400);
+  const added=await request('/members/member/recognitions','POST',{title:'Helped collect dues',effort_date:plusDays(0)});
+  assert.equal(added.status,201);assert.equal(added.body.data.status,'accredited');
+  assert.equal((await request(`/members/member/recognitions/${added.body.data.id}`,'PATCH',{action:'revoke'})).status,400);
+  const revoked=await request(`/members/member/recognitions/${added.body.data.id}`,'PATCH',{action:'revoke',note:'Logged twice'});
+  assert.equal(revoked.body.data.status,'revoked');assert.equal((await request('/members/member/recognitions','GET')).body.data.reliability.recognitions,0);
+});
+test('members can keep at most five pending requests and withdraw their own',async()=>{
+  recognitions=[];
+  for(let i=0;i<5;i++)assert.equal((await request('/members/member/recognitions','POST',{title:`Volunteer shift ${i}`,effort_date:plusDays(-1)},'member',asMember)).status,201);
+  assert.equal((await request('/members/member/recognitions','POST',{title:'One more',effort_date:plusDays(-1)},'member',asMember)).status,409);
+  const id=recognitions[0].id;
+  assert.equal((await request(`/members/member/recognitions/${id}`,'PATCH',{action:'withdraw'},'member',asMember)).body.data.status,'withdrawn');
+  assert.equal((await request('/members/member/recognitions','GET',undefined,'member',asMember)).body.data.can_request,true);
 });
