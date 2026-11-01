@@ -61,6 +61,7 @@ import { whatsappRouter } from "./modules/integrations/whatsapp.routes.js";
 import { noticesRouter } from "./modules/community/notices.routes.js";
 import { eventsRouter, pollsRouter } from "./modules/community/community.routes.js";
 import { followupsRouter } from "./modules/follow-ups/followups.routes.js";
+import { paymentRemindersRouter } from "./modules/payment-reminders/reminders.routes.js";
 
 import { assistantRouter } from "./modules/assistant/assistant.routes.js";
 
@@ -137,4 +138,5 @@ export function registerRoutes(app: Express) {
   app.use("/v1/events", eventsRouter);
   app.use("/v1/notices", noticesRouter);
   app.use("/v1", followupsRouter);
+  app.use("/v1", paymentRemindersRouter);
 }

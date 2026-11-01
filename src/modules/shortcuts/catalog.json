@@ -302,6 +302,23 @@
       ]
     },
     {
+      "key": "payment_reminders",
+      "group": "comm",
+      "label": "Payment reminders",
+      "description": "Automatic nudges for unpaid dues",
+      "icon": "M14.5 7.5A5 5 0 0 0 5 9c0 5.5-2.5 7-2.5 7h10 M8.3 20a2 2 0 0 0 3.4 0 M17.5 12.5a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M17.5 14.6v2l1.3 1",
+      "keywords": "remind due unpaid overdue automatic deadline schedule push",
+      "roles": [
+        "owner",
+        "admin",
+        "accountant"
+      ],
+      "project_types": [
+        "fund_shares",
+        "billing"
+      ]
+    },
+    {
       "key": "polls",
       "group": "comm",
       "label": "Polls & voting",

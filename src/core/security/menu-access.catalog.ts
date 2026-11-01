@@ -107,6 +107,7 @@ export const menuAccessCatalog = [
       "payroll_pf"
     ]
   },
+  {"key": "payment_reminders", "label": "Payment reminders", "group": "comm", "project_types": ["fund_shares", "billing"]},
   {
     "key": "polls",
     "label": "Polls & voting",

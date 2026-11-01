@@ -48,6 +48,7 @@ export function routeMenuKeys(path: string, method: string, query: Record<string
   if (root === 'schedules' && !write) return ['schedules', 'recurring'];
   if (root === 'members' && action === 'import-fund') return [];
   if (root === 'notifications' && action === 'campaigns') return ['notifications'];
+  if (root === 'payment-reminders') return ['payment_reminders'];
   if (root === 'dashboard') return ['overview'];
   if (map[root]) return [map[root]];
   return null;

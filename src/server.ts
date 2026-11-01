@@ -13,6 +13,7 @@ import { createApp } from "./app.js";
 import { env } from "./config/env.js";
 import { stopRecurringSchedulesCron, startRecurringSchedulesCron } from "./core/cron/recurring-schedules.cron.js";
 import { startCommunityRemindersCron, stopCommunityRemindersCron } from "./core/cron/community-reminders.cron.js";
+import { startPaymentRemindersCron, stopPaymentRemindersCron } from "./core/cron/payment-reminders.cron.js";
 import { startPaymentCommitmentsCron, stopPaymentCommitmentsCron } from "./core/cron/payment-commitments.cron.js";
 import { verifyMailTransport } from "./core/mail/mailer.service.js";
 import { prisma } from "./core/prisma/client.js";
@@ -44,6 +45,7 @@ startCampaignWorker();
 startReportsWorker();
 startFixedAssetsWorker();
 startCommunityRemindersCron();
+startPaymentRemindersCron();
 startPaymentCommitmentsCron();
 
 import { attachAssistantEvents } from './modules/ai-service/assistant-events.js';
@@ -78,6 +80,7 @@ async function shutdown() {
   stopReportsWorker();
   stopFixedAssetsWorker();
   stopCommunityRemindersCron();
+  stopPaymentRemindersCron();
   stopPaymentCommitmentsCron();
   server.close(async () => {
     await prisma.$disconnect();

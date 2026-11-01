@@ -391,6 +391,8 @@ model Project {
   paymentCommitments  PaymentCommitment[]
   memberRecognitions  MemberRecognition[]
   memberReminders     MemberReminder[]
+  paymentReminderSettings PaymentReminderSettings?
+  paymentReminderRules    PaymentReminderRule[]
 
   @@index([tenantId])
   @@map("projects")
@@ -1351,6 +1353,8 @@ model MemberReminder {
   deliveredCount Int      @map("delivered_count")
   sentById       String?   @map("sent_by_id")
   sentAt         DateTime @default(now()) @map("sent_at")
+  /// "manual" (Follow-ups Remind) or "automatic" (Payment reminders). Both count toward one reminder a day.
+  source         String   @default("manual")
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -1359,6 +1363,51 @@ model MemberReminder {
   @@unique([projectId, memberId, reminderDate])
   @@index([tenantId, projectId, memberId, sentAt])
   @@map("member_reminders")
+}
+
+/// Project-wide automatic payment reminder settings (Fund / Shares and Billing).
+model PaymentReminderSettings {
+  projectId        String   @id @map("project_id")
+  tenantId         String   @map("tenant_id")
+  enabled          Boolean  @default(false)
+  /// Preferred send time, "HH:mm" in Asia/Dhaka.
+  preferredTime    String   @default("10:00") @map("preferred_time")
+  /// Sending weekdays, 0 = Sunday … 6 = Saturday.
+  sendingDays      Int[]    @default([0, 1, 2, 3, 4, 6]) @map("sending_days")
+  /// before | after | skip — what happens to a reminder that lands on an off day.
+  offDayRule       String   @default("before") @map("off_day_rule")
+  treatHolidays    Boolean  @default(true) @map("treat_holidays")
+  pauseForPromises Boolean  @default(true) @map("pause_for_promises")
+  updatedById      String?  @map("updated_by_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([enabled])
+  @@map("payment_reminder_settings")
+}
+
+/// One reminder around each deadline: before (days), on the due date, or after (days, optional repeat).
+model PaymentReminderRule {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  projectId   String   @map("project_id")
+  kind        String
+  days        Int      @default(0)
+  ownTime     String?  @map("own_time")
+  repeatEvery Int?     @map("repeat_every")
+  repeatCount Int?     @map("repeat_count")
+  message     String
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, kind, days])
+  @@index([tenantId, projectId])
+  @@map("payment_reminder_rules")
 }
 
 model Poll {
